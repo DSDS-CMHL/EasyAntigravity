@@ -6,7 +6,7 @@
   "bin": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "pkg . --targets node18-win-x64 --output EasyAntigravity.exe --compress GZip"
+    "build": "npx @yao-pkg/pkg . -t node22-win-x64 -o EasyAntigravity.exe --compress GZip"
   },
   "pkg": {
     "options": [

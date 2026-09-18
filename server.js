@@ -42,10 +42,87 @@ function alreadyRunning() {
   return isPidAlive(pid) && pid !== process.pid;
 }
 
-function focusExistingGui() {
+function openGuiWindow() {
+  const url = `http://127.0.0.1:${GUI_PORT}/?t=${Date.now()}`;
+  const pf = process.env.PROGRAMFILES || 'C:\\Program Files';
+  const pf86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
+  const la = process.env.LOCALAPPDATA || '';
+
+  // ── 1. Chromium 内核浏览器 (App 模式) ──
+  const candidates = [
+    {
+      name: 'Edge',
+      paths: [
+        path.join(pf, 'Microsoft/Edge/Application/msedge.exe'),
+        path.join(pf86, 'Microsoft/Edge/Application/msedge.exe'),
+        path.join(la, 'Microsoft/Edge/Application/msedge.exe')
+      ]
+    },
+    {
+      name: 'Chrome',
+      paths: [
+        path.join(pf, 'Google/Chrome/Application/chrome.exe'),
+        path.join(pf86, 'Google/Chrome/Application/chrome.exe'),
+        path.join(la, 'Google/Chrome/Application/chrome.exe')
+      ]
+    },
+    {
+      name: 'Firefox',
+      paths: [
+        path.join(pf, 'Mozilla Firefox/firefox.exe'),
+        path.join(pf86, 'Mozilla Firefox/firefox.exe')
+      ],
+      noAppMode: true
+    }
+  ];
+
+  for (const browser of candidates) {
+    for (const p of browser.paths) {
+      if (!fs.existsSync(p)) continue;
+      try {
+        if (browser.noAppMode) {
+          exec(`start "" "${p}" "${url}"`);
+        } else {
+          exec(`start "" "${p}" --app=${url} --force-dark-mode`);
+        }
+        logToGUI('SYSTEM', `GUI 已通过 ${browser.name}${browser.noAppMode ? '' : ' 应用模式'}打开`, 'tag-proxy');
+        return true;
+      } catch (e) {}
+    }
+  }
+
+  // ── 3. 系统默认浏览器（仅调用，不修改默认设置） ──
   try {
-    exec(`start msedge --app=http://127.0.0.1:${GUI_PORT}/?t=${Date.now()} --force-dark-mode`);
+    exec(`start "" "${url}"`);
+    logToGUI('SYSTEM', '已调用系统默认浏览器打开 GUI（未修改默认浏览器设置）', 'tag-warn');
+    return true;
   } catch (e) {}
+
+  // ── 4. PowerShell WinForms 兜底 (IE 内核，样式可能降级) ──
+  try {
+    const psCmd = [
+      'Add-Type -AssemblyName System.Windows.Forms',
+      `$f=New-Object Windows.Forms.Form`,
+      `$f.Text='EasyAntigravity';$f.Size=New-Object Drawing.Size(490,760)`,
+      `$f.StartPosition='CenterScreen';$f.BackColor=[Drawing.Color]::FromArgb(18,19,25)`,
+      `$w=New-Object Windows.Forms.WebBrowser`,
+      `$w.Url='${url}';$w.Dock='Fill'`,
+      `$f.Controls.Add($w)`,
+      `$f.Add_Shown({$f.Activate()})`,
+      `[Windows.Forms.Application]::Run($f)`
+    ].join(';');
+    exec(`powershell -NoProfile -WindowStyle Hidden -Command "${psCmd.replace(/"/g, '\\"')}"`);
+    logToGUI('SYSTEM', 'GUI 已通过内置渲染兜底窗口打开（样式可能降级）', 'tag-warn');
+    return true;
+  } catch (e) {}
+
+  // ── 5. 终极兜底：输出地址 ──
+  logToGUI('SYSTEM', `无法自动打开 GUI，请手动在任意浏览器访问: ${url}`, 'tag-alert');
+  return false;
+}
+
+function focusExistingGui() {
+  try { openGuiWindow(); } catch (e) {}
 }
 
 // 双击 exe 会挂控制台：windowsHide 重启自身并退出，避免黑框
@@ -209,9 +286,14 @@ function loadDictionaries() {
 }
 
 let sseClients = [];
+let logBuffer = [];
 
 function logToGUI(category, message, cls = '') {
   const payload = JSON.stringify({ category, message, cls });
+  if (sseClients.length === 0) {
+    logBuffer.push({ category, message, cls });
+    return;
+  }
   const dead = [];
   sseClients.forEach(res => {
     try {
@@ -221,6 +303,18 @@ function logToGUI(category, message, cls = '') {
     }
   });
   if (dead.length) sseClients = sseClients.filter(c => dead.indexOf(c) < 0);
+}
+
+function flushLogBuffer() {
+  if (!logBuffer.length) return;
+  const items = logBuffer.slice();
+  logBuffer = [];
+  items.forEach(({ category, message, cls }) => {
+    const payload = JSON.stringify({ category, message, cls });
+    sseClients.forEach(res => {
+      try { res.write(`data: ${payload}\n\n`); } catch (e) {}
+    });
+  });
 }
 
 function pushCounters() {
@@ -892,6 +986,7 @@ const server = http.createServer((req, res) => {
     touchGui();
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
     sseClients.push(res);
+    flushLogBuffer();
     req.on('close', () => { sseClients = sseClients.filter(c => c !== res); });
     return;
   }
@@ -1016,8 +1111,7 @@ server.listen(GUI_PORT, '127.0.0.1', () => {
   try { fs.writeFileSync(LOCK_FILE, String(process.pid), 'utf-8'); } catch (e) {}
   ensureProxyWatchdog();
   logToGUI('SECURITY', `高危规则已加载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效`, 'tag-proxy');
-  // 使用 Edge 应用模式；favicon 为 data-URI，任务栏/标题栏图标跟随页面
-  exec(`start msedge --app=http://127.0.0.1:${GUI_PORT}/?t=${Date.now()} --force-dark-mode`);
+  openGuiWindow();
   // AG 可能先于 EasyAG 启动：探测 9333 并自动接管
   setTimeout(() => { tryAttachExistingClient(); }, 500);
 });
