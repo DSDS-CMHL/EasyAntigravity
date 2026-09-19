@@ -99,3 +99,7 @@ Antigravity 为 Google 产品，本项目与其官方无关。请遵守当地法
 ## 友链
 [linux.do](https://linux.do)
 
+## 反重力账号相关问题
+[一位不知名佬友写的]https://zcn91ppq6ur7.feishu.cn/wiki/L748wAHTriwwGVkc7TSc3TSennb
+
+
