@@ -1079,6 +1079,16 @@ async function startCDPLoop() {
   pushClientStatus();
 }
 
+const crypto = require('crypto');
+const AUTH_TOKEN = crypto.randomBytes(24).toString('hex');
+function isAuthed(req) {
+  const m = String(req.headers.cookie || '').match(/(?:^|;\s*)ea_token=([^;]+)/);
+  if (!m) return false;
+  const provided = Buffer.from(m[1]);
+  const expected = Buffer.from(AUTH_TOKEN);
+  return provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.png': 'image/png',
@@ -1092,12 +1102,18 @@ const MIME = {
 };
 
 const server = http.createServer((req, res) => {
+  const PROTECTED_API = ['/api/status', '/api/quit', '/api/danger-rules/open', '/api/danger-rules/reload'];
+  if (PROTECTED_API.includes(req.url) && !isAuthed(req)) {
+    res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ error: 'unauthorized' }));
+  }
   if (req.url === '/' || (req.url && req.url.startsWith('/?'))) {
     touchGui();
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store, no-cache, must-revalidate',
-      'Pragma': 'no-cache'
+      'Pragma': 'no-cache',
+      'Set-Cookie': `ea_token=${AUTH_TOKEN}; HttpOnly; SameSite=Strict; Path=/`
     });
     return res.end(fs.readFileSync(HTML_FILE));
   }
