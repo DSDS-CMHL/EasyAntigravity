@@ -48,7 +48,19 @@ function openGuiWindow() {
   const pf86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
   const la = process.env.LOCALAPPDATA || '';
 
-  // ── 1. Chromium 内核浏览器 (App 模式) ──
+  // ── 方案 D: WebView2 原生窗口（优先） ──
+  const wv2Host = path.join(ROOT_DIR, 'WebView2Host', 'WebView2Host.exe');
+  if (fs.existsSync(wv2Host)) {
+    try {
+      exec(`"${wv2Host}" "${url}"`, { windowsHide: true });
+      logToGUI('SYSTEM', 'GUI 已通过 WebView2 原生窗口打开', 'tag-proxy');
+      return true;
+    } catch (e) {
+      logToGUI('SYSTEM', `WebView2 宿主启动失败: ${e.message}，降级到浏览器`, 'tag-warn');
+    }
+  }
+
+  // ── 降级: 浏览器 App 模式 ──
   const candidates = [
     {
       name: 'Edge',
@@ -81,9 +93,9 @@ function openGuiWindow() {
       if (!fs.existsSync(p)) continue;
       try {
         if (browser.noAppMode) {
-          exec(`start "" "${p}" "${url}"`);
+          exec(`start "" "${p}" "${url}"`, { windowsHide: true });
         } else {
-          exec(`start "" "${p}" --app=${url} --force-dark-mode`);
+          exec(`start "" "${p}" --app=${url} --force-dark-mode`, { windowsHide: true });
         }
         logToGUI('SYSTEM', `GUI 已通过 ${browser.name}${browser.noAppMode ? '' : ' 应用模式'}打开`, 'tag-proxy');
         return true;
@@ -91,38 +103,22 @@ function openGuiWindow() {
     }
   }
 
-  // ── 3. 系统默认浏览器（仅调用，不修改默认设置） ──
+  // ── 默认浏览器兜底 ──
   try {
-    exec(`start "" "${url}"`);
-    logToGUI('SYSTEM', '已调用系统默认浏览器打开 GUI（未修改默认浏览器设置）', 'tag-warn');
+    exec(`start "" "${url}"`, { windowsHide: true });
+    logToGUI('SYSTEM', '已调用系统默认浏览器打开 GUI', 'tag-warn');
     return true;
   } catch (e) {}
 
-  // ── 4. PowerShell WinForms 兜底 (IE 内核，样式可能降级) ──
-  try {
-    const psCmd = [
-      'Add-Type -AssemblyName System.Windows.Forms',
-      `$f=New-Object Windows.Forms.Form`,
-      `$f.Text='EasyAntigravity';$f.Size=New-Object Drawing.Size(490,760)`,
-      `$f.StartPosition='CenterScreen';$f.BackColor=[Drawing.Color]::FromArgb(18,19,25)`,
-      `$w=New-Object Windows.Forms.WebBrowser`,
-      `$w.Url='${url}';$w.Dock='Fill'`,
-      `$f.Controls.Add($w)`,
-      `$f.Add_Shown({$f.Activate()})`,
-      `[Windows.Forms.Application]::Run($f)`
-    ].join(';');
-    exec(`powershell -NoProfile -WindowStyle Hidden -Command "${psCmd.replace(/"/g, '\\"')}"`);
-    logToGUI('SYSTEM', 'GUI 已通过内置渲染兜底窗口打开（样式可能降级）', 'tag-warn');
-    return true;
-  } catch (e) {}
-
-  // ── 5. 终极兜底：输出地址 ──
-  logToGUI('SYSTEM', `无法自动打开 GUI，请手动在任意浏览器访问: ${url}`, 'tag-alert');
+  logToGUI('SYSTEM', `无法自动打开 GUI，请手动访问 ${url}`, 'tag-alert');
   return false;
 }
 
 function focusExistingGui() {
-  try { openGuiWindow(); } catch (e) {}
+  // 已有 WebView2Host 实例时，尝试聚焦而非重复启动
+  try {
+    exec('powershell -NoProfile -Command "Get-Process WebView2Host -ErrorAction SilentlyContinue | ForEach-Object { $_.MainWindowHandle } | ForEach-Object { Add-Type -Name W -Namespace U -MemberDefinition \'[DllImport(\\"user32.dll\\")] public static extern bool SetForegroundWindow(IntPtr h);[DllImport(\\"user32.dll\\")] public static extern bool ShowWindow(IntPtr h,int c);\'; [U.W]::ShowWindow($_,9); [U.W]::SetForegroundWindow($_) }"');
+  } catch (e) {}
 }
 
 // 双击 exe 会挂控制台：windowsHide 重启自身并退出，避免黑框
@@ -175,15 +171,19 @@ const DICT_DIR = path.join(ROOT_DIR, 'dicts');
 const RULES_FILE = path.join(ROOT_DIR, 'danger-rules.json');
 const BACKUP_RULES = path.join(BACKUP_DIR, 'danger-rules.json');
 
+// 调试模式：--debug 参数 或 debug.flag 文件 存在时开启
+const debugMode = process.argv.includes('--debug') || fs.existsSync(path.join(__dirname, 'debug.flag'));
+
 let state = {
   port: 7890,
-  autoAccept: true,
+  autoAccept: false,
   blockDangerous: true,
   preferOption: 4,
   enableI18n: true,
   dictEntries: 0,
   patchOk: false,
   clientRunning: false,
+  debugApproval: debugMode,
   dangerRulesTotal: 0,
   dangerRulesOn: 0,
   approveCount: 0,
@@ -197,9 +197,15 @@ let state = {
   cdpLoopRunning: false
 };
 
-// GUI 存活：关窗后应真正退出后台
+if (debugMode) {
+  console.log('[DEBUG] 调试模式已开启：将输出 DOM 抓取日志');
+  logToGUI('DEBUG', '调试模式已开启，审批卡 DOM 结构将输出到日志', 'tag-i18n');
+}
+
+// GUI 存活检测：心跳 + SSE 双通道
 let guiSeen = false;
 let lastGuiAt = 0;
+let lastPingAt = 0;
 let quitting = false;
 
 function touchGui() {
@@ -216,10 +222,12 @@ function quitApp(reason) {
   }
   cdpSockets.clear();
   releaseLock();
-  // 稍等 SSE 断开，避免日志写到已销毁的响应
+  try {
+    exec('taskkill /F /FI "WINDOWTITLE eq EasyAntigravity*" /T', { windowsHide: true }, () => {});
+  } catch (e) {}
   setTimeout(() => {
     process.exit(0);
-  }, 80);
+  }, 100);
 }
 
 const DEFAULT_DANGER_RULES = [
@@ -370,7 +378,8 @@ function generateMasterInjectScript() {
       preferOption: ${state.preferOption},
       blockDangerous: ${state.blockDangerous},
       autoAccept: ${state.autoAccept},
-      enableI18n: ${state.enableI18n}
+      enableI18n: ${state.enableI18n},
+      debugApproval: ${state.debugApproval ? 'true' : 'false'}
     });
     window.__ea_dict = ${dictJSON};
     window.__ea_danger_patterns = ${patternsJSON};
@@ -647,51 +656,212 @@ function generateMasterInjectScript() {
       return uniq.join(' | ');
     }
 
+    // ── 翻译禁区：保护代码块/编辑器/终端/输入框不被误翻 ──
+    const BLOCKED_TAGS = ['SCRIPT','STYLE','CODE','PRE','INPUT','TEXTAREA','SVG','CANVAS','KBD','SAMP','VAR'];
+    const BLOCKED_CLASS_SUBSTR = [
+      'code-view','editor-container','monaco-editor','suggest-widget',
+      'output-view','debug-console','artifact-container','code-block',
+      'diff-view','input-area','chat-input','cm-editor','CodeMirror',
+      'highlight','syntax','prism','hljs'
+    ];
+    const BLOCKED_CLASS_TOKEN = ['terminal','xterm','preview','code'];
+
+    function isInBlockedZone(node) {
+      let curr = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      let depth = 0;
+      while (curr && depth < 25) {
+        if (curr.nodeType === Node.ELEMENT_NODE) {
+          const tag = (curr.tagName || '').toUpperCase();
+          if (BLOCKED_TAGS.includes(tag)) return true;
+          if (curr.getAttribute && curr.getAttribute('contenteditable') === 'true') return true;
+          const role = (curr.getAttribute && curr.getAttribute('role')) || '';
+          if (role === 'code' || role === 'textbox') return true;
+          const cls = curr.className || '';
+          if (typeof cls === 'string' && cls) {
+            if (BLOCKED_CLASS_SUBSTR.some(c => cls.includes(c))) return true;
+            const tokens = cls.split(/[\\s]+/);
+            if (tokens.some(t => BLOCKED_CLASS_TOKEN.includes(t))) return true;
+          }
+        }
+        curr = curr.parentElement || (curr.parentNode && curr.parentNode.host);
+        depth++;
+      }
+      return false;
+    }
+
+    // ── 审批框结构识别（语言无关） ──
+    function isApprovalCard(el) {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+      const tid = (el.getAttribute && el.getAttribute('data-testid')) || '';
+      if (tid.includes('interaction') || tid.includes('approval') || tid.includes('permission') || tid.includes('run-command')) return true;
+      const role = (el.getAttribute && el.getAttribute('role')) || '';
+      if (role === 'dialog' || role === 'alertdialog') {
+        const hasCode = el.querySelector('pre, code, [class*="code"], [data-testid*="command"]');
+        const hasBtn = el.querySelector('button, [role="button"]');
+        return !!(hasCode && hasBtn);
+      }
+      const cls = el.className || '';
+      if (typeof cls === 'string' && cls) {
+        if (cls.includes('card') || cls.includes('Card')) {
+          const hasCode = el.querySelector('pre, code');
+          const hasBtn = el.querySelector('button, [role="button"]');
+          return !!(hasCode && hasBtn);
+        }
+      }
+      return false;
+    }
+
+    // ── 动态正则翻译规则：处理含变量的审批选项文本 ──
+    const DYNAMIC_RULES = [
+      [/^Yes, and always allow ['"](.+?)['"] in this conversation$/i,
+        (m, cmd) => '是，且在本次对话中始终允许 \\'' + cmd + '\\''],
+      [/^Yes, and always allow ['"](.+?)['"] in this project$/i,
+        (m, cmd) => '是，且在本项目中始终允许 \\'' + cmd + '\\''],
+      [/^Yes, and always allow ['"](.+?)['"] in this workspace$/i,
+        (m, cmd) => '是，且在此工作区中始终允许 \\'' + cmd + '\\''],
+      [/^Yes, and always allow ['"](.+?)['"]$/i,
+        (m, cmd) => '是，且始终允许 \\'' + cmd + '\\''],
+      [/^Yes, and always allow (.+?) in this conversation$/i,
+        (m, cmd) => '是，且在本次对话中始终允许 ' + cmd],
+      [/^Yes, and always allow (.+?) in this project$/i,
+        (m, cmd) => '是，且在本项目中始终允许 ' + cmd],
+      [/^Yes, and always allow (.+?) when not in a project$/i,
+        (m, cmd) => '是，且在非项目状态下始终允许 ' + cmd],
+      [/^No \\((.+?)\\)$/i,
+        (m, reason) => '否（' + (window.__ea_dict[reason] || reason) + '）'],
+      [/^Deny \\((.+?)\\)$/i,
+        (m, reason) => '拒绝（' + (window.__ea_dict[reason] || reason) + '）'],
+      [/^Allow running (.+?)\\?$/i,
+        (m, cmd) => '允许运行 ' + cmd + '？'],
+      [/^Run (.+?)\\?$/i,
+        (m, cmd) => '运行 ' + cmd + '？'],
+      [/^Requesting permission to run (.+)$/i,
+        (m, cmd) => '正在请求权限以运行 ' + cmd]
+    ];
+
+    function tryDynamicTranslate(text) {
+      for (const rule of DYNAMIC_RULES) {
+        const m = text.match(rule[0]);
+        if (m) return rule[1](m[0], m[1]);
+      }
+      return null;
+    }
+
     function translateDOM(root) {
       if (!window.__ea_config.enableI18n || !window.__ea_dict) return;
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
       let node;
       while ((node = walker.nextNode())) {
+        if (isInBlockedZone(node)) continue;
         const text = node.nodeValue.trim();
-        if (text && window.__ea_dict[text]) {
+        if (!text) continue;
+        // 1. 词典精确匹配
+        if (window.__ea_dict[text]) {
           node.nodeValue = node.nodeValue.replace(text, window.__ea_dict[text]);
+          continue;
+        }
+        // 2. 动态正则规则（审批选项等含变量文本）
+        const dynamic = tryDynamicTranslate(text);
+        if (dynamic) {
+          node.nodeValue = node.nodeValue.replace(text, dynamic);
         }
       }
-      const elements = root.querySelectorAll ? root.querySelectorAll('[placeholder], [title]') : [];
+      const elements = root.querySelectorAll ? root.querySelectorAll('[placeholder], [title], [aria-label]') : [];
       elements.forEach(el => {
-        const ph = el.getAttribute('placeholder');
-        if (ph && window.__ea_dict[ph]) el.setAttribute('placeholder', window.__ea_dict[ph]);
-        const title = el.getAttribute('title');
-        if (title && window.__ea_dict[title]) el.setAttribute('title', window.__ea_dict[title]);
+        if (isInBlockedZone(el)) return;
+        ['placeholder','title','aria-label'].forEach(attr => {
+          const val = el.getAttribute(attr);
+          if (val && window.__ea_dict[val]) el.setAttribute(attr, window.__ea_dict[val]);
+        });
       });
     }
 
     setInterval(() => {
       function scan(doc) {
         translateDOM(doc);
-        if (!window.__ea_config.autoAccept) return;
 
-        // 1) AG 2.13 交互卡（运行命令 / 工具审批）：优先 data-testid
-        const interactSubmit = doc.querySelector('button[data-testid="interaction-continue-button"]');
-        if (interactSubmit && tryApprove(interactSubmit, '交互卡提交')) return;
-
-        // 2) 权限卡片（收窄匹配，避免正文里的 permission/read files 误伤）
-        const pageText = norm(doc.body ? doc.body.innerText : '');
-        const permHit = /allow reading|yes, allow|允许访问|allow access|权限请求|请求权限|访问文件/.test(pageText)
-          || (/(^|\\s)permission(\\s|$)/i.test(pageText) && /allow|允许|yes/i.test(pageText));
-        if (permHit) {
-          const cards = Array.from(doc.querySelectorAll('div, section, [role="dialog"], [role="alertdialog"]'));
-          for (const card of cards) {
-            const t = norm(card.innerText);
-            if (!t || t.length > 2500) continue;
-            if (!/allow reading|yes, allow|允许访问|allow access|permission|权限|访问文件/.test(t)) continue;
-            const submitBtn = findSubmitBtn(card);
-            if (submitBtn && tryApprove(submitBtn, '权限卡')) return;
+        // ── 调试模式：抓取审批卡 DOM 结构 ──
+        if (window.__ea_config.debugApproval) {
+          const debugSelectors = [
+            '[role="dialog"]', '[role="alertdialog"]',
+            'div[data-testid*="interaction"]', 'div[data-testid*="approval"]',
+            'div[data-testid*="permission"]', 'div[data-testid*="command"]',
+            'div[data-testid*="run"]', 'div[class*="card"]'
+          ];
+          const seen = new Set();
+          for (const sel of debugSelectors) {
+            doc.querySelectorAll(sel).forEach(el => {
+              if (seen.has(el)) return;
+              const text = (el.innerText || '').trim();
+              if (!text || text.length < 10 || text.length > 3000) return;
+              const hasCode = !!el.querySelector('pre, code, [class*="code"], [data-testid*="command"]');
+              const hasBtn = !!el.querySelector('button, [role="button"]');
+              if (!hasBtn) return;
+              // 只抓含审批关键词或含代码块的容器
+              const isApproval = /allow|deny|reject|run|accept|permission|允许|拒绝|运行|执行/i.test(text) || hasCode;
+              if (!isApproval) return;
+              seen.add(el);
+              // 输出结构摘要
+              const tid = el.getAttribute('data-testid') || '';
+              const role = el.getAttribute('role') || '';
+              const cls = (typeof el.className === 'string' ? el.className : '').slice(0, 80);
+              const btns = Array.from(el.querySelectorAll('button, [role="button"]')).map(b => {
+                const bt = (b.innerText || '').trim().slice(0, 40);
+                const btId = b.getAttribute('data-testid') || '';
+                return bt ? (btId ? bt + '[' + btId + ']' : bt) : null;
+              }).filter(Boolean);
+              const codeText = hasCode ? (el.querySelector('pre, code, [class*="code"]')?.innerText || '').trim().slice(0, 120) : '';
+              console.log('[EA_DOM] tag=' + el.tagName + ' role=' + role + ' testid=' + tid + ' class=' + cls);
+              console.log('[EA_DOM]   buttons: ' + (btns.join(' | ') || '(none)'));
+              if (codeText) console.log('[EA_DOM]   code: ' + codeText);
+              console.log('[EA_DOM]   text: ' + text.slice(0, 200).replace(/\\n/g, ' ⏎ '));
+              // 输出完整 HTML（截断到 1500 字符）
+              const html = el.outerHTML.slice(0, 1500);
+              console.log('[EA_HTML] ' + html);
+            });
           }
         }
 
-        // 3) 关键字兜底
-        const kws = ['run', 'accept', 'continue', 'always allow', 'allow', '运行', '接受', '继续', '始终允许', '允许', '确认', '提交'];
+        if (!window.__ea_config.autoAccept) return;
+
+        // ── 策略1: data-testid 精确匹配（最稳定，语言无关） ──
+        const testidBtns = doc.querySelectorAll(
+          'button[data-testid="interaction-continue-button"],' +
+          'button[data-testid="approval-submit"],' +
+          'button[data-testid="permission-allow"],' +
+          '[data-testid="run-command-step"] button'
+        );
+        for (const btn of testidBtns) {
+          if (tryApprove(btn, 'testid:' + (btn.getAttribute('data-testid') || ''))) return;
+        }
+
+        // ── 策略2: 结构指纹 — 容器内同时存在代码块+按钮 ──
+        const containers = doc.querySelectorAll(
+          '[role="dialog"], [role="alertdialog"],' +
+          'div[data-testid*="interaction"], div[data-testid*="approval"],' +
+          'div[data-testid*="permission"], div[data-testid*="command"]'
+        );
+        for (const card of containers) {
+          const codeEl = card.querySelector('pre, code, [data-testid*="command"], [class*="code"]');
+          const btns = Array.from(card.querySelectorAll('button, [role="button"]'));
+          if (!codeEl || !btns.length) continue;
+          // 提交按钮定位：data-testid > 底部区域 > 唯一按钮
+          const submitBtn =
+            btns.find(b => (b.getAttribute('data-testid') || '').includes('continue')) ||
+            btns.find(b => {
+              try {
+                const r = b.getBoundingClientRect();
+                const cr = card.getBoundingClientRect();
+                return r.bottom > cr.bottom - 80 && r.bottom <= cr.bottom + 10;
+              } catch (e) { return false; }
+            }) ||
+            (btns.length === 1 ? btns[0] : null);
+          if (submitBtn && tryApprove(submitBtn, '结构指纹审批卡')) return;
+        }
+
+        // ── 策略3: 关键字兜底（中英双写，兼容汉化后） ──
+        const kws = ['run', 'accept', 'continue', 'always allow', 'allow', 'submit',
+                     '运行', '接受', '继续', '始终允许', '允许', '确认', '提交'];
         for (const btn of Array.from(doc.querySelectorAll('button, [role="button"]'))) {
           const txt = norm(btn.innerText || btn.getAttribute('aria-label'));
           if (!txt || txt.length > 24) continue;
@@ -845,6 +1015,10 @@ async function startCDPLoop() {
                   state.blockCount += 1;
                   logToGUI('SECURITY ALERT', text.replace('[EA_ALERT]', '').trim(), 'tag-alert');
                   pushCounters();
+                } else if (text.includes('[EA_DOM]')) {
+                  logToGUI('DOM-CAPTURE', text.replace('[EA_DOM]', '').trim(), 'tag-i18n');
+                } else if (text.includes('[EA_HTML]')) {
+                  logToGUI('DOM-HTML', text.replace('[EA_HTML]', '').trim(), 'tag-i18n');
                 }
               }
             } catch (e) {}
@@ -882,8 +1056,8 @@ async function startCDPLoop() {
       state.cdpError = String(e.message || e);
       state.cdpSockets = cdpSockets.size;
       state.cdpFailStreak += 1;
-      // CDP 连续不可达（约 10s）：视为客户端已退出（覆盖 attach 模式无 child exit 的情况）
-      if (state.cdpFailStreak >= 5) {
+      // CDP 连续不可达 2 次（约 4s）：视为客户端已退出
+      if (state.cdpFailStreak >= 2) {
         state.clientRunning = false;
         state.cdpTargets = 0;
         state.cdpSockets = 0;
@@ -971,9 +1145,29 @@ const server = http.createServer((req, res) => {
       return res.end(JSON.stringify({ ok: false, error: String(e.message || e) }));
     }
   }
+  if (req.url === '/api/ping') {
+    touchGui();
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    return res.end('pong');
+  }
   if (req.url === '/api/status') {
     touchGui();
     ensureProxyWatchdog();
+    // 快速检测 AG 进程是否存活
+    if (state.clientRunning) {
+      try {
+        exec('tasklist /FI "IMAGENAME eq Antigravity.exe" /NH', { windowsHide: true }, (err, stdout) => {
+          if (!err && stdout && stdout.includes('Antigravity')) {
+            // 进程还在
+          } else {
+            state.clientRunning = false;
+            state.cdpSockets = 0;
+            logToGUI('SYSTEM', '检测到 Antigravity 进程已退出', 'tag-warn');
+            pushClientStatus();
+          }
+        });
+      } catch (e) {}
+    }
     return res.end(JSON.stringify(state));
   }
   if (req.url === '/api/quit' && req.method === 'POST') {
@@ -987,7 +1181,11 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
     sseClients.push(res);
     flushLogBuffer();
-    req.on('close', () => { sseClients = sseClients.filter(c => c !== res); });
+    req.on('close', () => {
+      sseClients = sseClients.filter(c => c !== res);
+      // SSE 断开 = GUI 可能已关闭，刷新时间戳启动退出倒计时
+      lastGuiAt = Date.now();
+    });
     return;
   }
   if (req.url === '/api/config' && req.method === 'POST') {
@@ -1098,14 +1296,16 @@ process.on('uncaughtException', (err) => {
 
 process.on('exit', releaseLock);
 
-// 打开过 GUI 后：超过 8s 无任何 HTTP 活动（status/页面/SSE 真实流量）→ 关窗退出
-// 不用 sseClients.length 判断：Edge 被杀后可能残留死连接
+// GUI 关窗检测：心跳超时 → 退出（放宽条件，避免误杀）
 setInterval(() => {
   if (quitting || !guiSeen) return;
-  if (lastGuiAt && Date.now() - lastGuiAt >= 8000) {
-    quitApp('GUI 已关闭');
+  const now = Date.now();
+  // 心跳超时 30 秒（前端每 3 秒轮询，连续 10 次无响应才退出）
+  if (lastGuiAt && (now - lastGuiAt >= 30000)) {
+    console.log('[EXIT] GUI 心跳超时 30s，最后活动: ' + new Date(lastGuiAt).toLocaleTimeString());
+    quitApp('GUI 心跳超时');
   }
-}, 2000);
+}, 3000);
 
 server.listen(GUI_PORT, '127.0.0.1', () => {
   try { fs.writeFileSync(LOCK_FILE, String(process.pid), 'utf-8'); } catch (e) {}

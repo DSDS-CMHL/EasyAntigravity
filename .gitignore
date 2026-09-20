@@ -1,33 +1,24 @@
-# deps / build
-node_modules/
-npm-debug.log*
-*.tgz
-
-# packaged binaries (release zip on GitHub Releases instead)
+﻿# Build outputs
 EasyAntigravity.exe
-*.zip
 EasyAntigravity-dist/
-EasyAntigravity-v1.1.0/
+EasyAntigravity*.zip
+*.zip
 
-# runtime junk
-.easyag-pid
-crashdumps/
-*.log
-hr_temp/
-_hr_temp/
+# WebView2 runtime cache
+WebView2Host/WebView2Host.exe.WebView2/
 
-# local debug reports
-AG启动失败排查报告.md
-AG启动失败错误日志.txt
-DLL对照实验结果.txt
-根因-MSVCP140.txt
-个人介绍.md
+# DLL build directory
+dll-build/
 
-# editor / OS
-.vscode/
-.idea/
+# Temp/test files
+_dom_probe*.js
+test*.py
+test*.txt
+ag_*.log
+easyag-error.log
+easyag.lock
+debug.flag
+
+# OS files
 Thumbs.db
-Desktop.ini
 .DS_Store
-
-release/
