@@ -16,15 +16,15 @@ jobs:
         include:
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
-            bundles: nsis
+            build-args: --no-bundle
             name: windows-x64
           - runner: macos-14
             target: aarch64-apple-darwin
-            bundles: app
+            build-args: --bundles app
             name: macos-arm64
           - runner: macos-15-intel
             target: x86_64-apple-darwin
-            bundles: app
+            build-args: --bundles app
             name: macos-x64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
@@ -58,7 +58,32 @@ jobs:
           export EASYAG_TEST_SERVER="$PWD/src-tauri/backend/server.js"
           node test/tauri-lifecycle.test.cjs
       - name: Build native application
-        run: npx --yes @tauri-apps/cli@2 build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+        run: npx --yes @tauri-apps/cli@2 build --target ${{ matrix.target }} ${{ matrix.build-args }}
+      - name: Package Windows portable ZIP
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'EasyAntigravity-2.0.1-tauri-windows-x64-portable'
+          $stage = Join-Path 'dist-tauri' $name
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          $release = 'src-tauri/target/${{ matrix.target }}/release'
+          Copy-Item -LiteralPath "$release/easyantigravity.exe" -Destination "$stage/EasyAntigravity.exe"
+          Copy-Item -LiteralPath 'src-tauri/binaries/easyag-node-${{ matrix.target }}.exe' -Destination "$stage/easyag-node.exe"
+          Copy-Item -LiteralPath 'src-tauri/backend' -Destination "$stage/backend" -Recurse
+          Get-ChildItem -LiteralPath $release -Filter '*.dll' -File | Copy-Item -Destination $stage
+          Copy-Item -LiteralPath 'LICENSE','docs/PORTABLE.md' -Destination $stage
+          Compress-Archive -LiteralPath $stage -DestinationPath "$name.zip"
+          Expand-Archive -LiteralPath "$name.zip" -DestinationPath 'dist-tauri/verify'
+          $extracted = (Resolve-Path "dist-tauri/verify/$name").Path
+          foreach ($file in @('EasyAntigravity.exe','easyag-node.exe','backend/server.js','backend/index.html','backend/dicts/common.json','backend/dicts/ui_v2.json','backend/danger-rules.json','backend/node_modules/ws/package.json','backend/NODE-LICENSE.txt')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $extracted $file))) { throw "Missing portable resource: $file" }
+          }
+          $env:EASYAG_TEST_NODE = Join-Path $extracted 'easyag-node.exe'
+          $env:EASYAG_TEST_SERVER = Join-Path $extracted 'backend/server.js'
+          node test/tauri-lifecycle.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-FileHash -LiteralPath "$name.zip" -Algorithm SHA256
       - name: Package macOS app
         if: runner.os == 'macOS'
         shell: bash
@@ -69,12 +94,12 @@ jobs:
           test -x "$app/Contents/MacOS/easyag-node"
           codesign --verify --deep --strict "$app"
           ditto -c -k --sequesterRsrc --keepParent "$app" "EasyAntigravity-2.0.1-tauri-${{ matrix.name }}.zip"
-      - name: Upload Windows installer
+      - name: Upload Windows portable ZIP
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: EasyAntigravity-2.0.1-tauri-${{ matrix.name }}
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+          name: EasyAntigravity-2.0.1-tauri-${{ matrix.name }}-portable
+          path: EasyAntigravity-2.0.1-tauri-windows-x64-portable.zip
           if-no-files-found: error
           retention-days: 14
       - name: Upload macOS app

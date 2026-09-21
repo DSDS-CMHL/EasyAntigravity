@@ -30,7 +30,12 @@ Node 运行时作为 externalBin 随包提供，ws 与词典/页面作为资源�
 ## 构建与验证
 
 本机无需 Rust。推送此分支后 Tauri Build 工作流在 GitHub runner 安装 Rust 并构建。
-Windows 产物为 NSIS 安装器；macOS 产物为保留可执行权限的 .app zip。
+Windows 使用 --no-bundle 编译并组装完整便携 ZIP，解压后直接运行 EasyAntigravity.exe，
+不产生 NSIS/MSI 安装器。macOS 产物为保留可执行权限的 .app ZIP，解压后直接打开，
+无需安装或移动到 /Applications。
+Windows 使用系统已有 WebView2 Runtime，不自动安装它；缺失运行库的系统需用户单独安装。
+“免安装”指启动器本身；设置和日志仍保存在用户数据目录，不会写入 macOS .app 内。
+Windows CI 会重新解压最终 ZIP，并用包内 Node 执行后端生命周期测试，核验依赖齐全。
 macOS 为 ad-hoc 签名测试包，未进行 Apple notarization，Gatekeeper 可能要求用户批准。
 
 CI 在打包资源副本上运行后端生命周期测试：
