@@ -98,13 +98,21 @@ jobs:
 
       - name: Create distribution
         run: |
-          mkdir -p dist-macos
+          mkdir -p dist-macos/dicts dist-macos/assets
           cp EasyAntigravity-macos dist-macos/EasyAntigravity
           chmod +x dist-macos/EasyAntigravity
           cp index.html dist-macos/
-          cp -r backup dicts assets dist-macos/ 2>/dev/null || true
+          cp -r dicts/* dist-macos/dicts/
+          cp assets/logo.ico assets/logo.png dist-macos/assets/ 2>/dev/null || true
           cp danger-rules.json dist-macos/ 2>/dev/null || true
           cp README.md CHANGELOG.md dist-macos/ 2>/dev/null || true
+          
+          # Create minimal config (port only, no version.dll dependency)
+          cat > dist-macos/config.json << 'EOF'
+          {
+            "proxy": { "host": "127.0.0.1", "port": 7890, "type": "socks5" }
+          }
+          EOF
           
           # Create ZIP
           cd dist-macos
@@ -112,6 +120,8 @@ jobs:
           cd ..
           
           echo "✅ Distribution package created"
+          echo "Contents:"
+          find dist-macos -type f | head -20
           ls -lh EasyAntigravity-macos-v2.0.1.zip
 
       - name: Upload artifact
