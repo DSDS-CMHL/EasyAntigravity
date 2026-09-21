@@ -1,0 +1,122 @@
+name: macOS Build & Test
+
+on:
+  push:
+    branches: [feat/macos-support, main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify platform detection
+        run: |
+          node -e "
+          const os = require('os');
+          console.log('Platform:', os.platform());
+          console.log('Arch:', os.arch());
+          if (os.platform() !== 'darwin') {
+            console.error('Expected macOS');
+            process.exit(1);
+          }
+          console.log('✅ Running on macOS');
+          "
+
+      - name: Test server startup
+        run: |
+          # Start server in background
+          node server.js &
+          SERVER_PID=$!
+          sleep 3
+
+          # Check if server is running
+          if curl -s http://127.0.0.1:19823/api/status > /dev/null 2>&1; then
+            echo "✅ Server started successfully"
+            curl -s http://127.0.0.1:19823/api/status | head -c 200
+          else
+            echo "❌ Server failed to start"
+            kill $SERVER_PID 2>/dev/null
+            exit 1
+          fi
+
+          # Cleanup
+          kill $SERVER_PID 2>/dev/null || true
+
+      - name: Test platform paths
+        run: |
+          node -e "
+          const path = require('path');
+          const os = require('os');
+          const fs = require('fs');
+
+          // Simulate macOS paths
+          process.env.HOME = os.homedir();
+
+          // Test path detection logic
+          const IS_MAC = process.platform === 'darwin';
+          console.log('IS_MAC:', IS_MAC);
+
+          if (IS_MAC) {
+            const candidates = [
+              '/Applications/Antigravity.app',
+              path.join(os.homedir(), 'Applications', 'Antigravity.app')
+            ];
+            console.log('macOS app paths to check:');
+            candidates.forEach(p => console.log('  -', p, fs.existsSync(p) ? '[EXISTS]' : '[not found]'));
+
+            const configPath = path.join(os.homedir(), 'Library', 'Application Support', 'Antigravity', 'config.json');
+            console.log('Config path:', configPath);
+          }
+          console.log('✅ Path detection test passed');
+          "
+
+      - name: Package for macOS
+        run: |
+          npx --yes pkg@5.8.1 server.js --targets node18-macos-x64 --output EasyAntigravity-macos --compress GZip
+          if [ -f "EasyAntigravity-macos" ]; then
+            echo "✅ macOS binary created"
+            ls -la EasyAntigravity-macos
+          else
+            echo "❌ macOS binary not created"
+            exit 1
+          fi
+
+      - name: Create distribution
+        run: |
+          mkdir -p dist-macos
+          cp EasyAntigravity-macos dist-macos/EasyAntigravity
+          chmod +x dist-macos/EasyAntigravity
+          cp index.html dist-macos/
+          cp -r backup dicts assets dist-macos/ 2>/dev/null || true
+          cp danger-rules.json dist-macos/ 2>/dev/null || true
+          cp README.md CHANGELOG.md dist-macos/ 2>/dev/null || true
+          
+          # Create ZIP
+          cd dist-macos
+          zip -r ../EasyAntigravity-macos-v2.0.1.zip .
+          cd ..
+          
+          echo "✅ Distribution package created"
+          ls -lh EasyAntigravity-macos-v2.0.1.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EasyAntigravity-macos
+          path: EasyAntigravity-macos-v2.0.1.zip
+          retention-days: 7

@@ -11,6 +11,33 @@ const CDP_PORT = 9333;
 const ROOT_DIR = process.pkg ? path.dirname(process.execPath) : __dirname;
 const LOCK_FILE = path.join(ROOT_DIR, 'easyag.lock');
 
+// ── Platform Detection ──
+const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
+
+// ── Platform-specific Antigravity paths ──
+function getAntigravityPaths() {
+  if (IS_MAC) {
+    const candidates = [
+      '/Applications/Antigravity.app',
+      '/Applications/Antigravity IDE.app',
+      path.join(process.env.HOME || '', 'Applications', 'Antigravity.app')
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        return { appDir: p, appExe: p, appName: path.basename(p, '.app') };
+      }
+    }
+    return { appDir: '/Applications/Antigravity.app', appExe: '/Applications/Antigravity.app', appName: 'Antigravity' };
+  }
+  const appDir = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'antigravity');
+  return { appDir, appExe: path.join(appDir, 'Antigravity.exe'), appName: 'Antigravity' };
+}
+
+const AG_PATHS = getAntigravityPaths();
+const APP_DIR = AG_PATHS.appDir;
+const APP_EXE = AG_PATHS.appExe;
+
 function readLockPid() {
   try {
     const s = fs.readFileSync(LOCK_FILE, 'utf-8').trim();
@@ -44,6 +71,21 @@ function alreadyRunning() {
 
 function openGuiWindow() {
   const url = `http://127.0.0.1:${GUI_PORT}/?t=${Date.now()}`;
+
+  // ── macOS: use system default browser ──
+  if (IS_MAC) {
+    try {
+      exec(`open "${url}"`);
+      logToGUI('SYSTEM', 'GUI opened via system default browser', 'tag-proxy');
+      return true;
+    } catch (e) {
+      logToGUI('SYSTEM', `Failed to open browser: ${e.message}`, 'tag-alert');
+      logToGUI('SYSTEM', `Please open manually: ${url}`, 'tag-warn');
+      return false;
+    }
+  }
+
+  // ── Windows: WebView2 -> Browser fallback ──
   const pf = process.env.PROGRAMFILES || 'C:\\Program Files';
   const pf86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
   const la = process.env.LOCALAPPDATA || '';
@@ -123,7 +165,7 @@ function focusExistingGui() {
 
 // 双击 exe 会挂控制台：windowsHide 重启自身并退出，避免黑框
 // 已有实例时不再拉起新进程
-if (process.platform === 'win32' && !process.env.EASYAG_NOCONSOLE) {
+if (IS_WIN && !process.env.EASYAG_NOCONSOLE) {
   if (alreadyRunning()) {
     focusExistingGui();
     process.exit(0);
@@ -159,14 +201,12 @@ try {
 
 const HTML_FILE = path.join(ROOT_DIR, 'index.html');
 
-const APP_DIR = path.join(process.env.LOCALAPPDATA, 'Programs', 'antigravity');
-const APP_EXE = path.join(APP_DIR, 'Antigravity.exe');
 const BACKUP_DIR = path.join(ROOT_DIR, 'backup');
 const BACKUP_DLL = path.join(BACKUP_DIR, 'version.dll');
 const BACKUP_JSON = path.join(BACKUP_DIR, 'config.json');
 const TARGET_DLL = path.join(APP_DIR, 'version.dll');
 const DISABLED_DLL = path.join(APP_DIR, 'version.dll.easyag-disabled');
-const TARGET_JSON = path.join(APP_DIR, 'config.json');
+const TARGET_JSON = IS_MAC ? path.join(process.env.HOME || '', 'Library', 'Application Support', 'Antigravity', 'config.json') : path.join(APP_DIR, 'config.json');
 
 const DICT_DIR = path.join(ROOT_DIR, 'dicts');
 const RULES_FILE = path.join(ROOT_DIR, 'danger-rules.json');
@@ -229,10 +269,12 @@ function quitApp(reason) {
   cdpSockets.clear();
   releaseLock();
   try {
-    exec('taskkill /F /FI "WINDOWTITLE eq EasyAntigravity*" /T', { windowsHide: true }, () => {});
+    if (IS_WIN) exec('taskkill /F /FI "WINDOWTITLE eq EasyAntigravity*" /T', { windowsHide: true }, () => {});
+    else if (IS_MAC) exec('pkill -f "EasyAntigravity|WebView2Host"', () => {});
   } catch (e) {}
   try {
-    exec('taskkill /F /IM Antigravity.exe /T', { windowsHide: true }, () => {});
+    if (IS_WIN) exec('taskkill /F /IM Antigravity.exe /T', { windowsHide: true }, () => {});
+    else if (IS_MAC) exec('pkill -f "Antigravity"', () => {});
   } catch (e) {}
   setTimeout(() => {
     process.exit(0);
@@ -1369,8 +1411,8 @@ const server = http.createServer((req, res) => {
     // 快速检测 AG 进程是否存活
     if (state.clientRunning) {
       try {
-        exec('tasklist /FI "IMAGENAME eq Antigravity.exe" /NH', { windowsHide: true }, (err, stdout) => {
-          if (!err && stdout && stdout.includes('Antigravity')) {
+        exec(IS_WIN ? 'tasklist /FI "IMAGENAME eq Antigravity.exe" /NH' : 'pgrep -f Antigravity', { windowsHide: true }, (err, stdout) => {
+          if (!err && stdout && (stdout.includes('Antigravity') || /\d+/.test(stdout))) {
             // 进程还在
           } else {
             state.clientRunning = false;
@@ -1461,7 +1503,9 @@ const server = http.createServer((req, res) => {
     const launch = nativeProxyMode
       ? buildNativeProxyLaunch()
       : { args: [`--remote-debugging-port=${CDP_PORT}`], env: process.env };
-    const child = spawn(APP_EXE, launch.args, {
+    const launchCmd = IS_MAC ? 'open' : APP_EXE;
+    const launchArgs = IS_MAC ? ['-a', AG_PATHS.appDir, '--args', ...launch.args] : launch.args;
+    const child = spawn(launchCmd, launchArgs, {
       detached: true,
       stdio: 'ignore',
       env: launch.env

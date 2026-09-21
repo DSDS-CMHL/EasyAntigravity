@@ -1,4 +1,4 @@
-﻿{
+{
     "name":  "easyantigravity",
     "version":  "2.0.1",
     "description":  "Antigravity launcher: native no-TUN proxy, I18N, auto-accept",
@@ -8,7 +8,9 @@
                     "start":  "node server.js",
                     "test:danger-rules":  "node test/danger-rules.test.js",
                     "test:approval-lifecycle":  "node test/approval-lifecycle.test.js",
-                    "build":  "npx --yes pkg@5.8.1 server.js --targets node18-win-x64 --output EasyAntigravity.exe --compress GZip"
+                    "build":  "npx --yes pkg@5.8.1 server.js --targets node18-win-x64 --output EasyAntigravity.exe --compress GZip",
+                    "build:mac":  "npx --yes pkg@5.8.1 server.js --targets node18-macos-x64 --output EasyAntigravity-macos --compress GZip",
+                    "build:win":  "npx --yes pkg@5.8.1 server.js --targets node18-win-x64 --output EasyAntigravity.exe --compress GZip"
                 },
     "pkg":  {
                 "options":  [
