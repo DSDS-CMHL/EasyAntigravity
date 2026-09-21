@@ -1,0 +1,53 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "productName": "EasyAntigravity",
+  "version": "2.0.1",
+  "identifier": "com.easyag.launcher",
+  "build": {
+    "frontendDist": "../src",
+    "devUrl": "http://127.0.0.1:19823",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "EasyAntigravity",
+        "width": 490,
+        "height": 740,
+        "minWidth": 400,
+        "minHeight": 560,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "icon": "icons/icon.ico"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "resources": [
+      "../server.js",
+      "../index.html",
+      "../dicts/*",
+      "../assets/*",
+      "../backup/*",
+      "../danger-rules.json"
+    ],
+    "shortDescription": "Antigravity Launcher",
+    "longDescription": "EasyAntigravity - Antigravity Launcher with native proxy, i18n, auto-accept"
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
+  }
+}
