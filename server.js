@@ -35,15 +35,29 @@ function getAntigravityPaths() {
     const candidates = [
       '/Applications/Antigravity.app',
       '/Applications/Antigravity IDE.app',
-      path.join(process.env.HOME || '', 'Applications', 'Antigravity.app')
+      path.join(process.env.HOME || '', 'Applications', 'Antigravity.app'),
+      path.join(process.env.HOME || '', 'Applications', 'Antigravity IDE.app')
     ];
     for (const p of candidates) {
       if (fs.existsSync(p)) {
-        const executable = require('child_process').execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleExecutable', path.join(p, 'Contents', 'Info.plist')], { encoding: 'utf8' }).trim();
-        return { appDir: p, appExe: path.join(p, 'Contents', 'MacOS', executable), appName: path.basename(p, '.app') };
+        let executable = 'Antigravity';
+        try {
+          executable = require('child_process').execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleExecutable', path.join(p, 'Contents', 'Info.plist')], { encoding: 'utf8' }).trim();
+        } catch (_) {}
+        const appExe = path.join(p, 'Contents', 'MacOS', executable);
+        return {
+          appDir: p,
+          appExe: fs.existsSync(appExe) ? appExe : path.join(p, 'Contents', 'MacOS', 'Antigravity'),
+          appName: path.basename(p, '.app')
+        };
       }
     }
-    return { appDir: '/Applications/Antigravity.app', appExe: '/Applications/Antigravity.app', appName: 'Antigravity' };
+    const defaultApp = '/Applications/Antigravity.app';
+    return {
+      appDir: defaultApp,
+      appExe: path.join(defaultApp, 'Contents', 'MacOS', 'Antigravity'),
+      appName: 'Antigravity'
+    };
   }
   const appDir = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'antigravity');
   return { appDir, appExe: path.join(appDir, 'Antigravity.exe'), appName: 'Antigravity' };
@@ -1431,18 +1445,30 @@ const server = http.createServer((req, res) => {
     ensureProxyWatchdog();
     // 快速检测 AG 进程是否存活
     if (state.clientRunning) {
-      try {
-        exec(IS_WIN ? 'tasklist /FI "IMAGENAME eq Antigravity.exe" /NH' : 'pgrep -f Antigravity', { windowsHide: true }, (err, stdout) => {
-          if (!err && stdout && (stdout.includes('Antigravity') || /\d+/.test(stdout))) {
-            // 进程还在
-          } else {
-            state.clientRunning = false;
-            state.cdpSockets = 0;
-            logToGUI('SYSTEM', '检测到 Antigravity 进程已退出', 'tag-warn');
-            pushClientStatus();
-          }
-        });
-      } catch (e) {}
+      if (launchedClient && launchedClient.pid) {
+        if (!isPidAlive(launchedClient.pid)) {
+          state.clientRunning = false;
+          state.cdpSockets = 0;
+          logToGUI('SYSTEM', '检测到 Antigravity 进程已退出', 'tag-warn');
+          pushClientStatus();
+        }
+      } else {
+        try {
+          const checkCmd = IS_WIN
+            ? 'tasklist /FI "IMAGENAME eq Antigravity.exe" /NH'
+            : 'pgrep -x Antigravity || pgrep -f "Antigravity.app/Contents/MacOS"';
+          exec(checkCmd, { windowsHide: true }, (err, stdout) => {
+            if (!err && stdout && (stdout.includes('Antigravity') || /\d+/.test(stdout))) {
+              // 进程还在
+            } else {
+              state.clientRunning = false;
+              state.cdpSockets = 0;
+              logToGUI('SYSTEM', '检测到 Antigravity 进程已退出', 'tag-warn');
+              pushClientStatus();
+            }
+          });
+        } catch (e) {}
+      }
     }
     return res.end(JSON.stringify(state));
   }
@@ -1522,11 +1548,12 @@ const server = http.createServer((req, res) => {
     const launch = nativeProxyMode
       ? buildNativeProxyLaunch()
       : { args: [`--remote-debugging-port=${CDP_PORT}`], env: process.env };
-    if (!fs.existsSync(APP_EXE)) {
+    const currentPaths = getAntigravityPaths();
+    const launchCmd = currentPaths.appExe;
+    if (!fs.existsSync(launchCmd)) {
       res.writeHead(404);
-      return res.end('未找到 Antigravity: ' + APP_EXE);
+      return res.end('未找到 Antigravity: ' + launchCmd);
     }
-    const launchCmd = APP_EXE;
     const launchArgs = launch.args;
     const child = spawn(launchCmd, launchArgs, {
       detached: true,
