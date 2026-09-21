@@ -18,6 +18,14 @@ ag_*.log
 easyag-error.log
 easyag.lock
 debug.flag
+test-backups/
+safety-e2e-followup.txt
+
+# Local dependencies, research copies and release staging
+node_modules/
+upstream-antigravity-proxy/
+EasyAntigravity-dist/
+EasyAntigravity-v*-win-x64/
 
 # OS files
 Thumbs.db

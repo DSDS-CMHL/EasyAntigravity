@@ -165,6 +165,7 @@ const BACKUP_DIR = path.join(ROOT_DIR, 'backup');
 const BACKUP_DLL = path.join(BACKUP_DIR, 'version.dll');
 const BACKUP_JSON = path.join(BACKUP_DIR, 'config.json');
 const TARGET_DLL = path.join(APP_DIR, 'version.dll');
+const DISABLED_DLL = path.join(APP_DIR, 'version.dll.easyag-disabled');
 const TARGET_JSON = path.join(APP_DIR, 'config.json');
 
 const DICT_DIR = path.join(ROOT_DIR, 'dicts');
@@ -173,12 +174,17 @@ const BACKUP_RULES = path.join(BACKUP_DIR, 'danger-rules.json');
 
 // 调试模式：--debug 参数 或 debug.flag 文件 存在时开启
 const debugMode = process.argv.includes('--debug') || fs.existsSync(path.join(__dirname, 'debug.flag'));
+// 默认使用 Chromium 启动参数与子进程代理环境变量，不加载网络 Hook。
+// 旧版 DLL 劫持仅保留为显式兼容选项：--dll-proxy 或 EASYAG_PROXY_MODE=dll。
+const legacyDllMode = process.argv.includes('--dll-proxy') || process.env.EASYAG_PROXY_MODE === 'dll';
+const nativeProxyMode = !legacyDllMode;
 
 let state = {
   port: 7890,
-  autoAccept: false,
+  proxyMode: nativeProxyMode ? 'native' : 'dll',
+  autoAccept: true,
   blockDangerous: true,
-  preferOption: 4,
+  preferOption: 1,
   enableI18n: true,
   dictEntries: 0,
   patchOk: false,
@@ -225,13 +231,16 @@ function quitApp(reason) {
   try {
     exec('taskkill /F /FI "WINDOWTITLE eq EasyAntigravity*" /T', { windowsHide: true }, () => {});
   } catch (e) {}
+  try {
+    exec('taskkill /F /IM Antigravity.exe /T', { windowsHide: true }, () => {});
+  } catch (e) {}
   setTimeout(() => {
     process.exit(0);
   }, 100);
 }
 
 const DEFAULT_DANGER_RULES = [
-  { id: 'rm-rf', name: '递归强制删除', pattern: '\\brm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|--force)', flags: 'i', enabled: true },
+  { id: 'rm-rf', name: '递归强制删除', pattern: '\\brm(?:\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)){1,4}(?=\\s|$)', flags: 'i', enabled: true },
   { id: 'windows-del', name: 'Windows 强制删除', pattern: '\\b(del|rd|rmdir)\\s+.*\\/[sqf]', flags: 'i', enabled: true },
   { id: 'disk-wipe', name: '磁盘破坏', pattern: '\\b(format|diskpart|mkfs|wipefs|shred)\\b', flags: 'i', enabled: true },
   { id: 'sql-drop', name: '数据库删除', pattern: '\\bdrop\\s+(database|table)\\b', flags: 'i', enabled: true },
@@ -295,8 +304,12 @@ function loadDictionaries() {
 
 let sseClients = [];
 let logBuffer = [];
+let logHistory = [];
 
 function logToGUI(category, message, cls = '') {
+  const item = { at: new Date().toISOString(), category, message, cls };
+  logHistory.push(item);
+  if (logHistory.length > 300) logHistory.shift();
   const payload = JSON.stringify({ category, message, cls });
   if (sseClients.length === 0) {
     logBuffer.push({ category, message, cls });
@@ -336,6 +349,21 @@ function pushCounters() {
 
 function ensureProxyWatchdog() {
   if (!fs.existsSync(APP_DIR)) return false;
+
+  // 原生模式隔离旧版 DLL 兼容组件，避免遗留 Hook 参与新模式网络链路。
+  if (nativeProxyMode) {
+    if (fs.existsSync(TARGET_DLL)) {
+      // 更新可能重新写入旧版兼容组件；已有暂存副本时保留二者，仍确保活动路径为空。
+      const disabledPath = fs.existsSync(DISABLED_DLL)
+        ? `${DISABLED_DLL}.${Date.now()}`
+        : DISABLED_DLL;
+      fs.renameSync(TARGET_DLL, disabledPath);
+      logToGUI('PROXY', '原生代理模式：已暂存旧版 version.dll 兼容组件', 'tag-proxy');
+    }
+    state.patchOk = true;
+    return false;
+  }
+
   let restored = false;
   if (!fs.existsSync(TARGET_DLL) && fs.existsSync(BACKUP_DLL)) {
     fs.copyFileSync(BACKUP_DLL, TARGET_DLL);
@@ -355,6 +383,28 @@ function ensureProxyWatchdog() {
   return restored;
 }
 
+function buildNativeProxyLaunch() {
+  // Go 的标准 HTTP 客户端读取 HTTP(S)_PROXY；因此此实验模式要求端口提供 HTTP
+  // 或 Mixed 服务。SOCKS-only 端口不适合作为这里的环境变量值。
+  const proxyUrl = `http://127.0.0.1:${state.port}`;
+  const noProxy = 'localhost,127.0.0.1,::1,[::1]';
+  return {
+    args: [
+      `--remote-debugging-port=${CDP_PORT}`,
+      `--proxy-server=${proxyUrl}`,
+      '--proxy-bypass-list=localhost;127.0.0.1;[::1]'
+    ],
+    env: Object.assign({}, process.env, {
+      HTTP_PROXY: proxyUrl,
+      HTTPS_PROXY: proxyUrl,
+      http_proxy: proxyUrl,
+      https_proxy: proxyUrl,
+      NO_PROXY: noProxy,
+      no_proxy: noProxy
+    })
+  };
+}
+
 function syncProxyPort(newPort) {
   state.port = newPort;
   [BACKUP_JSON, TARGET_JSON].forEach(file => {
@@ -367,7 +417,7 @@ function syncProxyPort(newPort) {
       } catch (e) {}
     }
   });
-  logToGUI('PROXY', `SOCKS5 端口已同步更新为: ${newPort}`, 'tag-proxy');
+  logToGUI('PROXY', `本地代理端口已更新为: ${newPort}`, 'tag-proxy');
 }
 
 function generateMasterInjectScript() {
@@ -558,6 +608,152 @@ function generateMasterInjectScript() {
       return null;
     }
 
+    // 命中高危审批后，仅熔断这张命令卡。React 可能在标记按钮后重绘 DOM，
+    // 只给旧按钮加 data 属性不足以阻止下一轮扫描误点新按钮，因此命令指纹须持久化到 window。
+    // 不使用页面级总锁：用户手动确认该高危卡后，后续正常审批应继续自动处理。
+    function dangerKey(hit, cmd) {
+      return String(hit.id || 'rule') + ':' + String(cmd || '').replace(/\s+/g, ' ').trim().slice(0, 800);
+    }
+
+    function commandApprovalKey(card) {
+      const cmd = extractCommandText(card);
+      return cmd ? 'cmd:' + String(cmd).replace(/\s+/g, ' ').trim().slice(0, 800) : '';
+    }
+
+    function approvalKey(card, kind) {
+      const commandKey = commandApprovalKey(card);
+      if (commandKey) return commandKey;
+      // 无命令正文的通用确认卡也可去重，防止 React 在点击后的短暂重绘造成重复日志。
+      const text = card ? (card.innerText || card.textContent || '') : '';
+      return 'ui:' + oneLine(text || kind || '', 300);
+    }
+
+    // 命令审批状态机：按“卡片可见生命周期”而非时间窗口去重。
+    // 同一命令卡 React 重绘时保留状态；卡真正消失后才释放，下一张同命令卡才是新请求。
+    function approvalTracker() {
+      return window.__ea_approval_tracker || (window.__ea_approval_tracker = { nextId: 1, entries: new Map() });
+    }
+
+    function refreshVisibleCommandApprovals(doc) {
+      if (!doc || !doc.querySelectorAll) return;
+      const visible = new Set();
+      const cards = doc.querySelectorAll(
+        '[data-testid="run-command-step"], [role="dialog"], [role="alertdialog"],' +
+        'div[data-testid*="interaction"], div[data-testid*="approval"],' +
+        'div[data-testid*="permission"], div[data-testid*="command"]'
+      );
+      for (const card of cards) {
+        const key = commandApprovalKey(card);
+        if (key) visible.add(key);
+      }
+      const tracker = approvalTracker();
+      for (const key of visible) {
+        if (!tracker.entries.has(key)) {
+          tracker.entries.set(key, {
+            id: tracker.nextId++,
+            clicked: false,
+            dangerReported: false,
+            requestReported: false
+          });
+        }
+      }
+      for (const key of tracker.entries.keys()) {
+        if (!visible.has(key)) tracker.entries.delete(key);
+      }
+    }
+
+    function approvalEntry(card) {
+      const key = commandApprovalKey(card);
+      return key ? approvalTracker().entries.get(key) : null;
+    }
+
+    // 审批卡出现只代表权限请求，不是授权动作，不能写入批准计数。
+    function reportApprovalRequest(card) {
+      const entry = approvalEntry(card);
+      if (!entry || entry.requestReported) return;
+      entry.requestReported = true;
+      console.log('[EA_REQUEST] 权限请求 · ' + extractLogSummary(card, '审批请求'));
+    }
+
+    function reportVisibleApprovalRequests(doc) {
+      if (!doc || !doc.querySelectorAll) return;
+      const cards = doc.querySelectorAll(
+        '[data-testid="run-command-step"], [role="dialog"], [role="alertdialog"],' +
+        'div[data-testid*="interaction"], div[data-testid*="approval"],' +
+        'div[data-testid*="permission"], div[data-testid*="command"]'
+      );
+      for (const card of cards) {
+        if (commandApprovalKey(card)) reportApprovalRequest(card);
+      }
+    }
+
+    function recentlyAutoApproved(card, kind) {
+      const key = approvalKey(card, kind);
+      if (!key || key === 'ui:') return false;
+      if (key.startsWith('cmd:')) {
+        const entry = approvalEntry(card);
+        return !!(entry && entry.clicked);
+      }
+      const seen = window.__ea_recent_auto_approvals || (window.__ea_recent_auto_approvals = new Map());
+      const now = Date.now();
+      const last = seen.get(key) || 0;
+      // 无命令正文的 Continue 等控件没有稳定卡片键，只做短时降噪。
+      return now - last < 15000;
+    }
+
+    function markAutoApproved(card, kind) {
+      const key = approvalKey(card, kind);
+      if (!key || key === 'ui:') return;
+      if (key.startsWith('cmd:')) {
+        const entry = approvalEntry(card);
+        if (entry) entry.clicked = true;
+        return;
+      }
+      const seen = window.__ea_recent_auto_approvals || (window.__ea_recent_auto_approvals = new Map());
+      const now = Date.now();
+      seen.set(key, now);
+      if (seen.size > 100) {
+        for (const [oldKey, at] of seen) {
+          if (now - at > 30000) seen.delete(oldKey);
+        }
+      }
+    }
+
+    function latchDangerousApproval(card, hit, cmd) {
+      const key = dangerKey(hit, cmd);
+      const entry = approvalEntry(card);
+      // 同一命令卡重绘时 entry 仍存在；真实卡消失后 entry 已释放，下一次会重新上报。
+      const firstHit = !entry || !entry.dangerReported;
+      if (entry) entry.dangerReported = true;
+      if (card && card.querySelectorAll) {
+        card.setAttribute('data-ea-danger-key', key);
+        card.querySelectorAll('button, [role="button"], input[type="submit"]').forEach(el => {
+          el.setAttribute('data-ea-ok', 'blocked');
+        });
+      }
+      if (firstHit) {
+        console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + cmd.slice(0, 80));
+      }
+      return true;
+    }
+
+    // 按审批卡预扫描而不是仅检查候选按钮；一张危险卡存在时，本轮绝不进入任何点击分支。
+    function hasDangerousApproval(doc) {
+      if (!window.__ea_config.blockDangerous || !doc || !doc.querySelectorAll) return false;
+      const cards = doc.querySelectorAll(
+        '[data-testid="run-command-step"], [role="dialog"], [role="alertdialog"],' +
+        'div[data-testid*="interaction"], div[data-testid*="approval"],' +
+        'div[data-testid*="permission"], div[data-testid*="command"]'
+      );
+      for (const card of cards) {
+        const cmd = extractCommandText(card);
+        if (!cmd) continue;
+        const hit = DANGEROUS_PATTERNS.find(r => r.re.test(cmd));
+        if (hit) return latchDangerousApproval(card, hit, cmd);
+      }
+      return false;
+    }
+
     function tryApprove(btn, kind) {
       if (!btn || btn.disabled || btn.hasAttribute('data-ea-ok')) return false;
       const card = cardForSubmit(btn);
@@ -566,13 +762,20 @@ function generateMasterInjectScript() {
         if (cmd) {
           const hit = DANGEROUS_PATTERNS.find(r => r.re.test(cmd));
           if (hit) {
-            btn.setAttribute('data-ea-ok', 'blocked');
-            console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']: ' + cmd.slice(0, 80));
-            return true;
+            return latchDangerousApproval(card, hit, cmd);
           }
         }
+        // 同一张卡重绘时优先保留阻断标记；正常的新卡不会携带此属性。
+        if (card && card.getAttribute && card.getAttribute('data-ea-danger-key')) return true;
       }
-      const optIdx = (window.__ea_config && window.__ea_config.preferOption) || 4;
+      if (recentlyAutoApproved(card, kind)) {
+        if (window.__ea_config.debugApproval) {
+          const entry = approvalEntry(card);
+          console.log('[EA_TRACE] skip=already-clicked request=' + (entry ? entry.id : 'ui') + ' source=' + kind + ' key=' + approvalKey(card, kind).slice(0, 120));
+        }
+        return true;
+      }
+      const optIdx = (window.__ea_config && window.__ea_config.preferOption) || 1;
       let optText = '';
       let picked = null;
       if (card) {
@@ -598,12 +801,19 @@ function generateMasterInjectScript() {
         }
       }
       btn.setAttribute('data-ea-ok', 'true');
+      markAutoApproved(card, kind);
+      if (window.__ea_config.debugApproval) {
+        const entry = approvalEntry(card);
+        console.log('[EA_TRACE] click request=' + (entry ? entry.id : 'ui') + ' source=' + kind + ' option=' + (picked ? picked.cls : 'none') + ' key=' + approvalKey(card, kind).slice(0, 120));
+      }
       realClick(btn);
       const cmd = extractLogSummary(card, kind || (btn.innerText || ''));
       const optLabel = picked
         ? '选项[' + picked.cls + '] ' + optText
         : '无选项组';
-      console.log('[EA_AA] 放行 · ' + optLabel + ' · ' + cmd);
+      // 有选项组 = 确认放行；无选项组 = 权限请求（避免双次「放行」误报）
+      const action = picked ? '放行' : '权限请求';
+      console.log('[EA_AA] ' + action + ' · ' + optLabel + ' · ' + cmd);
       return true;
     }
 
@@ -823,13 +1033,16 @@ function generateMasterInjectScript() {
         }
 
         if (!window.__ea_config.autoAccept) return;
+        refreshVisibleCommandApprovals(doc);
+        // fail closed：本轮发现高危审批卡时不进入任何点击分支；高危卡被用户手动处理后自然恢复。
+        if (hasDangerousApproval(doc)) return;
+        reportVisibleApprovalRequests(doc);
 
         // ── 策略1: data-testid 精确匹配（最稳定，语言无关） ──
         const testidBtns = doc.querySelectorAll(
           'button[data-testid="interaction-continue-button"],' +
           'button[data-testid="approval-submit"],' +
-          'button[data-testid="permission-allow"],' +
-          '[data-testid="run-command-step"] button'
+          'button[data-testid="permission-allow"]'
         );
         for (const btn of testidBtns) {
           if (tryApprove(btn, 'testid:' + (btn.getAttribute('data-testid') || ''))) return;
@@ -845,23 +1058,18 @@ function generateMasterInjectScript() {
           const codeEl = card.querySelector('pre, code, [data-testid*="command"], [class*="code"]');
           const btns = Array.from(card.querySelectorAll('button, [role="button"]'));
           if (!codeEl || !btns.length) continue;
-          // 提交按钮定位：data-testid > 底部区域 > 唯一按钮
+          // 只接受明确的最终确认按钮，不能把“运行”这类发起请求按钮当成授权。
           const submitBtn =
-            btns.find(b => (b.getAttribute('data-testid') || '').includes('continue')) ||
+            btns.find(b => /(?:continue|submit|allow)/i.test(b.getAttribute('data-testid') || '')) ||
             btns.find(b => {
-              try {
-                const r = b.getBoundingClientRect();
-                const cr = card.getBoundingClientRect();
-                return r.bottom > cr.bottom - 80 && r.bottom <= cr.bottom + 10;
-              } catch (e) { return false; }
-            }) ||
-            (btns.length === 1 ? btns[0] : null);
+              return isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label'));
+            });
           if (submitBtn && tryApprove(submitBtn, '结构指纹审批卡')) return;
         }
 
         // ── 策略3: 关键字兜底（中英双写，兼容汉化后） ──
-        const kws = ['run', 'accept', 'continue', 'always allow', 'allow', 'submit',
-                     '运行', '接受', '继续', '始终允许', '允许', '确认', '提交'];
+        const kws = ['accept', 'continue', 'always allow', 'allow', 'submit',
+                     '接受', '继续', '始终允许', '允许', '确认', '提交'];
         for (const btn of Array.from(doc.querySelectorAll('button, [role="button"]'))) {
           const txt = norm(btn.innerText || btn.getAttribute('aria-label'));
           if (!txt || txt.length > 24) continue;
@@ -930,7 +1138,7 @@ function pushClientStatus() {
   const status = !state.clientRunning
     ? '客户端未运行'
     : alive
-      ? `运行中 · 引擎注入 ${state.cdpSockets}`
+      ? `运行中 · 界面自动化已接管 ${state.cdpSockets}`
       : '运行中 · 等待 CDP';
   const payload = {
     status,
@@ -990,7 +1198,7 @@ async function startCDPLoop() {
             cdpSend(ws, 'Runtime.enable');
             cdpSend(ws, 'Page.enable');
             injectInto(ws, 'open');
-            logToGUI('CDP', `已连接目标并注入: ${String(entry.title || entry.url).slice(0, 60)}`, 'tag-i18n');
+            logToGUI('CDP', `已连接界面自动化目标: ${String(entry.title || entry.url).slice(0, 60)}`, 'tag-i18n');
             pushClientStatus();
           });
 
@@ -1011,6 +1219,9 @@ async function startCDPLoop() {
                   state.approveCount += 1;
                   logToGUI('AUTO-ACCEPT', text.replace('[EA_AA]', '').trim(), 'tag-aa');
                   pushCounters();
+                } else if (text.includes('[EA_REQUEST]')) {
+                  // 仅表示审批卡出现；尚未点击最终确认按钮，因此不增加批准数。
+                  logToGUI('PERMISSION REQUEST', text.replace('[EA_REQUEST]', '').trim(), 'tag-warn');
                 } else if (text.includes('[EA_ALERT]')) {
                   state.blockCount += 1;
                   logToGUI('SECURITY ALERT', text.replace('[EA_ALERT]', '').trim(), 'tag-alert');
@@ -1019,6 +1230,8 @@ async function startCDPLoop() {
                   logToGUI('DOM-CAPTURE', text.replace('[EA_DOM]', '').trim(), 'tag-i18n');
                 } else if (text.includes('[EA_HTML]')) {
                   logToGUI('DOM-HTML', text.replace('[EA_HTML]', '').trim(), 'tag-i18n');
+                } else if (text.includes('[EA_TRACE]') && state.debugApproval) {
+                  logToGUI('APPROVAL TRACE', text.replace('[EA_TRACE]', '').trim(), 'tag-warn');
                 }
               }
             } catch (e) {}
@@ -1039,7 +1252,7 @@ async function startCDPLoop() {
         } else {
           const entry = cdpSockets.get(key);
           if (entry.ws.readyState === WebSocket.OPEN) {
-            // 周期重注入：刷新配置；若页面被 Reload 清掉引擎则重新拉起
+            // 周期刷新界面自动化配置；若页面被 Reload 清掉引擎则重新挂载
             injectInto(entry.ws, 'tick');
           } else {
             try { entry.ws.close(); } catch (e) {}
@@ -1170,6 +1383,13 @@ const server = http.createServer((req, res) => {
     }
     return res.end(JSON.stringify(state));
   }
+  if (req.url && req.url.startsWith('/api/logs') && req.method === 'GET') {
+    const params = new URL(req.url, `http://127.0.0.1:${GUI_PORT}`).searchParams;
+    const requested = Number.parseInt(params.get('limit') || '100', 10);
+    const limit = Math.min(Math.max(Number.isFinite(requested) ? requested : 100, 1), 300);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify(logHistory.slice(-limit)));
+  }
   if (req.url === '/api/quit' && req.method === 'POST') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ ok: true }));
@@ -1207,6 +1427,7 @@ const server = http.createServer((req, res) => {
         if (typeof data.autoAccept === 'boolean') state.autoAccept = data.autoAccept;
         if (typeof data.blockDangerous === 'boolean') state.blockDangerous = data.blockDangerous;
         if (typeof data.enableI18n === 'boolean') state.enableI18n = data.enableI18n;
+        if (typeof data.debugApproval === 'boolean') state.debugApproval = data.debugApproval;
         if (data.preferOption) state.preferOption = data.preferOption;
 
         res.end('ok');
@@ -1219,24 +1440,42 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/api/launch' && req.method === 'POST') {
     const restored = ensureProxyWatchdog();
-    if (restored) logToGUI('PROXY', '检测到客户端更新抹除补丁，已自动从备份恢复！', 'tag-warn');
-    else logToGUI('PROXY', '免 TUN 补丁校验通过', 'tag-proxy');
+    if (nativeProxyMode) {
+      logToGUI('PROXY', `原生代理模式：Chromium + language_server 使用 HTTP 代理 127.0.0.1:${state.port}，本地回环直连`, 'tag-proxy');
+    } else if (restored) {
+      logToGUI('PROXY', '检测到客户端更新抹除补丁，已自动从备份恢复！', 'tag-warn');
+    } else {
+      logToGUI('PROXY', 'DLL 兼容模式校验通过', 'tag-proxy');
+    }
 
     if (state.enableI18n) logToGUI('I18N', `已装载汉化引擎 (${state.dictEntries} 条词条)`, 'tag-i18n');
 
     // 若已在跑，只提示刷新，不重复 spawn
     if (state.clientRunning) {
-      logToGUI('SYSTEM', '客户端已在运行，CDP 注入通道保持重试', 'tag-warn');
+      logToGUI('SYSTEM', '客户端已在运行，CDP 界面接管通道保持重试', 'tag-warn');
       pushClientStatus();
       res.end('ok');
       return;
     }
 
-    const child = spawn(APP_EXE, [`--remote-debugging-port=${CDP_PORT}`], { detached: true, stdio: 'ignore' });
+    const launch = nativeProxyMode
+      ? buildNativeProxyLaunch()
+      : { args: [`--remote-debugging-port=${CDP_PORT}`], env: process.env };
+    const child = spawn(APP_EXE, launch.args, {
+      detached: true,
+      stdio: 'ignore',
+      env: launch.env
+    });
     state.clientRunning = true;
     state.cdpError = '';
     state.cdpFailStreak = 0;
-    logToGUI('SYSTEM', '✓ Antigravity 已启动，代理注入与 CDP 接管就绪', 'tag-proxy');
+    logToGUI(
+      'SYSTEM',
+      nativeProxyMode
+        ? '✓ Antigravity 已以原生代理模式启动，CDP 接管就绪'
+        : '✓ Antigravity 已以 DLL 兼容模式启动，CDP 接管就绪',
+      'tag-proxy'
+    );
     pushClientStatus();
 
     startCDPLoop();
@@ -1267,7 +1506,7 @@ async function tryAttachExistingClient() {
     const targets = await httpGetJson(`http://127.0.0.1:${CDP_PORT}/json/list`);
     if (!Array.isArray(targets) || !targets.length) return false;
     state.clientRunning = true;
-    logToGUI('SYSTEM', '检测到 Antigravity 已在运行，自动接管 CDP 注入', 'tag-proxy');
+    logToGUI('SYSTEM', '检测到 Antigravity 已在运行，自动接管其界面', 'tag-proxy');
     startCDPLoop();
     return true;
   } catch (e) {
@@ -1296,13 +1535,13 @@ process.on('uncaughtException', (err) => {
 
 process.on('exit', releaseLock);
 
-// GUI 关窗检测：心跳超时 → 退出（放宽条件，避免误杀）
+// GUI 关窗检测：心跳超时即退出后台，避免遗留端口、锁文件或 CDP 接管进程。
 setInterval(() => {
   if (quitting || !guiSeen) return;
   const now = Date.now();
-  // 心跳超时 30 秒（前端每 3 秒轮询，连续 10 次无响应才退出）
+  // 心跳超时 30 秒（前端每 3 秒轮询，连续 10 次无响应才退出）。
   if (lastGuiAt && (now - lastGuiAt >= 30000)) {
-    console.log('[EXIT] GUI 心跳超时 30s，最后活动: ' + new Date(lastGuiAt).toLocaleTimeString());
+    logToGUI('SYSTEM', 'GUI 心跳超时，正在退出后台', 'tag-warn');
     quitApp('GUI 心跳超时');
   }
 }, 3000);

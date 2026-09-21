@@ -16,16 +16,16 @@
 
 **EasyAntigravity（EasyAG）** 是 Windows 上面向 Google Antigravity 的本地控制台，把常用增强收进一个小面板：
 
-- **免 TUN 代理**：自动部署 `version.dll` 补丁，进程走本地 SOCKS5；客户端更新抹掉补丁后会自动从备份恢复
+- **原生免 TUN 代理**：启动时为 Chromium 设置本地 HTTP 代理，并将代理环境变量传给语言服务；不改系统代理、不启用 TUN、不加载网络 Hook
 - **界面汉化**：通过 CDP 注入词典，实时翻译界面文案
-- **自动审批**：识别权限卡片并按策略一键放行，日志里会带上请求内容摘要
+- **自动审批**：先记录权限请求；仅在实际点击最终确认按钮后才记录放行与批准计数
 - **高危拦截**：放行前按 `danger-rules.json` 规则扫描危险命令并熔断
 
 ---
 
 ## 开箱即用
 
-1. 打开 [Releases](../../releases)，下载最新的 **`EasyAntigravity-v*-win-x64.zip`**
+1. 打开 [Releases](../../releases)，下载最新的 **`EasyAntigravity-v2.0.1-win-x64-slim.zip`**
 2. 解压到任意目录（建议路径不要过深、避免中文权限问题目录）
 3. **双击 `EasyAntigravity.exe`**
 4. 确认面板里的 SOCKS5 端口与本机代理一致（默认 `7890`）
@@ -37,7 +37,7 @@
 
 ## 高危规则
 
-规则文件为 exe 同目录下的 `danger-rules.json`（首次启动会从 `backup/` 生成）。
+规则文件为 exe 同目录下的 `danger-rules.json`。
 
 面板「自动化审批与高危风控」中：
 
@@ -55,7 +55,9 @@
 | 1 | 仅允许本次 |
 | 2 | 对话中始终允许 |
 | 3 | 项目中始终允许 |
-| 4 | 全局始终允许（默认） |
+| 4 | 全局始终允许 |
+
+默认使用选项 1（仅允许本次），避免将授权扩大为长期或全局规则。
 
 支持中英文按钮文案，汉化开启时同样可用。
 
@@ -69,6 +71,12 @@ cd EasyAntigravity
 npm install
 npm start
 ```
+
+### 免 TUN 实现
+
+默认采用原生代理模式：EasyAG 启动 Antigravity 时传入 Chromium 的 `--proxy-server=http://127.0.0.1:<端口>`，同时将 `HTTP_PROXY`、`HTTPS_PROXY` 传给语言服务，并让本地回环地址直连。该方案不改系统代理、不需要 TUN，也不依赖 DLL 注入。
+
+旧版 DLL 兼容模式可显式使用 `node server.js --dll-proxy`，但已弃用；该模式依赖 `version.dll`，与 AG 2.15.0 冲突。需要旧版兼容时请使用历史 release，新版请使用默认原生代理模式。
 
 打包：
 
@@ -84,7 +92,7 @@ npx pkg@5.8.1 . --targets node18-win-x64 --output EasyAntigravity.exe --compress
 | 来源 | 说明 |
 |------|------|
 | [nicktan @ linux.do](https://linux.do/t/topic/2896116) | 界面汉化词典主要来源 |
-| [antigravity-2.0-no-tun-login-proxy](https://github.com/2531565073zzc-ux/antigravity-2.0-no-tun-login-proxy) | 免 TUN方案 |
+| ~~[antigravity-2.0-no-tun-login-proxy](https://github.com/2531565073zzc-ux/antigravity-2.0-no-tun-login-proxy)~~ | 已弃用：其 `version.dll` 注入方案与 AG 2.15.0 冲突；新版改用 Chromium 启动参数与语言服务代理环境变量实现免 TUN。 |
 | [AntiGravity-AutoAccept](https://github.com/yazanbaker94/AntiGravity-AutoAccept) | 自动审批交互思想参考 |
 
 
