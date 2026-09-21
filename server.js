@@ -1535,16 +1535,8 @@ process.on('uncaughtException', (err) => {
 
 process.on('exit', releaseLock);
 
-// GUI 关窗检测：心跳超时即退出后台，避免遗留端口、锁文件或 CDP 接管进程。
-setInterval(() => {
-  if (quitting || !guiSeen) return;
-  const now = Date.now();
-  // 心跳超时 30 秒（前端每 3 秒轮询，连续 10 次无响应才退出）。
-  if (lastGuiAt && (now - lastGuiAt >= 30000)) {
-    logToGUI('SYSTEM', 'GUI 心跳超时，正在退出后台', 'tag-warn');
-    quitApp('GUI 心跳超时');
-  }
-}, 3000);
+// 原生 GUI 通过 FormClosing -> /api/quit 显式退出。
+// 后台页面轮询可能被节流，不能根据心跳超时终止 EasyAG 与 AG。
 
 server.listen(GUI_PORT, '127.0.0.1', () => {
   try { fs.writeFileSync(LOCK_FILE, String(process.pid), 'utf-8'); } catch (e) {}
