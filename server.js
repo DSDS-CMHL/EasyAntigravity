@@ -9,9 +9,18 @@ const TEST_MODE = process.env.EASYAG_TEST_MODE === '1';
 const GUI_PORT = TAURI_MODE ? 0 : 19823;
 const CDP_PORT = 9333;
 
+function normalizePath(p) {
+  if (!p) return p;
+  if (process.platform === 'win32') {
+    if (p.startsWith('\\\\?\\UNC\\')) return '\\\\' + p.slice(8);
+    if (p.startsWith('\\\\?\\')) return p.slice(4);
+  }
+  return p;
+}
+
 // pkg 打包后 __dirname 指向虚拟内存，需锚定 exe 实际所在目录
 const ROOT_DIR = process.pkg ? path.dirname(process.execPath) : __dirname;
-const DATA_DIR = process.env.EASYAG_DATA_DIR || ROOT_DIR;
+const DATA_DIR = normalizePath(process.env.EASYAG_DATA_DIR) || ROOT_DIR;
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const LOCK_FILE = path.join(DATA_DIR, 'easyag.lock');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
@@ -1613,7 +1622,8 @@ server.listen(GUI_PORT, '127.0.0.1', () => {
   logToGUI('SECURITY', `高危规则已加载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效`, 'tag-proxy');
   if (TAURI_MODE) {
     const ready = { port: server.address().port, pid: process.pid };
-    if (process.env.EASYAG_READY_FILE) fs.writeFileSync(process.env.EASYAG_READY_FILE, JSON.stringify(ready));
+    const readyFile = normalizePath(process.env.EASYAG_READY_FILE);
+    if (readyFile) fs.writeFileSync(readyFile, JSON.stringify(ready));
   } else openGuiWindow();
   // AG 可能先于 EasyAG 启动：探测 9333 并自动接管
   if (!TEST_MODE) setTimeout(() => { tryAttachExistingClient(); }, 500);

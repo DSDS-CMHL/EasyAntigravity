@@ -3,6 +3,21 @@ use std::{fs, io::Write, process::{Child, Command, Stdio}, sync::{Mutex, atomic:
 use tauri::{Manager, RunEvent, WindowEvent};
 
 struct Backend { child: Mutex<Option<Child>>, closing: AtomicBool }
+
+fn normalize_path<P: AsRef<std::path::Path>>(path: P) -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        let s = path.as_ref().to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\UNC\") {
+            return std::path::PathBuf::from(format!(r"\\{}", stripped));
+        }
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            return std::path::PathBuf::from(stripped);
+        }
+    }
+    path.as_ref().to_path_buf()
+}
+
 fn stop_backend(backend: &Backend) {
     backend.closing.store(true, Ordering::SeqCst);
     if let Ok(mut slot) = backend.child.lock() {
@@ -18,15 +33,31 @@ fn stop_backend(backend: &Backend) {
     }
 }
 fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Error>> {
-    let resources = app.path().resource_dir()?.join("backend");
-    let data = app.path().app_local_data_dir()?;
+    let exe_dir = normalize_path(std::env::current_exe()?.parent().ok_or("Missing executable directory")?);
+    let resources = {
+        let candidate = match app.path().resource_dir() {
+            Ok(p) => normalize_path(p.join("backend")),
+            Err(_) => exe_dir.join("backend"),
+        };
+        if candidate.join("server.js").exists() {
+            candidate
+        } else {
+            exe_dir.join("backend")
+        }
+    };
+    if !resources.join("server.js").exists() {
+        return Err(format!("Missing backend server.js at {}", resources.display()).into());
+    }
+    let data = normalize_path(app.path().app_local_data_dir()?);
     fs::create_dir_all(&data)?;
-    let ready = data.join(format!("ready-{}.json", std::process::id()));
+    let ready = normalize_path(data.join(format!("ready-{}.json", std::process::id())));
     if ready.exists() { fs::remove_file(&ready)?; }
-    let runtime = std::env::current_exe()?.parent().ok_or("Missing executable directory")?
-        .join(if cfg!(windows) { "easyag-node.exe" } else { "easyag-node" });
+    let runtime = exe_dir.join(if cfg!(windows) { "easyag-node.exe" } else { "easyag-node" });
+    if !runtime.exists() {
+        return Err(format!("Missing Node runtime at {}", runtime.display()).into());
+    }
     let log = fs::OpenOptions::new().create(true).append(true).open(data.join("backend-stderr.log"))?;
-    let mut command = Command::new(runtime);
+    let mut command = Command::new(&runtime);
     command.arg(resources.join("server.js")).current_dir(&resources)
         .env("EASYAG_TAURI", "1").env("EASYAG_NOCONSOLE", "1")
         .env("EASYAG_DATA_DIR", &data).env("EASYAG_READY_FILE", &ready)
