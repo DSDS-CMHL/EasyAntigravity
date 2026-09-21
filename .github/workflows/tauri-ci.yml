@@ -94,12 +94,12 @@ jobs:
           test -x "$app/Contents/MacOS/easyag-node"
           codesign --verify --deep --strict "$app"
           ditto -c -k --sequesterRsrc --keepParent "$app" "EasyAntigravity-2.0.1-tauri-${{ matrix.name }}.zip"
-      - name: Upload Windows portable ZIP
+      - name: Upload Windows portable package
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: EasyAntigravity-2.0.1-tauri-${{ matrix.name }}-portable
-          path: EasyAntigravity-2.0.1-tauri-windows-x64-portable.zip
+          path: dist-tauri/EasyAntigravity-2.0.1-tauri-windows-x64-portable
           if-no-files-found: error
           retention-days: 14
       - name: Upload macOS app
@@ -107,7 +107,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: EasyAntigravity-2.0.1-tauri-${{ matrix.name }}
-          path: EasyAntigravity-2.0.1-tauri-${{ matrix.name }}.zip
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/macos/EasyAntigravity.app
           if-no-files-found: error
           retention-days: 14
       - name: Build diagnostics
