@@ -5,101 +5,92 @@ on:
     branches: [feat/tauri-gui]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build-tauri:
+  build:
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest, macos-latest]
         include:
-          - platform: windows-latest
-            artifact-name: EasyAntigravity-win-x64
+          - runner: windows-latest
             target: x86_64-pc-windows-msvc
-          - platform: macos-latest
-            artifact-name: EasyAntigravity-macos-x64
+            bundles: nsis
+            name: windows-x64
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            bundles: app
+            name: macos-arm64
+          - runner: macos-15-intel
             target: x86_64-apple-darwin
-
-    runs-on: ${{ matrix.platform }}
-    timeout-minutes: 30
-
+            bundles: app
+            name: macos-x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18'
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Create package.json for Tauri
+      - name: Backend dependencies and regressions
         run: |
-          cd src-tauri
-          cat > package.json << 'EOF'
-          {
-            "name": "easyantigravity",
-            "version": "2.0.1",
-            "scripts": {
-              "tauri": "tauri"
-            }
-          }
-          EOF
-
-      - name: Build Tauri app
+          npm ci
+          node --check server.js
+          node test/danger-rules.test.js
+          node test/approval-lifecycle.test.js
+      - name: Prepare self-contained runtime
+        run: node scripts/prepare-tauri.cjs ${{ matrix.target }}
+      - name: Include runtime license
+        shell: bash
+        run: curl --fail --location "https://raw.githubusercontent.com/nodejs/node/$(node -p process.version)/LICENSE" --output src-tauri/backend/NODE-LICENSE.txt
+      - name: Test packaged backend without developer dependencies
+        shell: bash
         run: |
-          npm install -g @tauri-apps/cli
-          cd src-tauri
-          npx tauri build --target ${{ matrix.target }}
-        env:
-          TAURI_PRIVATE_KEY: ""
-
-      - name: Collect artifacts (Windows)
-        if: matrix.platform == 'windows-latest'
+          export EASYAG_TEST_NODE="$PWD/src-tauri/binaries/easyag-node-${{ matrix.target }}"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then export EASYAG_TEST_NODE="$EASYAG_TEST_NODE.exe"; fi
+          export EASYAG_TEST_SERVER="$PWD/src-tauri/backend/server.js"
+          node test/tauri-lifecycle.test.cjs
+      - name: Build native application
+        run: npx --yes @tauri-apps/cli@2 build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Package macOS app
+        if: runner.os == 'macOS'
+        shell: bash
         run: |
-          mkdir -p dist-tauri
-          Copy-Item "src-tauri\target\*\release\*.exe" "dist-tauri\" -ErrorAction SilentlyContinue
-          Copy-Item "index.html" "dist-tauri\"
-          Copy-Item -Recurse "dicts" "dist-tauri\"
-          Copy-Item -Recurse "assets" "dist-tauri\"
-          Copy-Item "backup\*.json" "dist-tauri\" -ErrorAction SilentlyContinue
-          Copy-Item "danger-rules.json" "dist-tauri\" -ErrorAction SilentlyContinue
-          Copy-Item "server.js" "dist-tauri\" -ErrorAction SilentlyContinue
-          
-          Compress-Archive -Path "dist-tauri\*" -DestinationPath "${{ matrix.artifact-name }}.zip"
-          ls -lh "${{ matrix.artifact-name }}.zip"
-
-      - name: Collect artifacts (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          mkdir -p dist-tauri
-          find src-tauri/target -name "*.app" -exec cp -r {} dist-tauri/ \;
-          cp index.html dist-tauri/
-          cp -r dicts dist-tauri/
-          cp -r assets dist-tauri/
-          cp backup/*.json dist-tauri/ 2>/dev/null || true
-          cp danger-rules.json dist-tauri/ 2>/dev/null || true
-          cp server.js dist-tauri/ 2>/dev/null || true
-          
-          cd dist-tauri
-          zip -r "../${{ matrix.artifact-name }}.zip" .
-          cd ..
-          ls -lh "${{ matrix.artifact-name }}.zip"
-
-      - name: Upload artifact
+          app="src-tauri/target/${{ matrix.target }}/release/bundle/macos/EasyAntigravity.app"
+          test -f "$app/Contents/Resources/backend/server.js"
+          test -f "$app/Contents/Resources/backend/node_modules/ws/package.json"
+          test -x "$app/Contents/MacOS/easyag-node"
+          codesign --verify --deep --strict "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "EasyAntigravity-2.0.1-tauri-${{ matrix.name }}.zip"
+      - name: Upload Windows installer
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact-name }}
-          path: ${{ matrix.artifact-name }}.zip
-          retention-days: 7
+          name: EasyAntigravity-2.0.1-tauri-${{ matrix.name }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload macOS app
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EasyAntigravity-2.0.1-tauri-${{ matrix.name }}
+          path: EasyAntigravity-2.0.1-tauri-${{ matrix.name }}.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-metadata-${{ matrix.name }}
+          path: |
+            src-tauri/Cargo.lock
+            src-tauri/tauri.conf.json
+          retention-days: 14

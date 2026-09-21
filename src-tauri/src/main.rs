@@ -1,136 +1,103 @@
-// EasyAntigravity Tauri Shell
-// 管理窗口和 server.js sidecar 进程
-
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
-use std::process::{Child, Command};
-use std::sync::Mutex;
-use std::path::PathBuf;
+use std::{fs, io::Write, process::{Child, Command, Stdio}, sync::{Mutex, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
 use tauri::{Manager, RunEvent, WindowEvent};
 
-// 存储 sidecar 进程句柄
-struct SidecarProcess(Mutex<Option<Child>>);
-
-// 获取资源目录中的 server.js 路径
-fn get_server_path(app: &tauri::AppHandle) -> PathBuf {
-    let resource_dir = app.path().resource_dir()
-        .expect("Failed to get resource dir");
-    resource_dir.join("server.js")
-}
-
-// 获取 Node.js 可执行文件路径
-fn get_node_path() -> String {
-    // 优先从 PATH 查找 node
-    if let Ok(output) = Command::new("where").args(["node"]).output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return path.lines().next().unwrap_or("node").to_string();
+struct Backend { child: Mutex<Option<Child>>, closing: AtomicBool }
+fn stop_backend(backend: &Backend) {
+    backend.closing.store(true, Ordering::SeqCst);
+    if let Ok(mut slot) = backend.child.lock() {
+        if let Some(mut child) = slot.take() {
+            if let Some(mut input) = child.stdin.take() { let _ = writeln!(input, "quit"); }
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                if matches!(child.try_wait(), Ok(Some(_))) { break; }
+                if Instant::now() >= deadline { let _ = child.kill(); let _ = child.wait(); break; }
+                std::thread::sleep(Duration::from_millis(50));
             }
         }
     }
-    "node".to_string()
 }
-
-// 启动 server.js sidecar
-fn start_server(app: &tauri::AppHandle) -> Result<Child, String> {
-    let server_path = get_server_path(app);
-    let node_path = get_node_path();
-
-    if !server_path.exists() {
-        return Err(format!("server.js not found at: {}", server_path.display()));
+fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Error>> {
+    let resources = app.path().resource_dir()?.join("backend");
+    let data = app.path().app_local_data_dir()?;
+    fs::create_dir_all(&data)?;
+    let ready = data.join(format!("ready-{}.json", std::process::id()));
+    if ready.exists() { fs::remove_file(&ready)?; }
+    let runtime = std::env::current_exe()?.parent().ok_or("Missing executable directory")?
+        .join(if cfg!(windows) { "easyag-node.exe" } else { "easyag-node" });
+    let log = fs::OpenOptions::new().create(true).append(true).open(data.join("backend-stderr.log"))?;
+    let mut command = Command::new(runtime);
+    command.arg(resources.join("server.js")).current_dir(&resources)
+        .env("EASYAG_TAURI", "1").env("EASYAG_NOCONSOLE", "1")
+        .env("EASYAG_DATA_DIR", &data).env("EASYAG_READY_FILE", &ready)
+        .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::from(log));
+    #[cfg(windows)] {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
     }
-
-    let resource_dir = app.path().resource_dir()
-        .map_err(|e| format!("Failed to get resource dir: {}", e))?;
-
-    let child = Command::new(&node_path)
-        .arg(&server_path)
-        .current_dir(&resource_dir)
-        .env("EASYAG_NOCONSOLE", "1")
-        .env("EASYAG_TAURI", "1")
-        .spawn()
-        .map_err(|e| format!("Failed to start server: {}", e))?;
-
-    Ok(child)
-}
-
-// 停止 server.js sidecar
-fn stop_server(sidecar: &SidecarProcess) {
-    if let Ok(mut guard) = sidecar.0.lock() {
-        if let Some(child) = guard.as_mut() {
-            let _ = child.kill();
-            let _ = child.wait();
+    let backend = app.state::<Backend>();
+    {
+        let mut slot = backend.child.lock().map_err(|_| "Backend lock poisoned")?;
+        if backend.closing.load(Ordering::SeqCst) { return Err("Window closed".into()); }
+        *slot = Some(command.spawn()?);
+    }
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        if backend.closing.load(Ordering::SeqCst) { return Err("Window closed".into()); }
+        if let Ok(contents) = fs::read_to_string(&ready) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) {
+                let port = value["port"].as_u64().filter(|p| *p > 0 && *p <= 65535)
+                    .ok_or("Invalid backend port")? as u16;
+                fs::remove_file(&ready)?;
+                return Ok(port);
+            }
         }
-        *guard = None;
+        {
+            let mut slot = backend.child.lock().map_err(|_| "Backend lock poisoned")?;
+            if let Some(child) = slot.as_mut() {
+                if let Some(status) = child.try_wait()? {
+                    return Err(format!("Backend exited ({status}); see {}", data.join("backend-stderr.log").display()).into());
+                }
+            }
+        }
+        if Instant::now() >= deadline { return Err("Backend readiness timed out; see backend-stderr.log".into()); }
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
-
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .manage(SidecarProcess(Mutex::new(None)))
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize(); let _ = window.show(); let _ = window.set_focus();
+            }
+        }))
+        .manage(Backend { child: Mutex::new(None), closing: AtomicBool::new(false) })
         .setup(|app| {
             let handle = app.handle().clone();
-
-            // 启动 server.js sidecar
-            match start_server(&handle) {
-                Ok(child) => {
-                    let sidecar = app.state::<SidecarProcess>();
-                    if let Ok(mut guard) = sidecar.0.lock() {
-                        *guard = Some(child);
-                    }
-
-                    // 等待服务就绪
-                    std::thread::sleep(std::time::Duration::from_millis(2000));
-
-                    // 导航到本地服务
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.navigate("http://127.0.0.1:19823".parse().unwrap());
-                    }
-
-                    println!("[Tauri] Server started successfully");
-                }
-                Err(e) => {
-                    eprintln!("[Tauri] Failed to start server: {}", e);
-                    // 显示错误页面
-                    if let Some(window) = app.get_webview_window("main") {
-                        let error_html = format!(
-                            r#"<!DOCTYPE html>
-<html><head><style>
-body {{ background: #121319; color: #f3f4f6; font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
-.error {{ text-align: center; }}
-h1 {{ color: #f43f5e; }}
-p {{ color: #9ca3af; }}
-</style></head>
-<body><div class="error">
-<h1>启动失败</h1>
-<p>{}</p>
-<p>请确保 Node.js 已安装并在 PATH 中</p>
-</div></body></html>"#, e
-                        );
-                        let _ = window.evaluate_script(&format!("document.write({})", serde_json::to_string(&error_html).unwrap()));
+            std::thread::spawn(move || {
+                match start_backend(&handle) {
+                    Ok(port) => if let Some(window) = handle.get_webview_window("main") {
+                        let _ = window.navigate(format!("http://127.0.0.1:{port}").parse().unwrap());
+                    },
+                    Err(error) => {
+                        stop_backend(&handle.state::<Backend>());
+                        if let Some(window) = handle.get_webview_window("main") {
+                            let message = format!("EasyAG 启动失败：{error}");
+                            let _ = window.eval(&format!("document.body.textContent = {}", serde_json::to_string(&message).unwrap()));
+                        }
                     }
                 }
-            }
-
+            });
             Ok(())
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
-                // 窗口关闭时停止 sidecar
-                let app = window.app_handle();
-                let sidecar = app.state::<SidecarProcess>();
-                stop_server(&sidecar);
+                stop_backend(&window.app_handle().state::<Backend>());
+                window.app_handle().exit(0);
             }
         })
-        .build(tauri::generate_context!())
-        .expect("Failed to build Tauri app")
+        .build(tauri::generate_context!()).expect("Failed to build EasyAG")
         .run(|app, event| {
-            if let RunEvent::Exit = event {
-                // 应用退出时确保 sidecar 停止
-                let sidecar = app.state::<SidecarProcess>();
-                stop_server(&sidecar);
-            }
+            if let RunEvent::Exit = event { stop_backend(&app.state::<Backend>()); }
         });
 }

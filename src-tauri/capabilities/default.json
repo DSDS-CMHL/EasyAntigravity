@@ -1,0 +1,10 @@
+{
+  "identifier": "default",
+  "description": "Local loading page only; HTTP UI needs no privileged Tauri commands",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}

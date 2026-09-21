@@ -1,26 +1,22 @@
 {
-  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "EasyAntigravity",
   "version": "2.0.1",
-  "identifier": "com.easyag.launcher",
+  "identifier": "com.easyag.launcher.tauri",
   "build": {
-    "frontendDist": "../src",
-    "devUrl": "http://127.0.0.1:19823",
-    "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "frontendDist": "../src"
   },
   "app": {
     "windows": [
       {
-        "title": "EasyAntigravity",
+        "label": "main",
+        "title": "EasyAntigravity · Tauri 测试版",
         "width": 490,
         "height": 740,
         "minWidth": 400,
         "minHeight": 560,
-        "resizable": true,
-        "fullscreen": false,
         "center": true,
-        "icon": "icons/icon.ico"
+        "backgroundColor": "#0f1115"
       }
     ],
     "security": {
@@ -34,20 +30,20 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
-    "resources": [
-      "../server.js",
-      "../index.html",
-      "../dicts/*",
-      "../assets/*",
-      "../backup/*",
-      "../danger-rules.json"
+    "externalBin": [
+      "binaries/easyag-node"
     ],
-    "shortDescription": "Antigravity Launcher",
-    "longDescription": "EasyAntigravity - Antigravity Launcher with native proxy, i18n, auto-accept"
-  },
-  "plugins": {
-    "shell": {
-      "open": true
+    "resources": {
+      "backend/": "backend/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
     }
   }
 }
