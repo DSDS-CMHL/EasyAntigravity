@@ -94,11 +94,9 @@
 
 ## 🍏 macOS 社区测试版（Beta）
 
-EasyAntigravity 现已通过 Tauri 2.0 原生架构为 macOS 用户提供支持（包含 Apple Silicon 与 Intel 双架构独立版本）：
+从 v2.2.0 起正式上线 macOS 分发（提供 Apple Silicon 与 Intel 双版本），欢迎各位体验与反馈！
 
-- **免环境依赖**：内嵌专属 Node.js 运行时，用户无需在 Mac 上预先安装 Node.js 或 Rust 环境。
-- **Hardened Runtime JIT 支持**：针对 Apple Silicon (M 系列芯片) V8 引擎特性补齐 `com.apple.security.cs.allow-jit` 权限，运行平稳无崩溃。
-- **首次运行提示**：因测试版尚未加入 Apple 付费开发者公证，首次双击打开如遇系统提示“无法打开或已被阻止”，请前往 **「系统设置」->「隐私与安全性」**，在下方找到 EasyAntigravity 并点击 **「仍要打开」/「允许」** 即可。
+> 首次运行提示：因测试版尚未加入 Apple 付费开发者公证，首次打开如遇拦截，请前往 **「系统设置」->「隐私与安全性」** 点击 **「仍要打开」/「允许」** 即可。
 
 ---
 
