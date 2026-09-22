@@ -470,6 +470,19 @@ function generateMasterInjectScript() {
       catch (e) { return null; }
     }).filter(Boolean);
 
+    // 若当前处于高危锁定中，重载后立即以新规则重新评估：若不再命中，自动解除锁定并解封按钮
+    if (window.__ea_danger_lock) {
+      const activePatterns = window.__ea_compiled_danger_patterns || [];
+      const stillHit = activePatterns.find(r => r.re.test(window.__ea_danger_lock.cmd));
+      if (!stillHit) {
+        console.log('[EA_RELOAD] 高危指令已根据重载规则解除锁定: ' + window.__ea_danger_lock.cmd.slice(0, 60));
+        window.__ea_danger_lock = null;
+        try {
+          document.querySelectorAll('[data-ea-ok="blocked"]').forEach(el => el.removeAttribute('data-ea-ok'));
+        } catch (e) {}
+      }
+    }
+
     if (window.__ea_engine_running) return;
     window.__ea_engine_running = true;
 
@@ -523,6 +536,10 @@ function generateMasterInjectScript() {
 
     function cardForSubmit(btn) {
       return (
+        btn.closest('[role="dialog"]') ||
+        btn.closest('[role="alertdialog"]') ||
+        btn.closest('div[data-testid*="interaction"]') ||
+        btn.closest('div[class*="modal"]') ||
         btn.closest('[data-testid="run-command-step"]') ||
         btn.closest('div.relative.flex.flex-col') ||
         btn.closest('div[class*="card"]') ||
@@ -541,24 +558,66 @@ function generateMasterInjectScript() {
     // 高危扫描用：尽量拿到完整命令正文（可多行）
     function extractCommandText(card) {
       if (!card) return '';
-      const code = card.querySelector('pre, code, [data-testid="run-command-step"] pre');
+      const code = card.querySelector('pre, code, [data-testid="run-command-step"] pre, [data-testid="run-command-step"] code');
       if (code && (code.innerText || code.textContent || '').trim()) {
         return (code.innerText || code.textContent || '').trim();
       }
       const step = card.querySelector('[data-testid="run-command-step"]');
-      if (step) return (step.innerText || '').trim();
+      if (step && (step.innerText || step.textContent || '').trim()) {
+        return (step.innerText || step.textContent || '').trim();
+      }
       return '';
     }
 
-    // 日志用：单行短摘要
-    function extractLogSummary(card, fallback) {
-      const full = extractCommandText(card);
+    function findActivePendingCommand(doc) {
+      if (!doc || !doc.querySelectorAll) return '';
+      const dialogs = doc.querySelectorAll('[role="dialog"], [role="alertdialog"], div[data-testid*="interaction"], div[class*="modal"]');
+      for (const d of dialogs) {
+        const txt = extractCommandText(d);
+        if (txt) return txt;
+      }
+      const steps = doc.querySelectorAll('[data-testid="run-command-step"]');
+      if (steps.length) {
+        for (let i = steps.length - 1; i >= 0; i--) {
+          const txt = extractCommandText(steps[i]);
+          if (txt) return txt;
+        }
+      }
+      const pres = doc.querySelectorAll('pre, code');
+      if (pres.length) {
+        for (let i = pres.length - 1; i >= 0; i--) {
+          const s = (pres[i].innerText || pres[i].textContent || '').trim();
+          if (s.length > 2 && s.length < 2000) return s;
+        }
+      }
+      return '';
+    }
+
+    function extractCommandForBtn(btn) {
+      if (!btn) return '';
+      const root = btn.closest('[role="dialog"], [role="alertdialog"], [data-testid*="interaction"], div[class*="modal"], [data-testid="run-command-step"]');
+      if (root) {
+        const cmd = extractCommandText(root);
+        if (cmd) return cmd;
+      }
+      const card = cardForSubmit(btn);
+      if (card) {
+        const cmd = extractCommandText(card);
+        if (cmd) return cmd;
+      }
+      return findActivePendingCommand(btn.ownerDocument || document);
+    }
+
+    // 日志用：单行短摘要（优先识别真实命令行，杜绝纯 testid）
+    function extractLogSummary(card, fallback, btn) {
+      let full = extractCommandText(card);
+      if (!full && btn) full = extractCommandForBtn(btn);
+      if (!full && typeof document !== 'undefined') full = findActivePendingCommand(document);
       if (full) {
         const lines = full.split('\\n').map(s => s.trim()).filter(Boolean);
-        // 优先问句行，其次命令行
-        const q = lines.find(l => /[?？]$/.test(l) && l.length < 120);
         const cmdLine = lines.find(l => !/[?？]$/.test(l) && l.length > 2);
-        return oneLine(q || cmdLine || lines[0], 80);
+        const q = lines.find(l => /[?？]$/.test(l) && l.length < 120);
+        return oneLine(cmdLine || q || lines[0], 80);
       }
       return oneLine(fallback || '', 80);
     }
@@ -750,62 +809,94 @@ function generateMasterInjectScript() {
       }
     }
 
-    function latchDangerousApproval(card, hit, cmd) {
-      const key = dangerKey(hit, cmd);
-      const entry = approvalEntry(card);
-      // 同一命令卡重绘时 entry 仍存在；真实卡消失后 entry 已释放，下一次会重新上报。
-      const firstHit = !entry || !entry.dangerReported;
-      if (entry) entry.dangerReported = true;
-      if (card && card.querySelectorAll) {
-        card.setAttribute('data-ea-danger-key', key);
-        card.querySelectorAll('button, [role="button"], input[type="submit"]').forEach(el => {
-          el.setAttribute('data-ea-ok', 'blocked');
-        });
-      }
-      if (firstHit) {
-        console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + cmd.slice(0, 80));
-      }
-      return true;
+    function blockAllApprovalButtons(doc) {
+      if (!doc || !doc.querySelectorAll) return;
+      const btns = doc.querySelectorAll('button[data-testid="interaction-continue-button"], button[data-testid="approval-submit"], button[data-testid="permission-allow"], button[role="button"]');
+      btns.forEach(b => {
+        if (isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label')) || b.getAttribute('data-testid')) {
+          b.setAttribute('data-ea-ok', 'blocked');
+        }
+      });
     }
 
-    // 按审批卡预扫描而不是仅检查候选按钮；一张危险卡存在时，本轮绝不进入任何点击分支。
-    function hasDangerousApproval(doc) {
+    function checkDangerous(doc) {
       if (!window.__ea_config.blockDangerous || !doc || !doc.querySelectorAll) return false;
+      const activePatterns = window.__ea_compiled_danger_patterns || [];
+      if (!activePatterns.length) return false;
+
+      // 1. 若当前已有高危锁定：
+      if (window.__ea_danger_lock) {
+        const testidBtns = doc.querySelectorAll(
+          'button[data-testid="interaction-continue-button"],' +
+          'button[data-testid="approval-submit"],' +
+          'button[data-testid="permission-allow"]'
+        );
+        if (testidBtns.length) {
+          blockAllApprovalButtons(doc);
+          return true; // 页面仍有待审批按钮，绝不放行！
+        } else {
+          // 按钮已全部消失，说明用户已手动处理完本次请求，释放锁定
+          window.__ea_danger_lock = null;
+        }
+      }
+
+      // 2. 检查当前待执行命令（从交互卡或最近步骤提取）
+      const pendingCmd = findActivePendingCommand(doc);
+      if (pendingCmd) {
+        const hit = activePatterns.find(r => r.re.test(pendingCmd));
+        if (hit) {
+          window.__ea_danger_lock = { id: hit.id, name: hit.name, cmd: pendingCmd, at: Date.now() };
+          blockAllApprovalButtons(doc);
+          console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + oneLine(pendingCmd, 80));
+          return true;
+        }
+      }
+
+      // 3. 检查所有容器卡片
       const cards = doc.querySelectorAll(
         '[data-testid="run-command-step"], [role="dialog"], [role="alertdialog"],' +
         'div[data-testid*="interaction"], div[data-testid*="approval"],' +
         'div[data-testid*="permission"], div[data-testid*="command"]'
       );
-      const activePatterns = window.__ea_compiled_danger_patterns || [];
       for (const card of cards) {
         const cmd = extractCommandText(card);
         if (!cmd) continue;
         const hit = activePatterns.find(r => r.re.test(cmd));
-        if (hit) return latchDangerousApproval(card, hit, cmd);
+        if (hit) {
+          window.__ea_danger_lock = { id: hit.id, name: hit.name, cmd, at: Date.now() };
+          blockAllApprovalButtons(doc);
+          console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + oneLine(cmd, 80));
+          return true;
+        }
       }
+
       return false;
     }
 
     function tryApprove(btn, kind) {
       if (!btn || btn.disabled || btn.hasAttribute('data-ea-ok')) return false;
-      const card = cardForSubmit(btn);
+      if (window.__ea_danger_lock) return false;
+
+      // 严格防重入：同一操作 3 秒内绝不触发第二次点击，彻底根除连续放行 bug
+      const now = Date.now();
+      if (now - (window.__ea_last_approved_at || 0) < 3000) return false;
+
+      const doc = btn.ownerDocument || document;
       if (window.__ea_config.blockDangerous) {
-        const cmd = extractCommandText(card);
+        const cmd = extractCommandForBtn(btn);
         const activePatterns = window.__ea_compiled_danger_patterns || [];
         if (cmd) {
           const hit = activePatterns.find(r => r.re.test(cmd));
           if (hit) {
-            return latchDangerousApproval(card, hit, cmd);
-          } else if (card && card.hasAttribute && card.hasAttribute('data-ea-danger-key')) {
-            card.removeAttribute('data-ea-danger-key');
-            if (card.querySelectorAll) {
-              card.querySelectorAll('[data-ea-ok="blocked"]').forEach(el => el.removeAttribute('data-ea-ok'));
-            }
+            window.__ea_danger_lock = { id: hit.id, name: hit.name, cmd, at: now };
+            blockAllApprovalButtons(doc);
+            console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + oneLine(cmd, 80));
+            return true;
           }
         }
-        // 同一张卡重绘时优先保留阻断标记；正常的新卡不会携带此属性。
-        if (card && card.getAttribute && card.getAttribute('data-ea-danger-key')) return true;
       }
+
+      const card = cardForSubmit(btn);
       if (recentlyAutoApproved(card, kind)) {
         if (window.__ea_config.debugApproval) {
           const entry = approvalEntry(card);
@@ -840,12 +931,13 @@ function generateMasterInjectScript() {
       }
       btn.setAttribute('data-ea-ok', 'true');
       markAutoApproved(card, kind);
+      window.__ea_last_approved_at = Date.now();
       if (window.__ea_config.debugApproval) {
         const entry = approvalEntry(card);
         console.log('[EA_TRACE] click request=' + (entry ? entry.id : 'ui') + ' source=' + kind + ' option=' + (picked ? picked.cls : 'none') + ' key=' + approvalKey(card, kind).slice(0, 120));
       }
       realClick(btn);
-      const cmd = extractLogSummary(card, kind || (btn.innerText || ''));
+      const cmd = extractLogSummary(card, kind || (btn.innerText || ''), btn);
       const optLabel = picked
         ? '选项[' + picked.cls + '] ' + optText
         : '无选项组';
@@ -1072,8 +1164,8 @@ function generateMasterInjectScript() {
 
         if (!window.__ea_config.autoAccept) return;
         refreshVisibleCommandApprovals(doc);
-        // fail closed：本轮发现高危审批卡时不进入任何点击分支；高危卡被用户手动处理后自然恢复。
-        if (hasDangerousApproval(doc)) return;
+        // fail closed：高危锁定时绝不进入任何点击分支
+        if (checkDangerous(doc)) return;
         reportVisibleApprovalRequests(doc);
 
         // ── 策略1: data-testid 精确匹配（最稳定，语言无关） ──
@@ -1290,10 +1382,7 @@ async function startCDPLoop() {
           });
         } else {
           const entry = cdpSockets.get(key);
-          if (entry.ws.readyState === WebSocket.OPEN) {
-            // 周期刷新界面自动化配置；若页面被 Reload 清掉引擎则重新挂载
-            injectInto(entry.ws, 'tick');
-          } else {
+          if (entry.ws.readyState !== WebSocket.OPEN) {
             try { entry.ws.close(); } catch (e) {}
             cdpSockets.delete(key);
           }
