@@ -22,8 +22,8 @@
     {
       "id": "disk-wipe",
       "name": "磁盘破坏",
-      "description": "format / diskpart / mkfs / wipefs / shred",
-      "pattern": "\\b(format|diskpart|mkfs|wipefs|shred)\\b",
+      "description": "format 盘符 / format-volume / diskpart / mkfs / wipefs / shred",
+      "pattern": "\\b(?:format\\s+[a-zA-Z]:|format-volume|diskpart|mkfs|wipefs|shred)(?=\\s|$|\\b)",
       "flags": "i",
       "enabled": true
     },

@@ -29,6 +29,8 @@ const blockedCases = [
   ['rm-rf', 'rm --recursive --force ./build'],
   ['windows-del', 'rmdir /s /q C:\\temp\\demo'],
   ['disk-wipe', 'format D: /q'],
+  ['disk-wipe', 'Format-Volume -DriveLetter D'],
+  ['disk-wipe', 'wipefs -a /dev/sdb'],
   ['disk-wipe', 'mkfs.ext4 /dev/sdb'],
   ['sql-drop', 'DROP TABLE audit_log;'],
   ['git-force-push', 'git push origin main --force'],
@@ -44,7 +46,12 @@ const allowedCases = [
   'rm ./build/output.txt',
   'git status --short',
   'node --check server.js',
-  'SELECT * FROM users'
+  'SELECT * FROM users',
+  'Get-NetTCPConnection -LocalPort 9222 | Format-Table -AutoSize',
+  'Invoke-RestMethod -Uri "http://127.0.0.1:9222/json" | Select-Object | Format-List',
+  'npm run format',
+  'git log --format="%h %s"',
+  'clang-format -i main.cpp'
 ];
 
 let checks = 0;
