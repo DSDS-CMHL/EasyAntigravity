@@ -1329,8 +1329,12 @@ async function startCDPLoop() {
       const targets = await httpGetJson(`http://127.0.0.1:${CDP_PORT}/json/list`);
       const valid = (targets || []).filter(t =>
         t && t.webSocketDebuggerUrl &&
+        t.type !== 'iframe' &&
+        t.type !== 'worker' &&
+        t.type !== 'service_worker' &&
         !String(t.url || '').startsWith('devtools://') &&
-        !String(t.url || '').startsWith('data:text/html')
+        !String(t.url || '').startsWith('data:text/html') &&
+        !String(t.url || '').startsWith('about:')
       );
 
       state.cdpTargets = valid.length;
