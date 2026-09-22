@@ -49,7 +49,7 @@
 ## 开箱即用
 
 1. 打开 [Releases](../../releases)，下载对应平台的最新安装包：
-   - **Windows**：`EasyAntigravity-2.1.0-tauri-windows-x64-portable.zip`
+   - **Windows**：`EasyAntigravity-2.1.0-windows-x64.zip`
    - **macOS（社区测试版 / Beta）**：`EasyAntigravity-2.1.0-tauri-macos-arm64-beta.zip`（Apple Silicon）或 `EasyAntigravity-2.1.0-tauri-macos-x64-beta.zip`（Intel）
 2. 完整解压 ZIP 到任意目录（请保留目录内所有文件，不要单独拷贝主可执行程序）
 3. 运行程序：
