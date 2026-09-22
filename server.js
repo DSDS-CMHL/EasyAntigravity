@@ -120,19 +120,7 @@ function openGuiWindow() {
   const pf86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
   const la = process.env.LOCALAPPDATA || '';
 
-  // ── 方案 D: WebView2 原生窗口（优先） ──
-  const wv2Host = path.join(ROOT_DIR, 'WebView2Host', 'WebView2Host.exe');
-  if (fs.existsSync(wv2Host)) {
-    try {
-      exec(`"${wv2Host}" "${url}"`, { windowsHide: true });
-      logToGUI('SYSTEM', 'GUI 已通过 WebView2 原生窗口打开', 'tag-proxy');
-      return true;
-    } catch (e) {
-      logToGUI('SYSTEM', `WebView2 宿主启动失败: ${e.message}，降级到浏览器`, 'tag-warn');
-    }
-  }
-
-  // ── 降级: 浏览器 App 模式 ──
+  // ── 浏览器 App 模式 ──
   const candidates = [
     {
       name: 'Edge',
@@ -187,10 +175,6 @@ function openGuiWindow() {
 }
 
 function focusExistingGui() {
-  // 已有 WebView2Host 实例时，尝试聚焦而非重复启动
-  try {
-    exec('powershell -NoProfile -Command "Get-Process WebView2Host -ErrorAction SilentlyContinue | ForEach-Object { $_.MainWindowHandle } | ForEach-Object { Add-Type -Name W -Namespace U -MemberDefinition \'[DllImport(\\"user32.dll\\")] public static extern bool SetForegroundWindow(IntPtr h);[DllImport(\\"user32.dll\\")] public static extern bool ShowWindow(IntPtr h,int c);\'; [U.W]::ShowWindow($_,9); [U.W]::SetForegroundWindow($_) }"');
-  } catch (e) {}
 }
 
 // 双击 exe 会挂控制台：windowsHide 重启自身并退出，避免黑框
@@ -231,30 +215,22 @@ try {
 
 const HTML_FILE = path.join(ROOT_DIR, 'index.html');
 
-const BACKUP_DIR = path.join(ROOT_DIR, 'backup');
-const BACKUP_DLL = path.join(BACKUP_DIR, 'version.dll');
-const BACKUP_JSON = path.join(BACKUP_DIR, 'config.json');
 const TARGET_DLL = path.join(APP_DIR, 'version.dll');
 const DISABLED_DLL = path.join(APP_DIR, 'version.dll.easyag-disabled');
-const TARGET_JSON = IS_MAC ? path.join(process.env.HOME || '', 'Library', 'Application Support', 'Antigravity', 'config.json') : path.join(APP_DIR, 'config.json');
 
 const DICT_DIR = path.join(ROOT_DIR, 'dicts');
 const RULES_FILE = path.join(DATA_DIR, 'danger-rules.json');
 if (TAURI_MODE && !fs.existsSync(RULES_FILE)) {
   fs.copyFileSync(path.join(ROOT_DIR, 'danger-rules.json'), RULES_FILE);
 }
-const BACKUP_RULES = path.join(BACKUP_DIR, 'danger-rules.json');
 
 // 调试模式：--debug 参数 或 debug.flag 文件 存在时开启
 const debugMode = process.argv.includes('--debug') || fs.existsSync(path.join(__dirname, 'debug.flag'));
-// 默认使用 Chromium 启动参数与子进程代理环境变量，不加载网络 Hook。
-// 旧版 DLL 劫持仅保留为显式兼容选项：--dll-proxy 或 EASYAG_PROXY_MODE=dll。
-const legacyDllMode = process.argv.includes('--dll-proxy') || process.env.EASYAG_PROXY_MODE === 'dll';
-const nativeProxyMode = !legacyDllMode;
+const nativeProxyMode = true;
 
 let state = {
   port: 7890,
-  proxyMode: nativeProxyMode ? 'native' : 'dll',
+  proxyMode: 'native',
   autoAccept: true,
   blockDangerous: true,
   preferOption: 1,
@@ -322,7 +298,8 @@ const DEFAULT_DANGER_RULES = [
 let dangerRules = { version: 1, enabled: true, rules: DEFAULT_DANGER_RULES };
 
 function loadDangerRules() {
-  const tryPaths = [RULES_FILE, BACKUP_RULES];
+  const fallbackRules = path.join(ROOT_DIR, 'danger-rules.json');
+  const tryPaths = [RULES_FILE, fallbackRules];
   for (const p of tryPaths) {
     if (!fs.existsSync(p)) continue;
     try {
@@ -333,9 +310,9 @@ function loadDangerRules() {
           enabled: data.enabled !== false,
           rules: data.rules.filter(r => r && r.pattern)
         };
-        // 自愈：主文件缺失时从备份写回
-        if (p === BACKUP_RULES && !fs.existsSync(RULES_FILE)) {
-          try { fs.copyFileSync(BACKUP_RULES, RULES_FILE); } catch (e) {}
+        // 自愈：主文件缺失时从预置资源写回
+        if (p === fallbackRules && !fs.existsSync(RULES_FILE)) {
+          try { fs.copyFileSync(fallbackRules, RULES_FILE); } catch (e) {}
         }
         break;
       }
@@ -428,37 +405,18 @@ function ensureProxyWatchdog() {
   if (TEST_MODE) return false;
   if (!fs.existsSync(APP_DIR)) return false;
 
-  // 原生模式隔离旧版 DLL 兼容组件，避免遗留 Hook 参与新模式网络链路。
-  if (nativeProxyMode) {
-    if (fs.existsSync(TARGET_DLL)) {
-      // 更新可能重新写入旧版兼容组件；已有暂存副本时保留二者，仍确保活动路径为空。
+  // 原生免 TUN 代理：检测并隔离遗留的旧版 version.dll，避免 Hook 造成应用异常
+  if (fs.existsSync(TARGET_DLL)) {
+    try {
       const disabledPath = fs.existsSync(DISABLED_DLL)
         ? `${DISABLED_DLL}.${Date.now()}`
         : DISABLED_DLL;
       fs.renameSync(TARGET_DLL, disabledPath);
-      logToGUI('PROXY', '原生代理模式：已暂存旧版 version.dll 兼容组件', 'tag-proxy');
-    }
-    state.patchOk = true;
-    return false;
-  }
-
-  let restored = false;
-  if (!fs.existsSync(TARGET_DLL) && fs.existsSync(BACKUP_DLL)) {
-    fs.copyFileSync(BACKUP_DLL, TARGET_DLL);
-    restored = true;
-  }
-  if (!fs.existsSync(TARGET_JSON) && fs.existsSync(BACKUP_JSON)) {
-    fs.copyFileSync(BACKUP_JSON, TARGET_JSON);
-    restored = true;
-  }
-  if (fs.existsSync(BACKUP_JSON)) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(BACKUP_JSON, 'utf-8'));
-      if (cfg.proxy?.port) state.port = cfg.proxy.port;
+      logToGUI('PROXY', '已自动隔离旧版遗留的 version.dll 注入组件', 'tag-proxy');
     } catch (e) {}
   }
-  state.patchOk = fs.existsSync(TARGET_DLL) && fs.existsSync(TARGET_JSON);
-  return restored;
+  state.patchOk = true;
+  return false;
 }
 
 function buildNativeProxyLaunch() {
@@ -485,16 +443,6 @@ function buildNativeProxyLaunch() {
 
 function syncProxyPort(newPort) {
   state.port = newPort;
-  (nativeProxyMode ? [] : [BACKUP_JSON, TARGET_JSON]).forEach(file => {
-    if (fs.existsSync(file)) {
-      try {
-        const cfg = JSON.parse(fs.readFileSync(file, 'utf-8'));
-        if (!cfg.proxy) cfg.proxy = {};
-        cfg.proxy.port = newPort;
-        fs.writeFileSync(file, JSON.stringify(cfg, null, 2), 'utf-8');
-      } catch (e) {}
-    }
-  });
   logToGUI('PROXY', `本地代理端口已更新为: ${newPort}`, 'tag-proxy');
 }
 
@@ -1419,8 +1367,9 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/api/danger-rules/open' && req.method === 'POST') {
     try {
-      if (!fs.existsSync(RULES_FILE) && fs.existsSync(BACKUP_RULES)) {
-        fs.copyFileSync(BACKUP_RULES, RULES_FILE);
+      if (!fs.existsSync(RULES_FILE)) {
+        const fallback = path.join(ROOT_DIR, 'danger-rules.json');
+        if (fs.existsSync(fallback)) fs.copyFileSync(fallback, RULES_FILE);
       }
       if (!fs.existsSync(RULES_FILE)) {
         res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });

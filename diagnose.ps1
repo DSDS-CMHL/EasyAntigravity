@@ -193,7 +193,7 @@ if ($agProcs) {
 }
 
 Write-Log "`n--- EasyAG 相关进程 ---"
-$easyProcs = Get-Process -Name "node","WebView2Host","EasyAntigravity" -ErrorAction SilentlyContinue
+$easyProcs = Get-Process -Name "node","easyag-node","EasyAntigravity" -ErrorAction SilentlyContinue
 if ($easyProcs) {
     $easyProcs | ForEach-Object {
         Write-Log "  $($_.ProcessName) PID=$($_.Id) 启动时间=$($_.StartTime)"

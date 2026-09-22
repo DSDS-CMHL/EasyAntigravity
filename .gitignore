@@ -1,14 +1,8 @@
-﻿# Build outputs
+# Build outputs
 EasyAntigravity.exe
 EasyAntigravity-dist/
 EasyAntigravity*.zip
 *.zip
-
-# WebView2 runtime cache
-WebView2Host/WebView2Host.exe.WebView2/
-
-# DLL build directory
-dll-build/
 
 # Temp/test files
 _dom_probe*.js

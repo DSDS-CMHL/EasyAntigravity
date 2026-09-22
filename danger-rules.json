@@ -1,7 +1,7 @@
 {
   "version": 1,
   "enabled": true,
-  "_comment": "高危命令自动放行熔断规则（类似 VPN rules）。pattern 为正则，默认不区分大小写。enabled=false 停用整组或单条。改完点「重载规则」或重启 EasyAG。备份见 backup/danger-rules.json。",
+  "_comment": "高危命令自动放行熔断规则（类似 VPN rules）。pattern 为正则，默认不区分大小写。enabled=false 停用整组或单条。改完点「重载规则」或重启 EasyAG。",
   "rules": [
     {
       "id": "rm-rf",

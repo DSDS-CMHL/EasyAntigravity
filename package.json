@@ -9,16 +9,8 @@
                     "test:danger-rules":  "node test/danger-rules.test.js",
                     "test:approval-lifecycle":  "node test/approval-lifecycle.test.js",
                     "test:tauri-lifecycle":  "node test/tauri-lifecycle.test.cjs",
-                    "tauri":  "tauri",
-                    "build":  "npx --yes pkg@5.8.1 server.js --targets node18-win-x64 --output EasyAntigravity.exe --compress GZip",
-                    "build:mac":  "npx --yes pkg@5.8.1 server.js --targets node18-macos-x64 --output EasyAntigravity-macos --compress GZip",
-                    "build:win":  "npx --yes pkg@5.8.1 server.js --targets node18-win-x64 --output EasyAntigravity.exe --compress GZip"
+                    "tauri":  "tauri"
                 },
-    "pkg":  {
-                "options":  [
-                                "no-warnings"
-                            ]
-            },
     "keywords":  [
                      "antigravity",
                      "proxy",
