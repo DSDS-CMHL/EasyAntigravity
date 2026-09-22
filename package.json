@@ -1,6 +1,6 @@
 {
     "name":  "easyantigravity",
-    "version":  "2.0.1",
+    "version":  "2.1.0",
     "description":  "Antigravity launcher: native no-TUN proxy, I18N, auto-accept",
     "main":  "server.js",
     "bin":  "server.js",

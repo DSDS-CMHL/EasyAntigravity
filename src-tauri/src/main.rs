@@ -104,6 +104,10 @@ fn main() {
         }))
         .manage(Backend { child: Mutex::new(None), closing: AtomicBool::new(false) })
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_title("EasyAntigravity (macOS Beta)");
+            }
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 match start_backend(&handle) {
