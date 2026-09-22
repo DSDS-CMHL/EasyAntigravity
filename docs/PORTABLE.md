@@ -1,4 +1,4 @@
-# EasyAntigravity v2.1.1 便携版指南
+# EasyAntigravity v2.2.0 便携版指南
 
 Windows：完整解压 ZIP，双击 EasyAntigravity.exe。请保留同目录的
 easyag-node.exe 和 backend 文件夹，不要单独拷贝主 exe。

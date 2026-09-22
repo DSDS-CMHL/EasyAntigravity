@@ -1,5 +1,17 @@
 # EasyAntigravity 更新日志
 
+## v2.2.0 (2026-09-22)
+
+### 🍏 macOS (Apple Silicon / Intel) 正式分发与内核修复
+- **解决 Apple Silicon JIT 崩溃**：修复 M 系列（M1~M4）Mac 上 `easyag-node` 因 Hardened Runtime 缺失 JIT 权限在 V8 `ThreadIsolation::Initialize` 阶段直接触发 `SIGTRAP`（signal 5，退出码 133）的静默崩溃。通过 `Entitlements.plist` 注入 `com.apple.security.cs.allow-jit`、`allow-unsigned-executable-memory` 及 `disable-library-validation`。
+- **规范应用外壳打包**：修复 CI 发布包解压后直接裸露 `Contents/` 的问题，现已封装为标准的 `EasyAntigravity.app` 外壳，解压即用。
+- **CI 自动化 JIT 冒烟校验**：在 GitHub Actions macOS 构建流水线中加入 Node V8 执行自检，阻断任何无权限二进制产物的发布。
+
+### 🛡️ 高危拦截与自动放行生命周期闭环
+- **杜绝历史卡片告警死循环**：高危检测严格限定为当前页面上可见且处于待审批状态的活动按钮与其所属卡片，彻底根除历史已完成指令在聊天区域残留导致持续 800ms 告警锁死的问题。
+- **手动放行即时释放锁定**：监听用户在页面上的显式点击（允许/拒绝/取消），用户放行后瞬间解除高危安全锁定，后续正常指令在 5~20ms 内无感恢复自动放行。
+- **完整指令文本识别**：优化命令提取算法，过滤 `run`/`ran` 等多余前缀，完整显示待审批真实命令。
+
 ## v2.1.1 (2026-09-22)
 
 ### 🛡️ 高危规则与热重载
