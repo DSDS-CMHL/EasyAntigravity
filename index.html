@@ -184,11 +184,22 @@
       cursor: pointer;
       font-weight: 500;
       transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 3.5px;
+    }
+    .quick-tag .tag-hint {
+      font-size: 9.5px;
+      opacity: 0.65;
+      font-weight: 400;
     }
     .quick-tag:hover {
       background: var(--primary);
       border-color: var(--primary);
       color: #fff;
+    }
+    .quick-tag:hover .tag-hint {
+      opacity: 0.9;
     }
     input[type="number"] {
       background: #101217;
@@ -387,9 +398,15 @@
     <div class="row">
       <span style="font-weight: 500;">本地代理端口:</span>
       <div class="port-cluster">
-        <button type="button" class="quick-tag" onclick="applyPort(7890)">7890</button>
-        <button type="button" class="quick-tag" onclick="applyPort(7897)">7897</button>
-        <button type="button" class="quick-tag" onclick="applyPort(10808)">10808</button>
+        <button type="button" class="quick-tag" onclick="applyPort(7890)" title="7890: Mihomo / Clash 默认端口">
+          7890 <span class="tag-hint">Mihomo</span>
+        </button>
+        <button type="button" class="quick-tag" onclick="applyPort(7897)" title="7897: Clash Verge / Verge Rev 默认端口">
+          7897 <span class="tag-hint">Verge</span>
+        </button>
+        <button type="button" class="quick-tag" onclick="applyPort(10808)" title="10808: v2rayN / Xray 默认端口">
+          10808 <span class="tag-hint">v2ray</span>
+        </button>
         <input type="number" id="proxyPortInput" min="1" max="65535" value="7890">
       </div>
     </div>
