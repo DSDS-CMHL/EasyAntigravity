@@ -1016,7 +1016,8 @@ function generateMasterInjectScript() {
       'code-view','editor-container','monaco-editor','suggest-widget',
       'output-view','debug-console','artifact-container','code-block',
       'diff-view','input-area','chat-input','cm-editor','CodeMirror',
-      'highlight','syntax','prism','hljs'
+      'highlight','syntax','prism','hljs',
+      'thought','thinking','reasoning','agent-turn','user-turn','chat-turn','chat-message','markdown-body'
     ];
     const BLOCKED_CLASS_TOKEN = ['terminal','xterm','preview','code'];
 
@@ -1027,6 +1028,8 @@ function generateMasterInjectScript() {
         if (curr.nodeType === Node.ELEMENT_NODE) {
           // 审批卡与交互弹窗：绝对禁止翻译！彻底保护 React 组件树，避免触发组件重绘与状态脱节
           if (isApprovalCard(curr)) return true;
+          // 人机交互区域（Agent思考路径、对话流、消息正文）：绝对禁止翻译！保持流式输出原生性与格式渲染
+          if (isHumanAgentInteractionZone(curr)) return true;
           const tag = (curr.tagName || '').toUpperCase();
           if (BLOCKED_TAGS.includes(tag)) return true;
           if (curr.getAttribute && curr.getAttribute('contenteditable') === 'true') return true;
@@ -1035,7 +1038,7 @@ function generateMasterInjectScript() {
           const cls = curr.className || '';
           if (typeof cls === 'string' && cls) {
             if (BLOCKED_CLASS_SUBSTR.some(c => cls.includes(c))) return true;
-            const tokens = cls.split(/[\\s]+/);
+            const tokens = cls.split(/[\s]+/);
             if (tokens.some(t => BLOCKED_CLASS_TOKEN.includes(t))) return true;
           }
         }
@@ -1056,11 +1059,47 @@ function generateMasterInjectScript() {
         tid.includes('run-command') ||
         tid.includes('continue')
       ) return true;
-      const role = (el.getAttribute && el.getAttribute('role')) || '';
-      if (role === 'dialog' || role === 'alertdialog') return true;
       const cls = el.className || '';
       if (typeof cls === 'string' && cls) {
-        if (/interaction|dialog|modal|approval|permission|run-command/i.test(cls)) return true;
+        if (/interaction|approval|permission|run-command/i.test(cls)) return true;
+      }
+      const role = (el.getAttribute && el.getAttribute('role')) || '';
+      if (role === 'dialog' || role === 'alertdialog') {
+        const hasApprovalBtn = !!el.querySelector(
+          'button[data-testid*="interaction"], button[data-testid*="approval"], button[data-testid*="permission"], button[data-testid*="continue"]'
+        );
+        const hasCode = !!el.querySelector('pre, code, [class*="code"], [data-testid*="command"]');
+        if (hasApprovalBtn || (hasCode && !!el.querySelector('button, [role="button"]'))) return true;
+      }
+      return false;
+    }
+
+    // ── 人机交互界面识别（思考过程、对话流、消息正文等绝对豁免翻译，保护流式输出与格式渲染） ──
+    function isHumanAgentInteractionZone(el) {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+      const tid = (el.getAttribute && el.getAttribute('data-testid')) || '';
+      if (
+        tid.includes('thought') ||
+        tid.includes('thinking') ||
+        tid.includes('reasoning') ||
+        tid.includes('agent-turn') ||
+        tid.includes('user-turn') ||
+        tid.includes('chat-turn') ||
+        tid.includes('chat-message') ||
+        tid.includes('chat-bubble') ||
+        tid.includes('chat-response') ||
+        tid.includes('chat-history') ||
+        tid.includes('chat-pane') ||
+        tid.includes('conversation-turn') ||
+        tid.includes('markdown-body') ||
+        tid.includes('rendered-markdown')
+      ) return true;
+
+      const cls = el.className || '';
+      if (typeof cls === 'string' && cls) {
+        if (/thought|thinking|reasoning|agent-turn|user-turn|chat-turn|chat-message|chat-bubble|chat-response|chat-markdown|markdown-body|rendered-markdown|prose\b/i.test(cls)) {
+          return true;
+        }
       }
       return false;
     }
