@@ -873,13 +873,38 @@ function generateMasterInjectScript() {
       return false;
     }
 
+    function getInteractionRoot(btn) {
+      if (!btn) return null;
+      return (
+        btn.closest('[role="dialog"]') ||
+        btn.closest('[role="alertdialog"]') ||
+        btn.closest('div[data-testid*="interaction"]') ||
+        btn.closest('div[class*="modal"]') ||
+        btn.closest('[data-testid="run-command-step"]') ||
+        btn.closest('div.relative.flex.flex-col') ||
+        btn.closest('div[class*="card"]') ||
+        btn.parentElement?.parentElement ||
+        btn.parentElement
+      );
+    }
+
+    const processedRoots = window.__ea_processed_roots || (window.__ea_processed_roots = new WeakSet());
+    const reportedRoots = window.__ea_reported_roots || (window.__ea_reported_roots = new WeakSet());
+
+    function reportInteractionRequest(btn) {
+      const root = getInteractionRoot(btn);
+      if (!root || reportedRoots.has(root)) return;
+      reportedRoots.add(root);
+      const cmd = extractLogSummary(root, '审批请求', btn);
+      console.log('[EA_REQUEST] 权限请求 · ' + cmd);
+    }
+
     function tryApprove(btn, kind) {
       if (!btn || btn.disabled || btn.hasAttribute('data-ea-ok')) return false;
       if (window.__ea_danger_lock) return false;
 
-      // 严格防重入：同一操作 3 秒内绝不触发第二次点击，彻底根除连续放行 bug
-      const now = Date.now();
-      if (now - (window.__ea_last_approved_at || 0) < 3000) return false;
+      const root = getInteractionRoot(btn);
+      if (root && processedRoots.has(root)) return false;
 
       const doc = btn.ownerDocument || document;
       if (window.__ea_config.blockDangerous) {
@@ -888,7 +913,7 @@ function generateMasterInjectScript() {
         if (cmd) {
           const hit = activePatterns.find(r => r.re.test(cmd));
           if (hit) {
-            window.__ea_danger_lock = { id: hit.id, name: hit.name, cmd, at: now };
+            window.__ea_danger_lock = { id: hit.id, name: hit.name, cmd, at: Date.now() };
             blockAllApprovalButtons(doc);
             console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + oneLine(cmd, 80));
             return true;
@@ -897,13 +922,6 @@ function generateMasterInjectScript() {
       }
 
       const card = cardForSubmit(btn);
-      if (recentlyAutoApproved(card, kind)) {
-        if (window.__ea_config.debugApproval) {
-          const entry = approvalEntry(card);
-          console.log('[EA_TRACE] skip=already-clicked request=' + (entry ? entry.id : 'ui') + ' source=' + kind + ' key=' + approvalKey(card, kind).slice(0, 120));
-        }
-        return true;
-      }
       const optIdx = (window.__ea_config && window.__ea_config.preferOption) || 1;
       let optText = '';
       let picked = null;
@@ -930,12 +948,8 @@ function generateMasterInjectScript() {
         }
       }
       btn.setAttribute('data-ea-ok', 'true');
-      markAutoApproved(card, kind);
-      window.__ea_last_approved_at = Date.now();
-      if (window.__ea_config.debugApproval) {
-        const entry = approvalEntry(card);
-        console.log('[EA_TRACE] click request=' + (entry ? entry.id : 'ui') + ' source=' + kind + ' option=' + (picked ? picked.cls : 'none') + ' key=' + approvalKey(card, kind).slice(0, 120));
-      }
+      if (root) processedRoots.add(root);
+
       realClick(btn);
       const cmd = extractLogSummary(card, kind || (btn.innerText || ''), btn);
       const optLabel = picked
@@ -1011,6 +1025,8 @@ function generateMasterInjectScript() {
       let depth = 0;
       while (curr && depth < 25) {
         if (curr.nodeType === Node.ELEMENT_NODE) {
+          // 审批卡与交互弹窗：绝对禁止翻译！彻底保护 React 组件树，避免触发组件重绘与状态脱节
+          if (isApprovalCard(curr)) return true;
           const tag = (curr.tagName || '').toUpperCase();
           if (BLOCKED_TAGS.includes(tag)) return true;
           if (curr.getAttribute && curr.getAttribute('contenteditable') === 'true') return true;
@@ -1029,61 +1045,30 @@ function generateMasterInjectScript() {
       return false;
     }
 
-    // ── 审批框结构识别（语言无关） ──
+    // ── 审批框结构识别（绝对豁免翻译，保持原生纯净英文） ──
     function isApprovalCard(el) {
       if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
       const tid = (el.getAttribute && el.getAttribute('data-testid')) || '';
-      if (tid.includes('interaction') || tid.includes('approval') || tid.includes('permission') || tid.includes('run-command')) return true;
+      if (
+        tid.includes('interaction') ||
+        tid.includes('approval') ||
+        tid.includes('permission') ||
+        tid.includes('run-command') ||
+        tid.includes('continue')
+      ) return true;
       const role = (el.getAttribute && el.getAttribute('role')) || '';
-      if (role === 'dialog' || role === 'alertdialog') {
-        const hasCode = el.querySelector('pre, code, [class*="code"], [data-testid*="command"]');
-        const hasBtn = el.querySelector('button, [role="button"]');
-        return !!(hasCode && hasBtn);
-      }
+      if (role === 'dialog' || role === 'alertdialog') return true;
       const cls = el.className || '';
       if (typeof cls === 'string' && cls) {
-        if (cls.includes('card') || cls.includes('Card')) {
-          const hasCode = el.querySelector('pre, code');
-          const hasBtn = el.querySelector('button, [role="button"]');
-          return !!(hasCode && hasBtn);
-        }
+        if (/interaction|dialog|modal|approval|permission|run-command/i.test(cls)) return true;
       }
       return false;
     }
 
-    // ── 动态正则翻译规则：处理含变量的审批选项文本 ──
-    const DYNAMIC_RULES = [
-      [/^Yes, and always allow ['"](.+?)['"] in this conversation$/i,
-        (m, cmd) => '是，且在本次对话中始终允许 \\'' + cmd + '\\''],
-      [/^Yes, and always allow ['"](.+?)['"] in this project$/i,
-        (m, cmd) => '是，且在本项目中始终允许 \\'' + cmd + '\\''],
-      [/^Yes, and always allow ['"](.+?)['"] in this workspace$/i,
-        (m, cmd) => '是，且在此工作区中始终允许 \\'' + cmd + '\\''],
-      [/^Yes, and always allow ['"](.+?)['"]$/i,
-        (m, cmd) => '是，且始终允许 \\'' + cmd + '\\''],
-      [/^Yes, and always allow (.+?) in this conversation$/i,
-        (m, cmd) => '是，且在本次对话中始终允许 ' + cmd],
-      [/^Yes, and always allow (.+?) in this project$/i,
-        (m, cmd) => '是，且在本项目中始终允许 ' + cmd],
-      [/^Yes, and always allow (.+?) when not in a project$/i,
-        (m, cmd) => '是，且在非项目状态下始终允许 ' + cmd],
-      [/^No \\((.+?)\\)$/i,
-        (m, reason) => '否（' + (window.__ea_dict[reason] || reason) + '）'],
-      [/^Deny \\((.+?)\\)$/i,
-        (m, reason) => '拒绝（' + (window.__ea_dict[reason] || reason) + '）'],
-      [/^Allow running (.+?)\\?$/i,
-        (m, cmd) => '允许运行 ' + cmd + '？'],
-      [/^Run (.+?)\\?$/i,
-        (m, cmd) => '运行 ' + cmd + '？'],
-      [/^Requesting permission to run (.+)$/i,
-        (m, cmd) => '正在请求权限以运行 ' + cmd]
-    ];
+    // 弃用审批框动态正则翻译：审批选项、按钮全保留原生英文，杜绝 React 节点重绘
+    const DYNAMIC_RULES = [];
 
     function tryDynamicTranslate(text) {
-      for (const rule of DYNAMIC_RULES) {
-        const m = text.match(rule[0]);
-        if (m) return rule[1](m[0], m[1]);
-      }
       return null;
     }
 
@@ -1163,10 +1148,8 @@ function generateMasterInjectScript() {
         }
 
         if (!window.__ea_config.autoAccept) return;
-        refreshVisibleCommandApprovals(doc);
         // fail closed：高危锁定时绝不进入任何点击分支
         if (checkDangerous(doc)) return;
-        reportVisibleApprovalRequests(doc);
 
         // ── 策略1: data-testid 精确匹配（最稳定，语言无关） ──
         const testidBtns = doc.querySelectorAll(
@@ -1175,6 +1158,7 @@ function generateMasterInjectScript() {
           'button[data-testid="permission-allow"]'
         );
         for (const btn of testidBtns) {
+          reportInteractionRequest(btn);
           if (tryApprove(btn, 'testid:' + (btn.getAttribute('data-testid') || ''))) return;
         }
 
@@ -1191,10 +1175,11 @@ function generateMasterInjectScript() {
           // 只接受明确的最终确认按钮，不能把“运行”这类发起请求按钮当成授权。
           const submitBtn =
             btns.find(b => /(?:continue|submit|allow)/i.test(b.getAttribute('data-testid') || '')) ||
-            btns.find(b => {
-              return isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label'));
-            });
-          if (submitBtn && tryApprove(submitBtn, '结构指纹审批卡')) return;
+            btns.find(b => isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label')));
+          if (submitBtn) {
+            reportInteractionRequest(submitBtn);
+            if (tryApprove(submitBtn, '结构指纹审批卡')) return;
+          }
         }
 
         // ── 策略3: 关键字兜底（中英双写，兼容汉化后） ──
