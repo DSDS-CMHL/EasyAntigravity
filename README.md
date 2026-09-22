@@ -14,7 +14,7 @@
 
 ## 简介
 
-**EasyAntigravity（EasyAG）** 是 Windows 上面向 Google Antigravity 的本地控制台，把常用增强收进一个小面板：
+**EasyAntigravity（EasyAG）** 是面向 Google Antigravity 的轻量控制台（现已原生支持 Windows 与 macOS），把常用增强收进一个小面板：
 
 - **原生免 TUN 代理**：启动时为 Chromium 设置本地 HTTP 代理，并将代理环境变量传给语言服务；不改系统代理、不启用 TUN、不加载网络 Hook
 - **界面汉化**：通过 CDP 注入词典，实时翻译界面文案
@@ -50,11 +50,13 @@
 
 1. 打开 [Releases](../../releases)，下载对应平台的最新安装包：
    - **Windows**：`EasyAntigravity-2.2.0-windows-x64.zip`
-   - **macOS（社区测试版 / Beta）**：`EasyAntigravity-2.2.0-tauri-macos-arm64-beta.zip`（Apple Silicon）或 `EasyAntigravity-2.2.0-tauri-macos-x64-beta.zip`（Intel）
+   - **macOS（社区测试版 / Beta）**：
+     - Apple Silicon（M1/M2/M3/M4）：`EasyAntigravity-2.2.0-macos-arm64-beta.zip`
+     - Intel 架构：`EasyAntigravity-2.2.0-macos-x64-beta.zip`
 2. 完整解压 ZIP 到任意目录（请保留目录内所有文件，不要单独拷贝主可执行程序）
 3. 运行程序：
-   - Windows：双击 `EasyAntigravity.exe`
-   - macOS：直接打开 `EasyAntigravity.app`（首次运行如遇拦截，请在系统「隐私与安全性」中点击允许）
+   - **Windows**：双击 `EasyAntigravity.exe`
+   - **macOS**：直接双击打开 `EasyAntigravity.app`（首次运行如遇拦截，请在系统「隐私与安全性」中点击允许）
 4. 确认面板里的 SOCKS5 端口与本机代理一致（默认 `7890`）
 5. 点击 **启动 Antigravity**
 
@@ -90,6 +92,16 @@
 
 ---
 
+## 🍏 macOS 社区测试版（Beta）
+
+EasyAntigravity 现已通过 Tauri 2.0 原生架构为 macOS 用户提供支持（包含 Apple Silicon 与 Intel 双架构独立版本）：
+
+- **免环境依赖**：内嵌专属 Node.js 运行时，用户无需在 Mac 上预先安装 Node.js 或 Rust 环境。
+- **Hardened Runtime JIT 支持**：针对 Apple Silicon (M 系列芯片) V8 引擎特性补齐 `com.apple.security.cs.allow-jit` 权限，运行平稳无崩溃。
+- **首次运行提示**：因测试版尚未加入 Apple 付费开发者公证，首次双击打开如遇系统提示“无法打开或已被阻止”，请前往 **「系统设置」->「隐私与安全性」**，在下方找到 EasyAntigravity 并点击 **「仍要打开」/「允许」** 即可。
+
+---
+
 ## 开发者（可选）
 
 ```powershell
@@ -105,25 +117,16 @@ npm start
 
 旧版 DLL 兼容模式可显式使用 `node server.js --dll-proxy`，但已弃用；该模式依赖 `version.dll`，与 AG 2.15.0 冲突。需要旧版兼容时请使用历史 release，新版请使用默认原生代理模式。
 
-打包：
-
-```powershell
-npx pkg@5.8.1 . --targets node18-win-x64 --output EasyAntigravity.exe --compress GZip
-```
-
 ---
-
 
 ## 致谢
 
 | 来源 | 说明 |
 |------|------|
 | [nicktan @ linux.do](https://linux.do/t/topic/2896116) | 界面汉化词典主要来源 |
+| [@wjzhu @ linux.do](https://linux.do/u/wjzhu/summary) | macOS (Apple Silicon M4) 兼容性测试、JIT 权限诊断与 App 打包反馈 |
 | ~~[antigravity-2.0-no-tun-login-proxy](https://github.com/2531565073zzc-ux/antigravity-2.0-no-tun-login-proxy)~~ | 已弃用：其 `version.dll` 注入方案与 AG 2.15.0 冲突；新版改用 Chromium 启动参数与语言服务代理环境变量实现免 TUN。 |
 | [AntiGravity-AutoAccept](https://github.com/yazanbaker94/AntiGravity-AutoAccept) | 自动审批交互思想参考 |
-
-
-</details>
 
 ## License
 
