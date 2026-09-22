@@ -1,0 +1,121 @@
+name: Tauri Build
+
+on:
+  push:
+    branches: [main, feat/tauri-gui]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            build-args: --no-bundle
+            name: windows-x64
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            build-args: --bundles app
+            name: macos-arm64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            build-args: --bundles app
+            name: macos-x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Backend dependencies and regressions
+        run: |
+          npm ci
+          node --check server.js
+          node test/danger-rules.test.js
+          node test/approval-lifecycle.test.js
+      - name: Prepare self-contained runtime
+        run: node scripts/prepare-tauri.cjs ${{ matrix.target }}
+      - name: Include runtime license
+        shell: bash
+        run: curl --fail --location "https://raw.githubusercontent.com/nodejs/node/$(node -p process.version)/LICENSE" --output src-tauri/backend/NODE-LICENSE.txt
+      - name: Test packaged backend without developer dependencies
+        shell: bash
+        run: |
+          export EASYAG_TEST_NODE="$PWD/src-tauri/binaries/easyag-node-${{ matrix.target }}"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then export EASYAG_TEST_NODE="$EASYAG_TEST_NODE.exe"; fi
+          export EASYAG_TEST_SERVER="$PWD/src-tauri/backend/server.js"
+          node test/tauri-lifecycle.test.cjs
+      - name: Build native application
+        run: npx --yes @tauri-apps/cli@2 build --target ${{ matrix.target }} ${{ matrix.build-args }}
+      - name: Package Windows portable ZIP
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'EasyAntigravity-2.1.0-tauri-windows-x64-portable'
+          $stage = Join-Path 'dist-tauri' $name
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          $release = 'src-tauri/target/${{ matrix.target }}/release'
+          Copy-Item -LiteralPath "$release/easyantigravity.exe" -Destination "$stage/EasyAntigravity.exe"
+          Copy-Item -LiteralPath 'src-tauri/binaries/easyag-node-${{ matrix.target }}.exe' -Destination "$stage/easyag-node.exe"
+          Copy-Item -LiteralPath 'src-tauri/backend' -Destination "$stage/backend" -Recurse
+          Get-ChildItem -LiteralPath $release -Filter '*.dll' -File | Copy-Item -Destination $stage
+          Copy-Item -LiteralPath 'LICENSE','docs/PORTABLE.md' -Destination $stage
+          Compress-Archive -LiteralPath $stage -DestinationPath "$name.zip"
+          Expand-Archive -LiteralPath "$name.zip" -DestinationPath 'dist-tauri/verify'
+          $extracted = (Resolve-Path "dist-tauri/verify/$name").Path
+          foreach ($file in @('EasyAntigravity.exe','easyag-node.exe','backend/server.js','backend/index.html','backend/dicts/common.json','backend/dicts/ui_v2.json','backend/danger-rules.json','backend/node_modules/ws/package.json','backend/NODE-LICENSE.txt')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $extracted $file))) { throw "Missing portable resource: $file" }
+          }
+          $env:EASYAG_TEST_NODE = Join-Path $extracted 'easyag-node.exe'
+          $env:EASYAG_TEST_SERVER = Join-Path $extracted 'backend/server.js'
+          node test/tauri-lifecycle.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-FileHash -LiteralPath "$name.zip" -Algorithm SHA256
+      - name: Package macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app="src-tauri/target/${{ matrix.target }}/release/bundle/macos/EasyAntigravity.app"
+          test -f "$app/Contents/Resources/backend/server.js"
+          test -f "$app/Contents/Resources/backend/node_modules/ws/package.json"
+          test -x "$app/Contents/MacOS/easyag-node"
+          codesign --verify --deep --strict "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "EasyAntigravity-2.1.0-tauri-${{ matrix.name }}-beta.zip"
+      - name: Upload Windows portable package
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EasyAntigravity-2.1.0-tauri-${{ matrix.name }}-portable
+          path: dist-tauri/EasyAntigravity-2.1.0-tauri-windows-x64-portable
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload macOS app (Beta)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EasyAntigravity-2.1.0-tauri-${{ matrix.name }}-beta
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/macos/EasyAntigravity.app
+          if-no-files-found: error
+          retention-days: 14
+      - name: Build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-metadata-${{ matrix.name }}
+          path: |
+            src-tauri/Cargo.lock
+            src-tauri/tauri.conf.json
+          retention-days: 14

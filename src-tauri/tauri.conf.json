@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "EasyAntigravity",
+  "version": "2.1.0",
+  "identifier": "com.easyag.launcher.tauri",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "EasyAntigravity",
+        "width": 490,
+        "height": 740,
+        "minWidth": 400,
+        "minHeight": 560,
+        "center": true,
+        "backgroundColor": "#0f1115"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "externalBin": [
+      "binaries/easyag-node"
+    ],
+    "resources": {
+      "backend/": "backend/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "skip"
+      }
+    }
+  }
+}

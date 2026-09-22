@@ -30,3 +30,11 @@ EasyAntigravity-v*-win-x64/
 # OS files
 Thumbs.db
 .DS_Store
+
+# Tauri build outputs (user profiles and runtime binaries never enter Git)
+src-tauri/target/
+src-tauri/gen/
+src-tauri/backend/
+src-tauri/binaries/easyag-node-*
+easyag.log*
+settings.json

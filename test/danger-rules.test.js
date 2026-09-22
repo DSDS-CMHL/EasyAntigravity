@@ -1,0 +1,73 @@
+/*
+ * 高危规则的纯逻辑回归测试。
+ *
+ * 只把命令作为字符串匹配，绝不会执行样例中的任何命令。
+ * 运行：npm run test:danger-rules
+ */
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const rulesPath = path.join(__dirname, '..', 'danger-rules.json');
+const config = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
+
+function activeRules(input = config) {
+  if (input.enabled === false) return [];
+  return (input.rules || [])
+    .filter(rule => rule && rule.enabled !== false)
+    .map(rule => ({ ...rule, re: new RegExp(rule.pattern, rule.flags || 'i') }));
+}
+
+function match(command, input = config) {
+  return activeRules(input).find(rule => rule.re.test(command)) || null;
+}
+
+const blockedCases = [
+  ['rm-rf', 'rm -rf /tmp/demo'],
+  ['rm-rf', 'rm -fr ./build'],
+  ['rm-rf', 'rm -r -f ./build'],
+  ['rm-rf', 'rm --recursive --force ./build'],
+  ['windows-del', 'rmdir /s /q C:\\temp\\demo'],
+  ['disk-wipe', 'format D: /q'],
+  ['disk-wipe', 'mkfs.ext4 /dev/sdb'],
+  ['sql-drop', 'DROP TABLE audit_log;'],
+  ['git-force-push', 'git push origin main --force'],
+  ['shutdown', 'shutdown /s /t 0'],
+  ['sudo-rm', 'sudo rm ./temporary-file'],
+  ['dd-disk', 'dd if=image.iso of=/dev/sdb bs=4M'],
+  ['chmod-777-root', 'chmod -R 777 /']
+];
+
+const allowedCases = [
+  'npm test',
+  'git push origin main',
+  'rm ./build/output.txt',
+  'git status --short',
+  'node --check server.js',
+  'SELECT * FROM users'
+];
+
+let checks = 0;
+for (const [ruleId, command] of blockedCases) {
+  const hit = match(command);
+  assert.ok(hit, `应该拦截：${command}`);
+  assert.equal(hit.id, ruleId, `规则不正确：${command}`);
+  checks++;
+}
+
+for (const command of allowedCases) {
+  assert.equal(match(command), null, `不应拦截：${command}`);
+  checks++;
+}
+
+const disabledOne = structuredClone(config);
+disabledOne.rules.find(rule => rule.id === 'shutdown').enabled = false;
+assert.equal(match('shutdown /s /t 0', disabledOne), null, '单条禁用后不应拦截');
+checks++;
+
+const disabledAll = structuredClone(config);
+disabledAll.enabled = false;
+assert.equal(match('rm -rf /tmp/demo', disabledAll), null, '总开关关闭后不应拦截');
+checks++;
+
+console.log(`PASS: ${checks} 项高危规则熔断检查通过（仅字符串匹配，未执行命令）`);

@@ -1,0 +1,21 @@
+[package]
+name = "easyantigravity"
+version = "2.0.1"
+edition = "2021"
+description = "EasyAntigravity - Antigravity Launcher with native proxy, i18n, auto-accept"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[[bin]]
+name = "easyantigravity"
+path = "src/main.rs"

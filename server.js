@@ -4,12 +4,68 @@ const path = require('path');
 const { spawn, exec } = require('child_process');
 const WebSocket = require('ws');
 
-const GUI_PORT = 19823;
+const TAURI_MODE = process.env.EASYAG_TAURI === '1';
+const TEST_MODE = process.env.EASYAG_TEST_MODE === '1';
+const GUI_PORT = TAURI_MODE ? 0 : 19823;
 const CDP_PORT = 9333;
+
+function normalizePath(p) {
+  if (!p) return p;
+  if (process.platform === 'win32') {
+    if (p.startsWith('\\\\?\\UNC\\')) return '\\\\' + p.slice(8);
+    if (p.startsWith('\\\\?\\')) return p.slice(4);
+  }
+  return p;
+}
 
 // pkg 打包后 __dirname 指向虚拟内存，需锚定 exe 实际所在目录
 const ROOT_DIR = process.pkg ? path.dirname(process.execPath) : __dirname;
-const LOCK_FILE = path.join(ROOT_DIR, 'easyag.lock');
+const DATA_DIR = normalizePath(process.env.EASYAG_DATA_DIR) || ROOT_DIR;
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const LOCK_FILE = path.join(DATA_DIR, 'easyag.lock');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+
+// ── Platform Detection ──
+const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
+
+// ── Platform-specific Antigravity paths ──
+function getAntigravityPaths() {
+  if (IS_MAC) {
+    const candidates = [
+      '/Applications/Antigravity.app',
+      '/Applications/Antigravity IDE.app',
+      path.join(process.env.HOME || '', 'Applications', 'Antigravity.app'),
+      path.join(process.env.HOME || '', 'Applications', 'Antigravity IDE.app')
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        let executable = 'Antigravity';
+        try {
+          executable = require('child_process').execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleExecutable', path.join(p, 'Contents', 'Info.plist')], { encoding: 'utf8' }).trim();
+        } catch (_) {}
+        const appExe = path.join(p, 'Contents', 'MacOS', executable);
+        return {
+          appDir: p,
+          appExe: fs.existsSync(appExe) ? appExe : path.join(p, 'Contents', 'MacOS', 'Antigravity'),
+          appName: path.basename(p, '.app')
+        };
+      }
+    }
+    const defaultApp = '/Applications/Antigravity.app';
+    return {
+      appDir: defaultApp,
+      appExe: path.join(defaultApp, 'Contents', 'MacOS', 'Antigravity'),
+      appName: 'Antigravity'
+    };
+  }
+  const appDir = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'antigravity');
+  return { appDir, appExe: path.join(appDir, 'Antigravity.exe'), appName: 'Antigravity' };
+}
+
+const AG_PATHS = getAntigravityPaths();
+const APP_DIR = AG_PATHS.appDir;
+const APP_EXE = AG_PATHS.appExe;
 
 function readLockPid() {
   try {
@@ -31,6 +87,7 @@ function isPidAlive(pid) {
 }
 
 function releaseLock() {
+  if (TAURI_MODE) return;
   try {
     const pid = readLockPid();
     if (!pid || pid === process.pid) fs.unlinkSync(LOCK_FILE);
@@ -44,6 +101,21 @@ function alreadyRunning() {
 
 function openGuiWindow() {
   const url = `http://127.0.0.1:${GUI_PORT}/?t=${Date.now()}`;
+
+  // ── macOS: use system default browser ──
+  if (IS_MAC) {
+    try {
+      exec(`open "${url}"`);
+      logToGUI('SYSTEM', 'GUI opened via system default browser', 'tag-proxy');
+      return true;
+    } catch (e) {
+      logToGUI('SYSTEM', `Failed to open browser: ${e.message}`, 'tag-alert');
+      logToGUI('SYSTEM', `Please open manually: ${url}`, 'tag-warn');
+      return false;
+    }
+  }
+
+  // ── Windows: WebView2 -> Browser fallback ──
   const pf = process.env.PROGRAMFILES || 'C:\\Program Files';
   const pf86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
   const la = process.env.LOCALAPPDATA || '';
@@ -123,7 +195,7 @@ function focusExistingGui() {
 
 // 双击 exe 会挂控制台：windowsHide 重启自身并退出，避免黑框
 // 已有实例时不再拉起新进程
-if (process.platform === 'win32' && !process.env.EASYAG_NOCONSOLE) {
+if (IS_WIN && !TAURI_MODE && !process.env.EASYAG_NOCONSOLE) {
   if (alreadyRunning()) {
     focusExistingGui();
     process.exit(0);
@@ -146,7 +218,7 @@ if (process.platform === 'win32' && !process.env.EASYAG_NOCONSOLE) {
 }
 
 // 子进程：若锁显示已有实例，也不占用第二个
-if (alreadyRunning()) {
+if (!TAURI_MODE && alreadyRunning()) {
   focusExistingGui();
   process.exit(0);
 }
@@ -159,17 +231,18 @@ try {
 
 const HTML_FILE = path.join(ROOT_DIR, 'index.html');
 
-const APP_DIR = path.join(process.env.LOCALAPPDATA, 'Programs', 'antigravity');
-const APP_EXE = path.join(APP_DIR, 'Antigravity.exe');
 const BACKUP_DIR = path.join(ROOT_DIR, 'backup');
 const BACKUP_DLL = path.join(BACKUP_DIR, 'version.dll');
 const BACKUP_JSON = path.join(BACKUP_DIR, 'config.json');
 const TARGET_DLL = path.join(APP_DIR, 'version.dll');
 const DISABLED_DLL = path.join(APP_DIR, 'version.dll.easyag-disabled');
-const TARGET_JSON = path.join(APP_DIR, 'config.json');
+const TARGET_JSON = IS_MAC ? path.join(process.env.HOME || '', 'Library', 'Application Support', 'Antigravity', 'config.json') : path.join(APP_DIR, 'config.json');
 
 const DICT_DIR = path.join(ROOT_DIR, 'dicts');
-const RULES_FILE = path.join(ROOT_DIR, 'danger-rules.json');
+const RULES_FILE = path.join(DATA_DIR, 'danger-rules.json');
+if (TAURI_MODE && !fs.existsSync(RULES_FILE)) {
+  fs.copyFileSync(path.join(ROOT_DIR, 'danger-rules.json'), RULES_FILE);
+}
 const BACKUP_RULES = path.join(BACKUP_DIR, 'danger-rules.json');
 
 // 调试模式：--debug 参数 或 debug.flag 文件 存在时开启
@@ -203,25 +276,22 @@ let state = {
   cdpLoopRunning: false
 };
 
-if (debugMode) {
-  console.log('[DEBUG] 调试模式已开启：将输出 DOM 抓取日志');
-  logToGUI('DEBUG', '调试模式已开启，审批卡 DOM 结构将输出到日志', 'tag-i18n');
-}
+try {
+  const saved = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+  for (const key of ['autoAccept', 'blockDangerous', 'enableI18n', 'debugApproval']) {
+    if (typeof saved[key] === 'boolean') state[key] = saved[key];
+  }
+  if (Number.isInteger(saved.port) && saved.port > 0 && saved.port < 65536) state.port = saved.port;
+  if ([1, 2, 3, 4].includes(Number(saved.preferOption))) state.preferOption = Number(saved.preferOption);
+} catch (_) {}
 
-// GUI 存活检测：心跳 + SSE 双通道
-let guiSeen = false;
-let lastGuiAt = 0;
-let lastPingAt = 0;
 let quitting = false;
-
-function touchGui() {
-  guiSeen = true;
-  lastGuiAt = Date.now();
-}
+let launchedClient = null;
 
 function quitApp(reason) {
   if (quitting) return;
   quitting = true;
+  logToGUI('SYSTEM', '正在退出: ' + reason, 'tag-warn');
   state.clientRunning = false;
   for (const [, entry] of cdpSockets) {
     try { entry.ws.close(); } catch (e) {}
@@ -229,10 +299,11 @@ function quitApp(reason) {
   cdpSockets.clear();
   releaseLock();
   try {
-    exec('taskkill /F /FI "WINDOWTITLE eq EasyAntigravity*" /T', { windowsHide: true }, () => {});
+    if (!TAURI_MODE && IS_WIN && !TEST_MODE) exec('taskkill /F /FI "WINDOWTITLE eq EasyAntigravity*" /T', { windowsHide: true }, () => {});
   } catch (e) {}
   try {
-    exec('taskkill /F /IM Antigravity.exe /T', { windowsHide: true }, () => {});
+    if (!TEST_MODE && IS_WIN) exec('taskkill /F /IM Antigravity.exe /T', { windowsHide: true }, () => {});
+    else if (!TEST_MODE && IS_MAC && launchedClient) process.kill(-launchedClient.pid, 'SIGTERM');
   } catch (e) {}
   setTimeout(() => {
     process.exit(0);
@@ -305,9 +376,15 @@ function loadDictionaries() {
 let sseClients = [];
 let logBuffer = [];
 let logHistory = [];
+if (debugMode) logToGUI('DEBUG', '调试模式已开启，审批卡 DOM 结构将输出到日志', 'tag-i18n');
 
 function logToGUI(category, message, cls = '') {
   const item = { at: new Date().toISOString(), category, message, cls };
+  try {
+    const file = path.join(DATA_DIR, 'easyag.log');
+    if (fs.existsSync(file) && fs.statSync(file).size > 2 * 1024 * 1024) fs.renameSync(file, file + '.previous');
+    fs.appendFileSync(file, JSON.stringify(item) + '\n');
+  } catch (_) {}
   logHistory.push(item);
   if (logHistory.length > 300) logHistory.shift();
   const payload = JSON.stringify({ category, message, cls });
@@ -348,6 +425,7 @@ function pushCounters() {
 }
 
 function ensureProxyWatchdog() {
+  if (TEST_MODE) return false;
   if (!fs.existsSync(APP_DIR)) return false;
 
   // 原生模式隔离旧版 DLL 兼容组件，避免遗留 Hook 参与新模式网络链路。
@@ -407,7 +485,7 @@ function buildNativeProxyLaunch() {
 
 function syncProxyPort(newPort) {
   state.port = newPort;
-  [BACKUP_JSON, TARGET_JSON].forEach(file => {
+  (nativeProxyMode ? [] : [BACKUP_JSON, TARGET_JSON]).forEach(file => {
     if (fs.existsSync(file)) {
       try {
         const cfg = JSON.parse(fs.readFileSync(file, 'utf-8'));
@@ -1306,7 +1384,6 @@ const MIME = {
 
 const server = http.createServer((req, res) => {
   if (req.url === '/' || (req.url && req.url.startsWith('/?'))) {
-    touchGui();
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -1350,7 +1427,9 @@ const server = http.createServer((req, res) => {
         return res.end(JSON.stringify({ ok: false, error: 'rules file missing' }));
       }
       // explorer 用系统默认程序打开 json，比 cmd start 更稳
-      spawn('explorer.exe', [RULES_FILE], { detached: true, stdio: 'ignore' }).unref();
+      const editor = spawn(IS_MAC ? 'open' : 'explorer.exe', IS_MAC ? ['-t', RULES_FILE] : [RULES_FILE], { detached: true, stdio: 'ignore' });
+      editor.on('error', err => logToGUI('SYSTEM', '打开规则失败: ' + err.message, 'tag-alert'));
+      editor.unref();
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ ok: true, path: RULES_FILE }));
     } catch (e) {
@@ -1359,27 +1438,37 @@ const server = http.createServer((req, res) => {
     }
   }
   if (req.url === '/api/ping') {
-    touchGui();
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     return res.end('pong');
   }
   if (req.url === '/api/status') {
-    touchGui();
     ensureProxyWatchdog();
     // 快速检测 AG 进程是否存活
     if (state.clientRunning) {
-      try {
-        exec('tasklist /FI "IMAGENAME eq Antigravity.exe" /NH', { windowsHide: true }, (err, stdout) => {
-          if (!err && stdout && stdout.includes('Antigravity')) {
-            // 进程还在
-          } else {
-            state.clientRunning = false;
-            state.cdpSockets = 0;
-            logToGUI('SYSTEM', '检测到 Antigravity 进程已退出', 'tag-warn');
-            pushClientStatus();
-          }
-        });
-      } catch (e) {}
+      if (launchedClient && launchedClient.pid) {
+        if (!isPidAlive(launchedClient.pid)) {
+          state.clientRunning = false;
+          state.cdpSockets = 0;
+          logToGUI('SYSTEM', '检测到 Antigravity 进程已退出', 'tag-warn');
+          pushClientStatus();
+        }
+      } else {
+        try {
+          const checkCmd = IS_WIN
+            ? 'tasklist /FI "IMAGENAME eq Antigravity.exe" /NH'
+            : 'pgrep -x Antigravity || pgrep -f "Antigravity.app/Contents/MacOS"';
+          exec(checkCmd, { windowsHide: true }, (err, stdout) => {
+            if (!err && stdout && (stdout.includes('Antigravity') || /\d+/.test(stdout))) {
+              // 进程还在
+            } else {
+              state.clientRunning = false;
+              state.cdpSockets = 0;
+              logToGUI('SYSTEM', '检测到 Antigravity 进程已退出', 'tag-warn');
+              pushClientStatus();
+            }
+          });
+        } catch (e) {}
+      }
     }
     return res.end(JSON.stringify(state));
   }
@@ -1397,14 +1486,11 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (req.url === '/api/events') {
-    touchGui();
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
     sseClients.push(res);
     flushLogBuffer();
     req.on('close', () => {
       sseClients = sseClients.filter(c => c !== res);
-      // SSE 断开 = GUI 可能已关闭，刷新时间戳启动退出倒计时
-      lastGuiAt = Date.now();
     });
     return;
   }
@@ -1429,6 +1515,7 @@ const server = http.createServer((req, res) => {
         if (typeof data.enableI18n === 'boolean') state.enableI18n = data.enableI18n;
         if (typeof data.debugApproval === 'boolean') state.debugApproval = data.debugApproval;
         if (data.preferOption) state.preferOption = data.preferOption;
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ port: state.port, autoAccept: state.autoAccept, blockDangerous: state.blockDangerous, preferOption: state.preferOption, enableI18n: state.enableI18n, debugApproval: state.debugApproval }, null, 2));
 
         res.end('ok');
       } catch (e) {
@@ -1461,10 +1548,23 @@ const server = http.createServer((req, res) => {
     const launch = nativeProxyMode
       ? buildNativeProxyLaunch()
       : { args: [`--remote-debugging-port=${CDP_PORT}`], env: process.env };
-    const child = spawn(APP_EXE, launch.args, {
+    const currentPaths = getAntigravityPaths();
+    const launchCmd = currentPaths.appExe;
+    if (!fs.existsSync(launchCmd)) {
+      res.writeHead(404);
+      return res.end('未找到 Antigravity: ' + launchCmd);
+    }
+    const launchArgs = launch.args;
+    const child = spawn(launchCmd, launchArgs, {
       detached: true,
       stdio: 'ignore',
       env: launch.env
+    });
+    launchedClient = child;
+    child.on('error', err => {
+      state.clientRunning = false;
+      logToGUI('SYSTEM', '启动 Antigravity 失败: ' + err.message, 'tag-alert');
+      pushClientStatus();
     });
     state.clientRunning = true;
     state.cdpError = '';
@@ -1516,7 +1616,7 @@ async function tryAttachExistingClient() {
 
 function writeCrashLog(msg) {
   try {
-    fs.writeFileSync(path.join(ROOT_DIR, 'easyag-error.log'), String(msg), 'utf-8');
+    fs.writeFileSync(path.join(DATA_DIR, 'easyag-error.log'), String(msg), 'utf-8');
   } catch (e) {}
 }
 
@@ -1535,14 +1635,23 @@ process.on('uncaughtException', (err) => {
 
 process.on('exit', releaseLock);
 
-// 原生 GUI 通过 FormClosing -> /api/quit 显式退出。
-// 后台页面轮询可能被节流，不能根据心跳超时终止 EasyAG 与 AG。
+// 原生宿主拥有生命周期：关闭窗口写入 quit，宿主异常结束会关闭管道。
+// 页面轮询暂停、刷新、SSE 重连均不触发退出。
+if (TAURI_MODE) {
+  require('readline').createInterface({ input: process.stdin }).on('line', line => {
+    if (line === 'quit') quitApp('原生窗口关闭');
+  }).on('close', () => quitApp('原生宿主管道关闭'));
+}
 
 server.listen(GUI_PORT, '127.0.0.1', () => {
-  try { fs.writeFileSync(LOCK_FILE, String(process.pid), 'utf-8'); } catch (e) {}
+  if (!TAURI_MODE) try { fs.writeFileSync(LOCK_FILE, String(process.pid), 'utf-8'); } catch (e) {}
   ensureProxyWatchdog();
   logToGUI('SECURITY', `高危规则已加载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效`, 'tag-proxy');
-  openGuiWindow();
+  if (TAURI_MODE) {
+    const ready = { port: server.address().port, pid: process.pid };
+    const readyFile = normalizePath(process.env.EASYAG_READY_FILE);
+    if (readyFile) fs.writeFileSync(readyFile, JSON.stringify(ready));
+  } else openGuiWindow();
   // AG 可能先于 EasyAG 启动：探测 9333 并自动接管
-  setTimeout(() => { tryAttachExistingClient(); }, 500);
+  if (!TEST_MODE) setTimeout(() => { tryAttachExistingClient(); }, 500);
 });
