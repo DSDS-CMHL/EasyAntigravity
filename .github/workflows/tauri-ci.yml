@@ -64,7 +64,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $name = 'EasyAntigravity-2.1.0-windows-x64'
+          $name = 'EasyAntigravity-2.1.1-windows-x64'
           $stage = Join-Path 'dist-tauri' $name
           New-Item -ItemType Directory -Path $stage | Out-Null
           $release = 'src-tauri/target/${{ matrix.target }}/release'
@@ -93,20 +93,20 @@ jobs:
           test -f "$app/Contents/Resources/backend/node_modules/ws/package.json"
           test -x "$app/Contents/MacOS/easyag-node"
           codesign --verify --deep --strict "$app"
-          ditto -c -k --sequesterRsrc --keepParent "$app" "EasyAntigravity-2.1.0-${{ matrix.name }}-beta.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "EasyAntigravity-2.1.1-${{ matrix.name }}-beta.zip"
       - name: Upload Windows package
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: EasyAntigravity-2.1.0-${{ matrix.name }}
-          path: dist-tauri/EasyAntigravity-2.1.0-windows-x64
+          name: EasyAntigravity-2.1.1-${{ matrix.name }}
+          path: dist-tauri/EasyAntigravity-2.1.1-windows-x64
           if-no-files-found: error
           retention-days: 14
       - name: Upload macOS app (Beta)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: EasyAntigravity-2.1.0-${{ matrix.name }}-beta
+          name: EasyAntigravity-2.1.1-${{ matrix.name }}-beta
           path: src-tauri/target/${{ matrix.target }}/release/bundle/macos/EasyAntigravity.app
           if-no-files-found: error
           retention-days: 14
