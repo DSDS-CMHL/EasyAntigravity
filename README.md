@@ -48,13 +48,17 @@
 
 ## 开箱即用
 
-1. 打开 [Releases](../../releases)，下载最新的 **`EasyAntigravity-v2.0.1-win-x64-slim.zip`**
-2. 解压到任意目录（建议路径不要过深、避免中文权限问题目录）
-3. **双击 `EasyAntigravity.exe`**
+1. 打开 [Releases](../../releases)，下载对应平台的最新安装包：
+   - **Windows**：`EasyAntigravity-2.1.0-tauri-windows-x64-portable.zip`
+   - **macOS（社区测试版 / Beta）**：`EasyAntigravity-2.1.0-tauri-macos-arm64-beta.zip`（Apple Silicon）或 `EasyAntigravity-2.1.0-tauri-macos-x64-beta.zip`（Intel）
+2. 完整解压 ZIP 到任意目录（请保留目录内所有文件，不要单独拷贝主可执行程序）
+3. 运行程序：
+   - Windows：双击 `EasyAntigravity.exe`
+   - macOS：直接打开 `EasyAntigravity.app`（首次运行如遇拦截，请在系统「隐私与安全性」中点击允许）
 4. 确认面板里的 SOCKS5 端口与本机代理一致（默认 `7890`）
 5. 点击 **启动 Antigravity**
 
-> 请使用 Release 里的 zip 完整解压，不要只拷贝一个 exe。
+> 请使用 Release 里的 zip 完整解压运行，不要只单独拷贝可执行文件。
 
 ---
 
