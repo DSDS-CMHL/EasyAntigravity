@@ -61,7 +61,7 @@ fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Erro
     command.arg(resources.join("server.js")).current_dir(&resources)
         .env("EASYAG_TAURI", "1").env("EASYAG_NOCONSOLE", "1")
         .env("EASYAG_DATA_DIR", &data).env("EASYAG_READY_FILE", &ready)
-        .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::from(log));
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::from(log));
     #[cfg(windows)] {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
@@ -70,7 +70,28 @@ fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Erro
     {
         let mut slot = backend.child.lock().map_err(|_| "Backend lock poisoned")?;
         if backend.closing.load(Ordering::SeqCst) { return Err("Window closed".into()); }
-        *slot = Some(command.spawn()?);
+        let mut child = command.spawn()?;
+        if let Some(stdout) = child.stdout.take() {
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                use std::io::{BufRead, BufReader};
+                let reader = BufReader::new(stdout);
+                for line in reader.lines() {
+                    if let Ok(line) = line {
+                        if line.trim() == "popup" || line.trim() == "focus" {
+                            if let Some(window) = handle.get_webview_window("main") {
+                                let _ = window.unminimize();
+                                let _ = window.show();
+                                let _ = window.set_always_on_top(true);
+                                let _ = window.set_always_on_top(false);
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        *slot = Some(child);
     }
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {

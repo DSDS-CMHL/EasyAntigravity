@@ -401,6 +401,12 @@ function pushCounters() {
   sseClients.forEach(res => res.write(`data: ${payload}\n\n`));
 }
 
+function popupGuiWindow() {
+  if (TAURI_MODE) {
+    try { process.stdout.write('popup\n'); } catch (e) {}
+  }
+}
+
 function ensureProxyWatchdog() {
   if (TEST_MODE) return false;
   if (!fs.existsSync(APP_DIR)) return false;
@@ -1252,6 +1258,7 @@ async function startCDPLoop() {
                   state.blockCount += 1;
                   logToGUI('SECURITY ALERT', text.replace('[EA_ALERT]', '').trim(), 'tag-alert');
                   pushCounters();
+                  popupGuiWindow();
                 } else if (text.includes('[EA_DOM]')) {
                   logToGUI('DOM-CAPTURE', text.replace('[EA_DOM]', '').trim(), 'tag-i18n');
                 } else if (text.includes('[EA_HTML]')) {
