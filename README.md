@@ -23,35 +23,34 @@
 ---
 
 <details>
-<summary><b>⚠️ 不要依赖 Turbo Mode 实现自动审批（点击展开查看全字匹配缺陷与实测记录）</b></summary>
+<summary><b>⚠️安全提醒：不要依赖 Turbo Mode 实现自动审批（点击展开查看实测结果）</b></summary>
 
-<br>
 ### 1. 机制缺陷剖析
-* **官方仅支持“全字精确匹配”（无通配符/无正则）**：
-  官方命令拦截规则（`permissionGrants`）必须与执行字符串**完全一致**。如果规则中将 `rm -rf` 或 `cmd /c rmdir` 设为 `Ask`，只要 AI 实际发起的命令后面附带了具体的路径或参数（如 `rm -rf "F:\project"`），官方机制便会判定为**“未命中”**。
-* **Turbo Mode 的“默认静默全放行”**：
-  在 Turbo 模式下，只要命令未被规则精准命中，系统默认视为安全并在后台**静默毫秒级直接执行**，不弹窗、不暂停，用户没有任何介入反应的时间。
+
+* **仅支持全字匹配（无正则/通配符）**：官方拦截规则（`permissionGrants`）必须与执行字符串**100% 完全一致**。如果在规则中将 `rm -rf` 或 `cmd /c rmdir` 设为 `Ask`，一旦 AI 发起的命令带有实际路径或参数（如 `rm -rf "F:\project"`），该规则便会直接判定为**“未命中”**。
+* **Turbo Mode 默认静默全放行**：在 Turbo 模式下，只要命令未被规则精准命中，系统默认视为无害命令并在后台**毫秒级直接静默执行**，不弹窗、不暂停，没有任何核对反应时间。
+
 ---
-### 2. 开发者实测试记录
-```text
-[测试环境]  Windows 11 / Google Antigravity 官方桌面端
-[运行模式]  开启 Turbo Mode（疾速执行模式）
-[预置规则]  已显式将 "rm -rf" 与 "cmd /c rmdir" 添加至拦截规则并设置为 "Ask" (每次询问)
-```
-**AI 实际发起执行的命令**：
-```bat
-cmd /c rmdir /s /q "F:\Download\antigravity-2.0-no-tun-login-proxy-main\EasyAntigravity\safety-turbo-test"
-```
-**实测结果**：
-```text
-【拦截失败】预置的 "cmd /c rmdir" 规则因未匹配后面的路径和参数，直接失效。
-【静默删库】Turbo Mode 判定为未受限命令，未弹出任何审核窗口，测试目录被瞬间物理粉碎。
-```
+
+### 2. 开发者实测结果
+
+> **【测试环境】** Windows 11 / Antigravity 官方桌面端  
+> **【运行模式】** 开启 Turbo Mode（疾速执行模式）  
+> **【预置规则】** 显式将 `rm -rf` 与 `cmd /c rmdir` 设为 `Ask` (每次询问)  
+> **【AI 执行命令】**  
+> `cmd /c rmdir /s /q "F:\Download\antigravity-2.0-no-tun-login-proxy-main\EasyAntigravity\safety-turbo-test"`  
+> **【实测结果】**  
+> ❌ **规则失效**：因命令携带具体路径，与预置规则不完全一致，未触发拦截。  
+> ⚠️ **静默粉碎**：Turbo Mode 直接放行，全程**零弹窗、零确认**，测试目录被瞬间物理彻底删除。
+
 ---
+
 ### 3. 结论
-通过官方配置文件配置危险命令黑名单**无法防范**带有动态路径的破坏性操作。通过 EasyAG 的**整行全命令行动态正则扫描**与**熔断挂起（Circuit Breaker Latch）**机制，才能在享受日常指令秒批的同时真正守住安全底线。
+
+依靠官方配置文件预埋命令黑名单**无法防范**带动态路径的破坏性操作。必须依赖整行全命令动态正则分析与熔断机制（Circuit Breaker Latch），才能在享受日常指令秒批的同时守住安全底线。
 
 </details>
+
 
 ## 开箱即用
 
