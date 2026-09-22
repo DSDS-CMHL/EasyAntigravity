@@ -2,7 +2,7 @@ name: Tauri Build
 
 on:
   push:
-    branches: [main, feat/tauri-gui]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
