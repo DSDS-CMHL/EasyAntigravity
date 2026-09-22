@@ -1074,7 +1074,7 @@ function generateMasterInjectScript() {
       return false;
     }
 
-    // ── 人机交互界面识别（思考过程、对话流、消息正文等绝对豁免翻译，保护流式输出与格式渲染） ──
+    // ── 人机交互界面识别（思考过程、对话流、消息正文、工具执行步骤等绝对豁免翻译，保护流式输出与格式渲染） ──
     function isHumanAgentInteractionZone(el) {
       if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
       const tid = (el.getAttribute && el.getAttribute('data-testid')) || '';
@@ -1092,12 +1092,16 @@ function generateMasterInjectScript() {
         tid.includes('chat-pane') ||
         tid.includes('conversation-turn') ||
         tid.includes('markdown-body') ||
-        tid.includes('rendered-markdown')
+        tid.includes('rendered-markdown') ||
+        tid.includes('tool-call') ||
+        tid.includes('step') ||
+        tid.includes('review') ||
+        tid.includes('diff')
       ) return true;
 
       const cls = el.className || '';
       if (typeof cls === 'string' && cls) {
-        if (/thought|thinking|reasoning|agent-turn|user-turn|chat-turn|chat-message|chat-bubble|chat-response|chat-markdown|markdown-body|rendered-markdown|prose\b/i.test(cls)) {
+        if (/thought|thinking|reasoning|agent-turn|user-turn|chat-turn|chat-message|chat-bubble|chat-response|chat-markdown|markdown-body|rendered-markdown|prose|tool-call|step-|review-|diff-/i.test(cls)) {
           return true;
         }
       }
