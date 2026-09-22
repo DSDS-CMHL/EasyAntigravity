@@ -465,14 +465,13 @@ function generateMasterInjectScript() {
     });
     window.__ea_dict = ${dictJSON};
     window.__ea_danger_patterns = ${patternsJSON};
-
-    if (window.__ea_engine_running) return;
-    window.__ea_engine_running = true;
-
-    const DANGEROUS_PATTERNS = (window.__ea_danger_patterns || []).map(r => {
+    window.__ea_compiled_danger_patterns = (window.__ea_danger_patterns || []).map(r => {
       try { return { id: r.id, name: r.name, re: new RegExp(r.pattern, r.flags || 'i') }; }
       catch (e) { return null; }
     }).filter(Boolean);
+
+    if (window.__ea_engine_running) return;
+    window.__ea_engine_running = true;
 
     function realClick(el) {
       const opts = { bubbles: true, cancelable: true, view: window };
@@ -777,10 +776,11 @@ function generateMasterInjectScript() {
         'div[data-testid*="interaction"], div[data-testid*="approval"],' +
         'div[data-testid*="permission"], div[data-testid*="command"]'
       );
+      const activePatterns = window.__ea_compiled_danger_patterns || [];
       for (const card of cards) {
         const cmd = extractCommandText(card);
         if (!cmd) continue;
-        const hit = DANGEROUS_PATTERNS.find(r => r.re.test(cmd));
+        const hit = activePatterns.find(r => r.re.test(cmd));
         if (hit) return latchDangerousApproval(card, hit, cmd);
       }
       return false;
@@ -791,10 +791,16 @@ function generateMasterInjectScript() {
       const card = cardForSubmit(btn);
       if (window.__ea_config.blockDangerous) {
         const cmd = extractCommandText(card);
+        const activePatterns = window.__ea_compiled_danger_patterns || [];
         if (cmd) {
-          const hit = DANGEROUS_PATTERNS.find(r => r.re.test(cmd));
+          const hit = activePatterns.find(r => r.re.test(cmd));
           if (hit) {
             return latchDangerousApproval(card, hit, cmd);
+          } else if (card && card.hasAttribute && card.hasAttribute('data-ea-danger-key')) {
+            card.removeAttribute('data-ea-danger-key');
+            if (card.querySelectorAll) {
+              card.querySelectorAll('[data-ea-ok="blocked"]').forEach(el => el.removeAttribute('data-ea-ok'));
+            }
           }
         }
         // 同一张卡重绘时优先保留阻断标记；正常的新卡不会携带此属性。
@@ -1369,8 +1375,14 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/api/danger-rules/reload' && req.method === 'POST') {
     loadDangerRules();
-    logToGUI('SECURITY', `高危规则已重载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效`, 'tag-proxy');
-    return res.end(JSON.stringify({ ok: true, active: state.dangerRulesOn, total: state.dangerRulesTotal }));
+    let broadcastCount = 0;
+    for (const [, entry] of cdpSockets) {
+      if (entry && entry.ws && entry.ws.readyState === WebSocket.OPEN) {
+        if (injectInto(entry.ws, 'reload')) broadcastCount++;
+      }
+    }
+    logToGUI('SECURITY', `高危规则已重载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效${broadcastCount ? ' (已实时同步至 ' + broadcastCount + ' 个会话)' : ''}`, 'tag-proxy');
+    return res.end(JSON.stringify({ ok: true, active: state.dangerRulesOn, total: state.dangerRulesTotal, broadcastCount }));
   }
   if (req.url === '/api/danger-rules/open' && req.method === 'POST') {
     try {

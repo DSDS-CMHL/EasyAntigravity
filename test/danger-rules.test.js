@@ -51,7 +51,8 @@ const allowedCases = [
   'Invoke-RestMethod -Uri "http://127.0.0.1:9222/json" | Select-Object | Format-List',
   'npm run format',
   'git log --format="%h %s"',
-  'clang-format -i main.cpp'
+  'clang-format -i main.cpp',
+  'git add -A; git commit -m "fix(security): refine disk-wipe regex to prevent false positives on Format-Table/Format-List"'
 ];
 
 let checks = 0;
