@@ -558,37 +558,52 @@ function generateMasterInjectScript() {
     // 高危扫描用：尽量拿到完整命令正文（可多行）
     function extractCommandText(card) {
       if (!card) return '';
-      const code = card.querySelector('pre, code, [data-testid="run-command-step"] pre, [data-testid="run-command-step"] code');
+      const code = card.querySelector('pre, code, [class*="code"], [class*="mono"], .font-mono');
       if (code && (code.innerText || code.textContent || '').trim()) {
-        return (code.innerText || code.textContent || '').trim();
+        const t = (code.innerText || code.textContent || '').trim();
+        if (t.length > 1) return t;
       }
-      const step = card.querySelector('[data-testid="run-command-step"]');
-      if (step && (step.innerText || step.textContent || '').trim()) {
-        return (step.innerText || step.textContent || '').trim();
+      const step = (card.getAttribute && card.getAttribute('data-testid') === 'run-command-step')
+        ? card
+        : (card.querySelector ? card.querySelector('[data-testid="run-command-step"]') : null);
+      if (step) {
+        const mono = step.querySelector('.font-mono, [class*="mono"], pre, code');
+        if (mono && (mono.innerText || mono.textContent || '').trim()) {
+          return (mono.innerText || mono.textContent || '').trim();
+        }
+        const raw = (step.innerText || step.textContent || '').trim();
+        const cleaned = raw.replace(/^(run|ran)\\s+/i, '').trim();
+        if (cleaned.length > 1) return cleaned;
       }
       return '';
     }
 
+    function isElementVisible(el) {
+      if (!el || el.disabled) return false;
+      if (el.offsetParent === null && el.offsetWidth === 0 && el.offsetHeight === 0) return false;
+      const s = window.getComputedStyle ? window.getComputedStyle(el) : null;
+      if (s && (s.display === 'none' || s.visibility === 'hidden')) return false;
+      return true;
+    }
+
+    function findActivePendingSubmit(doc) {
+      if (!doc || !doc.querySelectorAll) return null;
+      const testidBtns = Array.from(doc.querySelectorAll(
+        'button[data-testid="interaction-continue-button"],' +
+        'button[data-testid="approval-submit"],' +
+        'button[data-testid="permission-allow"]'
+      ));
+      const active = testidBtns.find(b => isElementVisible(b) && b.getAttribute('data-ea-ok') !== 'true' && b.getAttribute('data-ea-ok') !== 'user-interacted');
+      if (active) return active;
+      const allBtns = Array.from(doc.querySelectorAll('button, [role="button"]'));
+      return allBtns.find(b => isElementVisible(b) && b.getAttribute('data-ea-ok') !== 'true' && b.getAttribute('data-ea-ok') !== 'user-interacted' && isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label'))) || null;
+    }
+
     function findActivePendingCommand(doc) {
       if (!doc || !doc.querySelectorAll) return '';
-      const dialogs = doc.querySelectorAll('[role="dialog"], [role="alertdialog"], div[data-testid*="interaction"], div[class*="modal"]');
-      for (const d of dialogs) {
-        const txt = extractCommandText(d);
-        if (txt) return txt;
-      }
-      const steps = doc.querySelectorAll('[data-testid="run-command-step"]');
-      if (steps.length) {
-        for (let i = steps.length - 1; i >= 0; i--) {
-          const txt = extractCommandText(steps[i]);
-          if (txt) return txt;
-        }
-      }
-      const pres = doc.querySelectorAll('pre, code');
-      if (pres.length) {
-        for (let i = pres.length - 1; i >= 0; i--) {
-          const s = (pres[i].innerText || pres[i].textContent || '').trim();
-          if (s.length > 2 && s.length < 2000) return s;
-        }
+      const pendingBtn = findActivePendingSubmit(doc);
+      if (pendingBtn) {
+        return extractCommandForBtn(pendingBtn);
       }
       return '';
     }
@@ -605,17 +620,46 @@ function generateMasterInjectScript() {
         const cmd = extractCommandText(card);
         if (cmd) return cmd;
       }
-      return findActivePendingCommand(btn.ownerDocument || document);
+      // 审批按钮独立处于底部交互栏时，关联当前页面处于活动态的待运行命令（优先排除已完成的 Ran 历史步骤）
+      const doc = btn.ownerDocument || document;
+      if (doc && doc.querySelectorAll) {
+        const steps = doc.querySelectorAll('[data-testid="run-command-step"]');
+        if (steps.length) {
+          for (let i = steps.length - 1; i >= 0; i--) {
+            const firstWord = (steps[i].innerText || '').trim().split(/\\s+/)[0] || '';
+            if (!/^ran$/i.test(firstWord)) {
+              const txt = extractCommandText(steps[i]);
+              if (txt) return txt;
+            }
+          }
+          const lastTxt = extractCommandText(steps[steps.length - 1]);
+          if (lastTxt) return lastTxt;
+        }
+        const pres = doc.querySelectorAll('pre, code');
+        if (pres.length) {
+          for (let i = pres.length - 1; i >= 0; i--) {
+            const s = (pres[i].innerText || pres[i].textContent || '').trim();
+            if (s.length > 2 && s.length < 2000) return s;
+          }
+        }
+      }
+      return '';
     }
 
     // 日志用：单行短摘要（优先识别真实命令行，杜绝纯 testid）
     function extractLogSummary(card, fallback, btn) {
       let full = extractCommandText(card);
       if (!full && btn) full = extractCommandForBtn(btn);
-      if (!full && typeof document !== 'undefined') full = findActivePendingCommand(document);
+      if (!full && typeof document !== 'undefined') {
+        full = findActivePendingCommand(document);
+        if (!full) {
+          const steps = document.querySelectorAll('[data-testid="run-command-step"]');
+          if (steps.length) full = extractCommandText(steps[steps.length - 1]);
+        }
+      }
       if (full) {
         const lines = full.split('\\n').map(s => s.trim()).filter(Boolean);
-        const cmdLine = lines.find(l => !/[?？]$/.test(l) && l.length > 2);
+        const cmdLine = lines.find(l => !/^(run|ran)$/i.test(l) && !/[?？]$/.test(l) && l.length > 2);
         const q = lines.find(l => /[?？]$/.test(l) && l.length < 120);
         return oneLine(cmdLine || q || lines[0], 80);
       }
@@ -809,9 +853,11 @@ function generateMasterInjectScript() {
       }
     }
 
-    function blockAllApprovalButtons(doc) {
-      if (!doc || !doc.querySelectorAll) return;
-      const btns = doc.querySelectorAll('button[data-testid="interaction-continue-button"], button[data-testid="approval-submit"], button[data-testid="permission-allow"], button[role="button"]');
+    const reportedDangerRoots = window.__ea_reported_danger_roots || (window.__ea_reported_danger_roots = new WeakSet());
+
+    function blockCardApprovalButtons(container) {
+      if (!container || !container.querySelectorAll) return;
+      const btns = container.querySelectorAll('button[data-testid="interaction-continue-button"], button[data-testid="approval-submit"], button[data-testid="permission-allow"], button[role="button"]');
       btns.forEach(b => {
         if (isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label')) || b.getAttribute('data-testid')) {
           b.setAttribute('data-ea-ok', 'blocked');
@@ -824,52 +870,42 @@ function generateMasterInjectScript() {
       const activePatterns = window.__ea_compiled_danger_patterns || [];
       if (!activePatterns.length) return false;
 
-      // 1. 若当前已有高危锁定：
-      if (window.__ea_danger_lock) {
-        const testidBtns = doc.querySelectorAll(
-          'button[data-testid="interaction-continue-button"],' +
-          'button[data-testid="approval-submit"],' +
-          'button[data-testid="permission-allow"]'
-        );
-        if (testidBtns.length) {
-          blockAllApprovalButtons(doc);
-          return true; // 页面仍有待审批按钮，绝不放行！
-        } else {
-          // 按钮已全部消失，说明用户已手动处理完本次请求，释放锁定
-          window.__ea_danger_lock = null;
-        }
+      // 仅检查当前页面上真实存在的“待审批活动按钮”
+      const pendingBtn = findActivePendingSubmit(doc);
+      if (!pendingBtn) {
+        // 页面已无待处理确认按钮（用户已手动放行或卡片已关闭），自动解除高危锁定
+        window.__ea_danger_lock = null;
+        return false;
       }
 
-      // 2. 检查当前待执行命令（从交互卡或最近步骤提取）
-      const pendingCmd = findActivePendingCommand(doc);
+      // 若当前待确认按钮所属卡片已被标记为 blocked，说明已经拦截告警过，静待用户手动确认
+      if (pendingBtn.getAttribute('data-ea-ok') === 'blocked') {
+        return true;
+      }
+
+      // 提取当前活动待确认按钮所属卡片的命令正文
+      const pendingCmd = extractCommandForBtn(pendingBtn);
       if (pendingCmd) {
         const hit = activePatterns.find(r => r.re.test(pendingCmd));
         if (hit) {
+          const root = getInteractionRoot(pendingBtn) || pendingBtn.parentElement;
           window.__ea_danger_lock = { id: hit.id, name: hit.name, cmd: pendingCmd, at: Date.now() };
-          blockAllApprovalButtons(doc);
-          console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + oneLine(pendingCmd, 80));
+          if (root) {
+            blockCardApprovalButtons(root);
+            processedRoots.add(root);
+          } else {
+            pendingBtn.setAttribute('data-ea-ok', 'blocked');
+          }
+          if (!root || !reportedDangerRoots.has(root)) {
+            if (root) reportedDangerRoots.add(root);
+            console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + oneLine(pendingCmd, 80));
+          }
           return true;
         }
       }
 
-      // 3. 检查所有容器卡片
-      const cards = doc.querySelectorAll(
-        '[data-testid="run-command-step"], [role="dialog"], [role="alertdialog"],' +
-        'div[data-testid*="interaction"], div[data-testid*="approval"],' +
-        'div[data-testid*="permission"], div[data-testid*="command"]'
-      );
-      for (const card of cards) {
-        const cmd = extractCommandText(card);
-        if (!cmd) continue;
-        const hit = activePatterns.find(r => r.re.test(cmd));
-        if (hit) {
-          window.__ea_danger_lock = { id: hit.id, name: hit.name, cmd, at: Date.now() };
-          blockAllApprovalButtons(doc);
-          console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + oneLine(cmd, 80));
-          return true;
-        }
-      }
-
+      // 当前待确认命令安全，清除残留的高危锁定
+      window.__ea_danger_lock = null;
       return false;
     }
 
@@ -901,7 +937,13 @@ function generateMasterInjectScript() {
 
     function tryApprove(btn, kind) {
       if (!btn || btn.disabled || btn.hasAttribute('data-ea-ok')) return false;
-      if (window.__ea_danger_lock) return false;
+      if (window.__ea_danger_lock) {
+        if (Date.now() - (window.__ea_danger_lock.at || 0) > 60000) {
+          window.__ea_danger_lock = null;
+        } else {
+          return false;
+        }
+      }
 
       const root = getInteractionRoot(btn);
       if (root && processedRoots.has(root)) return false;
@@ -914,8 +956,16 @@ function generateMasterInjectScript() {
           const hit = activePatterns.find(r => r.re.test(cmd));
           if (hit) {
             window.__ea_danger_lock = { id: hit.id, name: hit.name, cmd, at: Date.now() };
-            blockAllApprovalButtons(doc);
-            console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + oneLine(cmd, 80));
+            if (root) {
+              blockCardApprovalButtons(root);
+              processedRoots.add(root);
+            } else {
+              btn.setAttribute('data-ea-ok', 'blocked');
+            }
+            if (!root || !reportedDangerRoots.has(root)) {
+              if (root) reportedDangerRoots.add(root);
+              console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + oneLine(cmd, 80));
+            }
             return true;
           }
         }
@@ -1144,8 +1194,26 @@ function generateMasterInjectScript() {
       });
     }
 
-    setInterval(() => {
+    if (window.__ea_scan_interval) clearInterval(window.__ea_scan_interval);
+    window.__ea_scan_interval = setInterval(() => {
       function scan(doc) {
+        if (!doc) return;
+        if (!doc.__ea_click_listener_installed) {
+          doc.__ea_click_listener_installed = true;
+          try {
+            doc.addEventListener('click', (e) => {
+              const btn = e.target && e.target.closest ? e.target.closest('button, [role="button"]') : null;
+              if (!btn) return;
+              const text = (btn.innerText || btn.value || btn.getAttribute('aria-label') || '').trim();
+              const tid = btn.getAttribute('data-testid') || '';
+              if (isSubmitLabel(text) || /(?:continue|submit|allow|reject|cancel|deny)/i.test(tid)) {
+                window.__ea_danger_lock = null;
+                btn.setAttribute('data-ea-ok', 'user-interacted');
+              }
+            }, true);
+          } catch (e) {}
+        }
+
         translateDOM(doc);
 
         // ── 调试模式：抓取审批卡 DOM 结构 ──

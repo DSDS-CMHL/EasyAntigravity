@@ -20,4 +20,16 @@ fs.mkdirSync(path.join(root, 'src-tauri', 'binaries'), { recursive: true });
 const runtime = path.join(root, 'src-tauri', 'binaries', 'easyag-node-' + triple + (process.platform === 'win32' ? '.exe' : ''));
 fs.copyFileSync(process.execPath, runtime);
 if (process.platform !== 'win32') fs.chmodSync(runtime, 0o755);
+if (process.platform === 'darwin') {
+  try {
+    const { execSync } = require('node:child_process');
+    const entPath = path.join(root, 'src-tauri', 'Entitlements.plist');
+    if (fs.existsSync(entPath)) {
+      execSync(`codesign --force --options runtime --sign - --entitlements "${entPath}" "${runtime}"`);
+      console.log('Signed easyag-node with JIT entitlements');
+    }
+  } catch (e) {
+    console.warn('Warning: Could not pre-sign runtime:', e.message);
+  }
+}
 console.log('Prepared backend and Node runtime:', triple);

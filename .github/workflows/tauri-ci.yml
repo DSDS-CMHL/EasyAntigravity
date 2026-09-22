@@ -92,8 +92,27 @@ jobs:
           test -f "$app/Contents/Resources/backend/server.js"
           test -f "$app/Contents/Resources/backend/node_modules/ws/package.json"
           test -x "$app/Contents/MacOS/easyag-node"
+          
+          # 1. 对 easyag-node 补充 Hardened Runtime 与 JIT 权限 (解决 Apple Silicon V8 ThreadIsolation SIGTRAP 退出码 133)
+          codesign --force --options runtime --sign - --entitlements src-tauri/Entitlements.plist "$app/Contents/MacOS/easyag-node"
+
+          # 2. 对整个 EasyAntigravity.app 补充 Entitlements 签名
+          codesign --force --options runtime --deep --sign - --entitlements src-tauri/Entitlements.plist "$app"
+
+          # 3. 校验签名与 JIT 权限输出
           codesign --verify --deep --strict "$app"
-          ditto -c -k --sequesterRsrc --keepParent "$app" "EasyAntigravity-2.1.1-${{ matrix.name }}-beta.zip"
+          codesign -d --entitlements :- "$app/Contents/MacOS/easyag-node"
+
+          # 4. 关键自检：在当前 runner 上执行 V8 初始化测试，确保不会出现 SIGTRAP
+          "$app/Contents/MacOS/easyag-node" -e "console.log('easyag-node JIT OK, V8:', process.versions.v8)"
+
+          # 5. 打包外壳：放入 stage 目录，确保 GitHub Artifact 下载解压后具有完整的 EasyAntigravity.app 外壳，而非散落的 Contents/
+          stage="dist-tauri/EasyAntigravity-2.1.1-${{ matrix.name }}"
+          mkdir -p "$stage"
+          ditto "$app" "$stage/EasyAntigravity.app"
+          cp LICENSE "$stage/"
+          cp docs/PORTABLE.md "$stage/" 2>/dev/null || true
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$stage/EasyAntigravity-2.1.1-${{ matrix.name }}-beta.zip"
       - name: Upload Windows package
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
@@ -107,7 +126,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: EasyAntigravity-2.1.1-${{ matrix.name }}-beta
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/macos/EasyAntigravity.app
+          path: dist-tauri/EasyAntigravity-2.1.1-${{ matrix.name }}
           if-no-files-found: error
           retention-days: 14
       - name: Build diagnostics
