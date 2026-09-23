@@ -335,6 +335,17 @@ function getActiveDangerPatterns() {
 }
 
 let translationDict = {};
+let reverseDict = {};
+
+function buildReverseDict() {
+  reverseDict = {};
+  for (const [en, zh] of Object.entries(translationDict)) {
+    if (typeof zh === 'string' && zh.trim() && !reverseDict[zh.trim()]) {
+      reverseDict[zh.trim()] = en.trim();
+    }
+  }
+}
+
 function loadDictionaries() {
   translationDict = {};
   const files = ['ui_v2.json', 'common.json'];
@@ -348,6 +359,7 @@ function loadDictionaries() {
     }
   });
   state.dictEntries = Object.keys(translationDict).length;
+  buildReverseDict();
 }
 
 let sseClients = [];
@@ -454,6 +466,7 @@ function syncProxyPort(newPort) {
 
 function generateMasterInjectScript() {
   const dictJSON = JSON.stringify(translationDict);
+  const reverseDictJSON = JSON.stringify(reverseDict);
   const patternsJSON = JSON.stringify(getActiveDangerPatterns());
   return `(() => {
     window.__ea_config = Object.assign(window.__ea_config || {}, {
@@ -464,6 +477,7 @@ function generateMasterInjectScript() {
       debugApproval: ${state.debugApproval ? 'true' : 'false'}
     });
     window.__ea_dict = ${dictJSON};
+    window.__ea_reverse_dict = ${reverseDictJSON};
     window.__ea_danger_patterns = ${patternsJSON};
     window.__ea_compiled_danger_patterns = (window.__ea_danger_patterns || []).map(r => {
       try { return { id: r.id, name: r.name, re: new RegExp(r.pattern, r.flags || 'i') }; }
@@ -475,7 +489,7 @@ function generateMasterInjectScript() {
       const activePatterns = window.__ea_compiled_danger_patterns || [];
       const stillHit = activePatterns.find(r => r.re.test(window.__ea_danger_lock.cmd));
       if (!stillHit) {
-        console.log('[EA_RELOAD] 高危指令已根据重载规则解除锁定: ' + window.__ea_danger_lock.cmd.slice(0, 60));
+        if(window.__ea_config.debugApproval) { console.log('[EA_RELOAD] 高危指令已根据重载规则解除锁定: ' + window.__ea_danger_lock.cmd.slice(0, 60)); }
         window.__ea_danger_lock = null;
         try {
           document.querySelectorAll('[data-ea-ok="blocked"]').forEach(el => el.removeAttribute('data-ea-ok'));
@@ -610,7 +624,11 @@ function generateMasterInjectScript() {
 
     function extractCommandForBtn(btn) {
       if (!btn) return '';
-      const root = btn.closest('[role="dialog"], [role="alertdialog"], [data-testid*="interaction"], div[class*="modal"], [data-testid="run-command-step"]');
+      let root = btn.closest('[role="dialog"], [role="alertdialog"], [data-testid*="interaction"], div[class*="modal"], [data-testid="run-command-step"]');
+      if (!root) {
+        const steps = document.querySelectorAll('[data-testid="run-command-step"]');
+        if (steps.length) root = steps[steps.length - 1];
+      }
       if (root) {
         const cmd = extractCommandText(root);
         if (cmd) return cmd;
@@ -927,16 +945,37 @@ function generateMasterInjectScript() {
     const processedRoots = window.__ea_processed_roots || (window.__ea_processed_roots = new WeakSet());
     const reportedRoots = window.__ea_reported_roots || (window.__ea_reported_roots = new WeakSet());
 
+        function isQuestionCard(card) {
+      if (!card) return false;
+      const rgs = Array.from(card.querySelectorAll('[role="radiogroup"]'));
+      if (!rgs.length) return false;
+      const txt = (rgs[rgs.length - 1].innerText || '').toLowerCase();
+      const isPerm = (txt.includes('allow') && (txt.includes('this time') || txt.includes('always'))) ||
+                     (txt.includes('允许') && (txt.includes('本次') || txt.includes('始终') || txt.includes('总是')));
+      return !isPerm;
+    }
+
     function reportInteractionRequest(btn) {
       const root = getInteractionRoot(btn);
       if (!root || reportedRoots.has(root)) return;
       reportedRoots.add(root);
+      
+      if (isQuestionCard(root)) {
+        if (!root.hasAttribute('data-ea-interact-reported') && !root.querySelector('[data-ea-interact-reported]')) {
+          console.warn('[EA_INTERACT] 方案问答：等待您手动选择选项并放行...');
+        }
+        return;
+      }
+      
       const cmd = extractLogSummary(root, '审批请求', btn);
       console.log('[EA_REQUEST] 权限请求 · ' + cmd);
     }
 
     function tryApprove(btn, kind) {
       if (!btn || btn.disabled || btn.hasAttribute('data-ea-ok')) return false;
+      const root = getInteractionRoot(btn);
+      if (isQuestionCard(root)) return false;
+      
       if (window.__ea_danger_lock) {
         if (Date.now() - (window.__ea_danger_lock.at || 0) > 60000) {
           window.__ea_danger_lock = null;
@@ -945,7 +984,6 @@ function generateMasterInjectScript() {
         }
       }
 
-      const root = getInteractionRoot(btn);
       if (root && processedRoots.has(root)) return false;
 
       const doc = btn.ownerDocument || document;
@@ -979,7 +1017,7 @@ function generateMasterInjectScript() {
         const cands = collectOptionCands(card);
         if (cands.length) {
           const brief = cands.map(c => '#' + c.cls + (c.checked ? '*' : '') + oneLine(c.text, 36)).join(' | ');
-          console.log('[EA_OPT] prefer=' + optIdx + ' · ' + oneLine(brief, 180));
+          
         }
         picked = matchOptionEl(card, optIdx);
         if (picked && picked.el) {
@@ -1007,7 +1045,7 @@ function generateMasterInjectScript() {
         : '无选项组';
       // 有选项组 = 确认放行；无选项组 = 权限请求（避免双次「放行」误报）
       const action = picked ? '放行' : '权限请求';
-      console.log('[EA_AA] ' + action + ' · ' + optLabel + ' · ' + cmd);
+      
       return true;
     }
 
@@ -1107,13 +1145,15 @@ function generateMasterInjectScript() {
         tid.includes('approval') ||
         tid.includes('permission') ||
         tid.includes('run-command') ||
-        tid.includes('continue')
+        tid.includes('continue') ||
+        tid.includes('ask-question')
       ) return true;
       const cls = el.className || '';
       if (typeof cls === 'string' && cls) {
         if (/interaction|approval|permission|run-command/i.test(cls)) return true;
       }
       const role = (el.getAttribute && el.getAttribute('role')) || '';
+      if (role === 'radiogroup') return true;
       if (role === 'dialog' || role === 'alertdialog') {
         const hasApprovalBtn = !!el.querySelector(
           'button[data-testid*="interaction"], button[data-testid*="approval"], button[data-testid*="permission"], button[data-testid*="continue"]'
@@ -1166,7 +1206,7 @@ function generateMasterInjectScript() {
     }
 
     function translateDOM(root) {
-      if (!window.__ea_config.enableI18n || !window.__ea_dict) return;
+      if (!window.__ea_config.enableI18n || !window.__ea_dict || !root) return;
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
       let node;
       while ((node = walker.nextNode())) {
@@ -1175,13 +1215,21 @@ function generateMasterInjectScript() {
         if (!text) continue;
         // 1. 词典精确匹配
         if (window.__ea_dict[text]) {
+          if (node.__ea_translated !== node.nodeValue) {
+            node.__ea_orig = node.nodeValue;
+          }
           node.nodeValue = node.nodeValue.replace(text, window.__ea_dict[text]);
+          node.__ea_translated = node.nodeValue;
           continue;
         }
         // 2. 动态正则规则（审批选项等含变量文本）
         const dynamic = tryDynamicTranslate(text);
         if (dynamic) {
+          if (node.__ea_translated !== node.nodeValue) {
+            node.__ea_orig = node.nodeValue;
+          }
           node.nodeValue = node.nodeValue.replace(text, dynamic);
+          node.__ea_translated = node.nodeValue;
         }
       }
       const elements = root.querySelectorAll ? root.querySelectorAll('[placeholder], [title], [aria-label]') : [];
@@ -1189,10 +1237,73 @@ function generateMasterInjectScript() {
         if (isInBlockedZone(el)) return;
         ['placeholder','title','aria-label'].forEach(attr => {
           const val = el.getAttribute(attr);
-          if (val && window.__ea_dict[val]) el.setAttribute(attr, window.__ea_dict[val]);
+          if (val && window.__ea_dict[val]) {
+            if (!el.hasAttribute('data-ea-orig-' + attr)) {
+              el.setAttribute('data-ea-orig-' + attr, val);
+            }
+            el.setAttribute(attr, window.__ea_dict[val]);
+          }
         });
       });
     }
+
+    function revertDOM(root) {
+      if (!root) return;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        if (isInBlockedZone(node)) continue;
+        if (node.__ea_orig !== undefined) {
+          node.nodeValue = node.__ea_orig;
+          delete node.__ea_orig;
+          delete node.__ea_translated;
+          continue;
+        }
+        const text = node.nodeValue.trim();
+        if (text && window.__ea_reverse_dict && window.__ea_reverse_dict[text]) {
+          node.nodeValue = node.nodeValue.replace(text, window.__ea_reverse_dict[text]);
+          delete node.__ea_translated;
+        }
+      }
+      const origAttrEls = root.querySelectorAll ? root.querySelectorAll('[data-ea-orig-placeholder], [data-ea-orig-title], [data-ea-orig-aria-label]') : [];
+      origAttrEls.forEach(el => {
+        ['placeholder','title','aria-label'].forEach(attr => {
+          const orig = el.getAttribute('data-ea-orig-' + attr);
+          if (orig !== null) {
+            el.setAttribute(attr, orig);
+            el.removeAttribute('data-ea-orig-' + attr);
+          }
+        });
+      });
+      const allAttrEls = root.querySelectorAll ? root.querySelectorAll('[placeholder], [title], [aria-label]') : [];
+      allAttrEls.forEach(el => {
+        if (isInBlockedZone(el)) return;
+        ['placeholder','title','aria-label'].forEach(attr => {
+          const val = el.getAttribute(attr);
+          if (val && window.__ea_reverse_dict && window.__ea_reverse_dict[val]) {
+            el.setAttribute(attr, window.__ea_reverse_dict[val]);
+          }
+        });
+      });
+    }
+
+    window.__ea_sync_config = function() {
+      function syncDoc(doc) {
+        if (!doc) return;
+        if (window.__ea_config && window.__ea_config.enableI18n) {
+          translateDOM(doc);
+          doc.__ea_i18n_applied = true;
+        } else {
+          revertDOM(doc);
+          doc.__ea_i18n_applied = false;
+        }
+      }
+      syncDoc(document);
+      const iframes = document.querySelectorAll('iframe');
+      iframes.forEach(f => {
+        try { if (f.contentDocument) syncDoc(f.contentDocument); } catch (e) {}
+      });
+    };
 
     if (window.__ea_scan_interval) clearInterval(window.__ea_scan_interval);
     window.__ea_scan_interval = setInterval(() => {
@@ -1214,7 +1325,13 @@ function generateMasterInjectScript() {
           } catch (e) {}
         }
 
-        translateDOM(doc);
+        if (window.__ea_config && window.__ea_config.enableI18n) {
+          translateDOM(doc);
+          doc.__ea_i18n_applied = true;
+        } else if (doc.__ea_i18n_applied) {
+          revertDOM(doc);
+          doc.__ea_i18n_applied = false;
+        }
 
         // ── 调试模式：抓取审批卡 DOM 结构 ──
         if (window.__ea_config.debugApproval) {
@@ -1260,7 +1377,69 @@ function generateMasterInjectScript() {
 
         if (!window.__ea_config.autoAccept) return;
         // fail closed：高危锁定时绝不进入任何点击分支
-        if (checkDangerous(doc)) return;
+                if (checkDangerous(doc)) return;
+
+        
+        // ── 终极权限弹窗直接破解与方案问答识别 ──
+        const radioGroups = doc.querySelectorAll('[role="radiogroup"]');
+        for (const rg of radioGroups) {
+          const txt = (rg.innerText || rg.textContent || '').toLowerCase();
+          // 权限审批卡的单选项严格具有权限授权特征：allow this time / always allow / 允许本次 / 始终允许
+          const isPermission = (txt.includes('allow') && (txt.includes('this time') || txt.includes('always'))) ||
+                               (txt.includes('允许') && (txt.includes('本次') || txt.includes('始终') || txt.includes('总是')));
+          
+          if (!isPermission) {
+            // 纯业务/方案问答框：触发薄荷青提示，绝对禁止自动放行，静候用户操作
+            const card = getInteractionRoot(rg) || rg.closest('[role="dialog"], [role="alertdialog"], div[data-testid*="interaction"], div[class*="card"], div.relative') || rg.parentElement || rg;
+            if (card) {
+              reportedRoots.add(card);
+            }
+            if (!rg.hasAttribute('data-ea-interact-reported')) {
+              rg.setAttribute('data-ea-interact-reported', 'true');
+              if (card && card.setAttribute) card.setAttribute('data-ea-interact-reported', 'true');
+              const titleEl = card ? card.querySelector('p, h1, h2, h3, h4, span') : null;
+              const qTitle = (titleEl ? titleEl.innerText : (card ? card.innerText : rg.innerText)) || '';
+              const summary = (qTitle.split(String.fromCharCode(10))[0] || '').slice(0, 80).trim();
+              console.warn('[EA_INTERACT] 方案问答：' + (summary || '等待您手动选择选项并提交...'));
+            }
+            continue;
+          }
+
+          // 确认属于权限审批框：执行自动放行
+          const radios = Array.from(rg.querySelectorAll('input[type="radio"]'));
+          if (radios.length >= 1) {
+            // 正确映射：
+            // p = 1: 选项1 仅允许本次 -> radios[0]
+            // p = 2: 选项2 对话中始终允许 -> radios[1]
+            // p = 3: 选项3 项目中始终允许 -> radios[2]
+            // p = 4: 选项4 全局始终允许 -> radios[3]
+            const p = Number(window.__ea_config.preferOption) || 1;
+            const targetIdx = Math.min(Math.max(p - 1, 0), radios.length - 1);
+            const targetInput = radios[targetIdx];
+            
+            if (targetInput && !targetInput.checked) {
+              const label = targetInput.closest('label');
+              if (label) realClick(label);
+            }
+
+            const submitBtn = Array.from(doc.querySelectorAll('button')).find(b => {
+              if (b.disabled || b.hasAttribute('data-ea-ok')) return false;
+              const bt = (b.innerText || '').trim().toLowerCase();
+              return bt === 'submit' || bt === 'continue' || bt === 'allow' || bt === '确认' || bt === '提交' || b.getAttribute('data-testid') === 'interaction-continue-button';
+            });
+            
+            if (submitBtn) {
+              reportInteractionRequest(submitBtn);
+              const cmd = extractCommandForBtn(submitBtn) || 'run-command';
+              const optNames = ['仅允许本次', '对话中始终允许', '项目中始终允许', '全局始终允许'];
+              const optText = optNames[targetIdx] || '仅允许本次';
+              console.log('[EA_AA] 放行 · 选项[' + (targetIdx + 1) + '] ' + optText + ' · ' + cmd);
+              submitBtn.setAttribute('data-ea-ok', 'true');
+              realClick(submitBtn);
+              return;
+            }
+          }
+        }
 
         // ── 策略1: data-testid 精确匹配（最稳定，语言无关） ──
         const testidBtns = doc.querySelectorAll(
@@ -1356,6 +1535,30 @@ function injectInto(ws, reason = '') {
     state.cdpError = '';
   }
   return ok;
+}
+
+function broadcastConfig() {
+  const script = `(() => {
+    window.__ea_config = Object.assign(window.__ea_config || {}, {
+      preferOption: ${state.preferOption},
+      blockDangerous: ${state.blockDangerous},
+      autoAccept: ${state.autoAccept},
+      enableI18n: ${state.enableI18n},
+      debugApproval: ${state.debugApproval ? 'true' : 'false'}
+    });
+    if (typeof window.__ea_sync_config === 'function') {
+      window.__ea_sync_config();
+    }
+  })();`;
+  for (const [, entry] of cdpSockets) {
+    if (entry && entry.ws && entry.ws.readyState === WebSocket.OPEN) {
+      cdpSend(entry.ws, 'Runtime.evaluate', {
+        expression: script,
+        returnByValue: false,
+        awaitPromise: false
+      });
+    }
+  }
 }
 
 let lastStatusKey = '';
@@ -1456,6 +1659,9 @@ async function startCDPLoop() {
                   state.blockCount += 1;
                   logToGUI('SECURITY ALERT', text.replace('[EA_ALERT]', '').trim(), 'tag-alert');
                   pushCounters();
+                  popupGuiWindow();
+                } else if (text.includes('[EA_INTERACT]')) {
+                  logToGUI('INTERACTION', text.replace('[EA_INTERACT]', '').trim(), 'tag-mint');
                   popupGuiWindow();
                 } else if (text.includes('[EA_DOM]')) {
                   logToGUI('DOM-CAPTURE', text.replace('[EA_DOM]', '').trim(), 'tag-i18n');
@@ -1667,12 +1873,19 @@ const server = http.createServer((req, res) => {
           }
         }
 
+        const prevI18n = state.enableI18n;
         if (typeof data.autoAccept === 'boolean') state.autoAccept = data.autoAccept;
         if (typeof data.blockDangerous === 'boolean') state.blockDangerous = data.blockDangerous;
         if (typeof data.enableI18n === 'boolean') state.enableI18n = data.enableI18n;
         if (typeof data.debugApproval === 'boolean') state.debugApproval = data.debugApproval;
         if (data.preferOption) state.preferOption = data.preferOption;
         fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ port: state.port, autoAccept: state.autoAccept, blockDangerous: state.blockDangerous, preferOption: state.preferOption, enableI18n: state.enableI18n, debugApproval: state.debugApproval }, null, 2));
+
+        if (typeof data.enableI18n === 'boolean' && data.enableI18n !== prevI18n) {
+          logToGUI('I18N', state.enableI18n ? '汉化引擎已启用' : '汉化引擎已停用，已还原原生英文界面', 'tag-i18n');
+        }
+
+        broadcastConfig();
 
         res.end('ok');
       } catch (e) {
