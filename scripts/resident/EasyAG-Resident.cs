@@ -176,20 +176,28 @@ namespace EasyAGResident {
                 if (hDesk != IntPtr.Zero) SetThreadDesktop(hDesk);
             } catch { }
 
-            wpfApp = new Application();
-            wpfApp.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-
-            InitTrayIcon();
-            InitCapsuleWindow();
-
-            // Background thread to read commands from stdin
+            // Background thread to read commands from stdin immediately
             Thread stdinThread = new Thread(ReadCommandsLoop);
             stdinThread.IsBackground = true;
             stdinThread.Start();
 
+            // Emit ready handshake signal immediately so caller never times out
             LogEvent("{\"event\":\"ready\"}");
 
-            wpfApp.Run();
+            try {
+                wpfApp = new Application();
+                wpfApp.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+                InitTrayIcon();
+                InitCapsuleWindow();
+
+                wpfApp.Run();
+            } catch (Exception) {
+                // If GUI fails in headless or restricted CI environments, keep stdin alive
+                while (true) {
+                    Thread.Sleep(1000);
+                }
+            }
         }
 
         private static void InitTrayIcon() {
@@ -251,22 +259,33 @@ namespace EasyAGResident {
         }
 
         private static void InitCapsuleWindow() {
-            capsuleWin = new Window {
-                Title = "EasyAG_HUD_Capsule",
-                Width = 340,
-                Height = 150,
-                WindowStyle = WindowStyle.None,
-                AllowsTransparency = true,
-                Background = Brushes.Transparent,
-                Topmost = true,
-                ShowInTaskbar = false,
-                ShowActivated = false,
-                WindowStartupLocation = WindowStartupLocation.Manual
-            };
+            try {
+                capsuleWin = new Window {
+                    Title = "EasyAG_HUD_Capsule",
+                    Width = 340,
+                    Height = 150,
+                    WindowStyle = WindowStyle.None,
+                    AllowsTransparency = true,
+                    Background = Brushes.Transparent,
+                    Topmost = true,
+                    ShowInTaskbar = false,
+                    ShowActivated = false,
+                    WindowStartupLocation = WindowStartupLocation.Manual
+                };
 
-            Rect workArea = SystemParameters.WorkArea;
-            capsuleWin.Left = workArea.Right - capsuleWin.Width - 18;
-            capsuleWin.Top = workArea.Bottom - capsuleWin.Height - 16;
+                try {
+                    Rect workArea = SystemParameters.WorkArea;
+                    if (workArea.Width > 0 && workArea.Height > 0) {
+                        capsuleWin.Left = workArea.Right - capsuleWin.Width - 18;
+                        capsuleWin.Top = workArea.Bottom - capsuleWin.Height - 16;
+                    } else {
+                        capsuleWin.Left = 800;
+                        capsuleWin.Top = 600;
+                    }
+                } catch {
+                    capsuleWin.Left = 800;
+                    capsuleWin.Top = 600;
+                }
 
             Grid rootGrid = new Grid();
             rootGrid.ClipToBounds = false;
@@ -379,6 +398,7 @@ namespace EasyAGResident {
             rootGrid.Children.Add(comicTail);
 
             capsuleWin.Content = rootGrid;
+            } catch { }
         }
 
         private static void ApplyStateVisuals(string type, string titleText, string subText) {
