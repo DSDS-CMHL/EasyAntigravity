@@ -25,7 +25,7 @@
       --text-dark: #64748b;
     }
 
-    * {
+    *, button, input, select, textarea {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
@@ -201,7 +201,7 @@
     .quick-tag:hover .tag-hint {
       opacity: 0.9;
     }
-    input[type="number"] {
+    input[type="number"], input#proxyPortInput {
       background: #101217;
       border: 1px solid var(--card-border);
       color: #f8fafc;
@@ -209,12 +209,23 @@
       border-radius: 6px;
       width: 78px;
       text-align: center;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12px;
+      font-family: inherit;
+      font-weight: 500;
+      font-size: 11.5px;
       outline: none;
       transition: border-color 0.2s;
+      -webkit-appearance: none;
+      -moz-appearance: textfield;
+      appearance: textfield;
     }
-    input[type="number"]:focus {
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button,
+    input#proxyPortInput::-webkit-outer-spin-button,
+    input#proxyPortInput::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type="number"]:focus, input#proxyPortInput:focus {
       border-color: var(--primary);
     }
 
@@ -225,6 +236,7 @@
       padding: 5px 10px;
       border-radius: 6px;
       outline: none;
+      font-family: inherit;
       font-size: 11.5px;
       cursor: pointer;
       max-width: 100%;
@@ -330,7 +342,7 @@
       border: 1px solid var(--card-border);
       border-radius: 10px;
       padding: 10px 12px;
-      font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Consolas, monospace;
+      font-family: ui-monospace, SFMono-Regular, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
       font-size: 11px;
       overflow-y: auto;
       display: flex;
@@ -363,6 +375,30 @@
     }
     .tag-warn { color: var(--yellow); }
     .tag-mint { color: #00f5d4; }
+
+    /* 状态词荧光强调 (用于控制台开启/停用状态提示) */
+    .glow-on {
+      color: #34d399 !important;
+      font-weight: 700;
+      text-shadow: 0 0 6px rgba(52, 211, 153, 0.8), 0 0 12px rgba(16, 185, 129, 0.45);
+      background: rgba(16, 185, 129, 0.16);
+      padding: 1px 5px;
+      margin: 0 2px;
+      border-radius: 4px;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      letter-spacing: 0.3px;
+    }
+    .glow-off {
+      color: #fb7185 !important;
+      font-weight: 700;
+      text-shadow: 0 0 6px rgba(251, 113, 133, 0.8), 0 0 12px rgba(244, 63, 94, 0.45);
+      background: rgba(244, 63, 94, 0.16);
+      padding: 1px 5px;
+      margin: 0 2px;
+      border-radius: 4px;
+      border: 1px solid rgba(244, 63, 94, 0.35);
+      letter-spacing: 0.3px;
+    }
 
     button:focus-visible,
     input:focus-visible,
@@ -408,7 +444,7 @@
         <button type="button" class="quick-tag" onclick="applyPort(10808)" title="10808: v2rayN / Xray 默认端口">
           10808 <span class="tag-hint">v2ray</span>
         </button>
-        <input type="number" id="proxyPortInput" min="1" max="65535" value="7890">
+        <input type="text" id="proxyPortInput" inputmode="numeric" pattern="[0-9]*" maxlength="5" value="7890" placeholder="7890">
       </div>
     </div>
   </div>
@@ -495,6 +531,22 @@
   <script>
     const consoleBox = document.getElementById('consoleBox');
 
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function formatLogMsg(msg) {
+      const safe = escapeHtml(msg);
+      return safe
+        .replace(/(已开启|已启用|开启|启用)/g, '<span class="glow-on">$1</span>')
+        .replace(/(已停用|停用)/g, '<span class="glow-off">$1</span>');
+    }
+
     function appendLog(category, msg, styleClass) {
       if (category == null && msg == null) return;
       if (category === undefined || category === null || category === '') category = 'SYSTEM';
@@ -502,7 +554,7 @@
       const time = new Date().toLocaleTimeString();
       const div = document.createElement('div');
       div.className = `log-line ${styleClass || ''}`;
-      div.innerText = `[${time}] [${category}] ${msg}`;
+      div.innerHTML = `[${time}] [${escapeHtml(category)}] ${formatLogMsg(msg)}`;
       consoleBox.appendChild(div);
       consoleBox.scrollTop = consoleBox.scrollHeight;
       if (styleClass === 'tag-alert' || category === 'SECURITY ALERT') {
@@ -516,11 +568,8 @@
       const res = await fetch('/api/status');
       const d = await res.json();
       
-      const native = d.proxyMode === 'native';
-      document.getElementById('patchStatusBadge').innerText = native
-        ? '● 原生代理已就绪'
-        : (d.patchOk ? '● DLL 兼容模式就绪' : '● DLL 兼容组件不可用');
-      document.getElementById('patchStatusBadge').style.color = (native || d.patchOk) ? 'var(--green)' : 'var(--red)';
+      document.getElementById('patchStatusBadge').innerText = '● 原生代理已就绪';
+      document.getElementById('patchStatusBadge').style.color = 'var(--green)';
       document.getElementById('proxyPortInput').value = d.port;
       document.getElementById('autoAcceptToggle').checked = d.autoAccept;
       document.getElementById('guardToggle').checked = d.blockDangerous;
@@ -540,6 +589,9 @@
         if (item.counters) {
           refreshApproveBadge(item.approveCount || 0, item.blockCount || 0);
         }
+        if (item.dangerRules) {
+          refreshRulesBadge(item.dangerRulesOn, item.dangerRulesTotal);
+        }
         if (item.status) {
           refreshClientBadge(item);
           updateLaunchBtn(item.clientRunning);
@@ -556,6 +608,7 @@
           refreshClientBadge(d);
           updateLaunchBtn(d.clientRunning);
           refreshApproveBadge(d.approveCount || 0, d.blockCount || 0);
+          refreshRulesBadge(d.dangerRulesOn, d.dangerRulesTotal);
         } catch (e) {}
       }, 3000);
 
@@ -670,7 +723,11 @@
       });
     }
 
-    document.getElementById('proxyPortInput').onchange = updateConfig;
+    const portEl = document.getElementById('proxyPortInput');
+    portEl.oninput = function() {
+      this.value = this.value.replace(/\D/g, '');
+    };
+    portEl.onchange = updateConfig;
     document.getElementById('autoAcceptToggle').onchange = updateConfig;
     document.getElementById('guardToggle').onchange = updateConfig;
     document.getElementById('optionSelect').onchange = updateConfig;

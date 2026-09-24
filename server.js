@@ -174,14 +174,10 @@ function openGuiWindow() {
   return false;
 }
 
-function focusExistingGui() {
-}
-
 // 双击 exe 会挂控制台：windowsHide 重启自身并退出，避免黑框
 // 已有实例时不再拉起新进程
 if (IS_WIN && !TAURI_MODE && !process.env.EASYAG_NOCONSOLE) {
   if (alreadyRunning()) {
-    focusExistingGui();
     process.exit(0);
   }
   try {
@@ -203,7 +199,6 @@ if (IS_WIN && !TAURI_MODE && !process.env.EASYAG_NOCONSOLE) {
 
 // 子进程：若锁显示已有实例，也不占用第二个
 if (!TAURI_MODE && alreadyRunning()) {
-  focusExistingGui();
   process.exit(0);
 }
 
@@ -214,10 +209,6 @@ try {
 } catch (e) {}
 
 const HTML_FILE = path.join(ROOT_DIR, 'index.html');
-
-const TARGET_DLL = path.join(APP_DIR, 'version.dll');
-const DISABLED_DLL = path.join(APP_DIR, 'version.dll.easyag-disabled');
-
 const DICT_DIR = path.join(ROOT_DIR, 'dicts');
 const RULES_FILE = path.join(DATA_DIR, 'danger-rules.json');
 if (TAURI_MODE && !fs.existsSync(RULES_FILE)) {
@@ -226,7 +217,6 @@ if (TAURI_MODE && !fs.existsSync(RULES_FILE)) {
 
 // 调试模式：--debug 参数 或 debug.flag 文件 存在时开启
 const debugMode = process.argv.includes('--debug') || fs.existsSync(path.join(__dirname, 'debug.flag'));
-const nativeProxyMode = true;
 
 let state = {
   port: 7890,
@@ -236,7 +226,6 @@ let state = {
   preferOption: 1,
   enableI18n: true,
   dictEntries: 0,
-  patchOk: false,
   clientRunning: false,
   debugApproval: debugMode,
   dangerRulesTotal: 0,
@@ -413,28 +402,31 @@ function pushCounters() {
   sseClients.forEach(res => res.write(`data: ${payload}\n\n`));
 }
 
+function pushDangerRules() {
+  const payload = JSON.stringify({
+    dangerRules: true,
+    dangerRulesOn: state.dangerRulesOn,
+    dangerRulesTotal: state.dangerRulesTotal
+  });
+  sseClients.forEach(res => res.write(`data: ${payload}\n\n`));
+}
+
 function popupGuiWindow() {
   if (TAURI_MODE) {
     try { process.stdout.write('popup\n'); } catch (e) {}
   }
 }
 
-function ensureProxyWatchdog() {
-  if (TEST_MODE) return false;
-  if (!fs.existsSync(APP_DIR)) return false;
-
-  // 原生免 TUN 代理：检测并隔离遗留的旧版 version.dll，避免 Hook 造成应用异常
-  if (fs.existsSync(TARGET_DLL)) {
+function cleanupLegacyDll() {
+  if (TEST_MODE || !IS_WIN || !fs.existsSync(APP_DIR)) return;
+  const legacyDll = path.join(APP_DIR, 'version.dll');
+  if (fs.existsSync(legacyDll)) {
     try {
-      const disabledPath = fs.existsSync(DISABLED_DLL)
-        ? `${DISABLED_DLL}.${Date.now()}`
-        : DISABLED_DLL;
-      fs.renameSync(TARGET_DLL, disabledPath);
+      const disabledPath = path.join(APP_DIR, 'version.dll.easyag-disabled');
+      fs.renameSync(legacyDll, disabledPath);
       logToGUI('PROXY', '已自动隔离旧版遗留的 version.dll 注入组件', 'tag-proxy');
     } catch (e) {}
   }
-  state.patchOk = true;
-  return false;
 }
 
 function buildNativeProxyLaunch() {
@@ -460,6 +452,7 @@ function buildNativeProxyLaunch() {
 }
 
 function syncProxyPort(newPort) {
+  if (state.port === newPort) return;
   state.port = newPort;
   logToGUI('PROXY', `本地代理端口已更新为: ${newPort}`, 'tag-proxy');
 }
@@ -520,32 +513,19 @@ function generateMasterInjectScript() {
       if (!t || t.length > 40) return false;
       return (
         t === 'submit' ||
-        t.startsWith('submit') ||
+        t === 'submit ↵' ||
+        t === 'submit enter' ||
         t === '提交' ||
-        t.includes('提交') ||
+        t === '提交 ↵' ||
         t === 'confirm' ||
-        t.startsWith('confirm') ||
+        t === 'confirm ↵' ||
         t === '确认' ||
-        t.startsWith('确认') ||
+        t === '确认 ↵' ||
         t === 'allow' ||
         t === '允许' ||
-        t.includes('submit ↵') ||
-        t.includes('提交 ↵') ||
-        t.includes('submit enter')
+        t === 'continue' ||
+        t === '继续'
       );
-    }
-
-    function findSubmitBtn(root) {
-      if (!root || !root.querySelector) return null;
-      const byTest = root.querySelector(
-        'button[data-testid="interaction-continue-button"], [data-testid="interaction-continue-button"]'
-      );
-      if (byTest && !byTest.disabled && !byTest.hasAttribute('data-ea-ok')) return byTest;
-      const btns = Array.from(root.querySelectorAll('button, [role="button"], div[role="button"], input[type="submit"]'));
-      return btns.find(b => {
-        if (!b || b.disabled || b.hasAttribute('data-ea-ok')) return false;
-        return isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label'));
-      }) || null;
     }
 
     function cardForSubmit(btn) {
@@ -569,9 +549,19 @@ function generateMasterInjectScript() {
       return s;
     }
 
+    function clip(s, n) {
+      s = String(s || '').replace(/\\s+/g, ' ').trim();
+      if (s.length <= n) return s;
+      return s.slice(0, n - 1) + '…';
+    }
+
     // 高危扫描用：尽量拿到完整命令正文（可多行）
     function extractCommandText(card) {
       if (!card) return '';
+      const targetArea = card.querySelector ? card.querySelector('textarea[aria-label="Edit permission target"]') : null;
+      if (targetArea && (targetArea.value || targetArea.innerText || targetArea.textContent || '').trim()) {
+        return (targetArea.value || targetArea.innerText || targetArea.textContent || '').trim();
+      }
       const code = card.querySelector('pre, code, [class*="code"], [class*="mono"], .font-mono');
       if (code && (code.innerText || code.textContent || '').trim()) {
         const t = (code.innerText || code.textContent || '').trim();
@@ -947,7 +937,13 @@ function generateMasterInjectScript() {
 
         function isQuestionCard(card) {
       if (!card) return false;
-      const rgs = Array.from(card.querySelectorAll('[role="radiogroup"]'));
+      const root = (card.closest && card.closest('div[data-testid*="interaction"]')) || card;
+      if (root.querySelector && root.querySelector('button[data-testid="ask-question-dismiss-button"]')) return true;
+      if (root.getAttribute && (root.getAttribute('data-testid') || '').includes('interaction')) {
+        const hasTarget = !!(root.querySelector && root.querySelector('textarea[aria-label="Edit permission target"]'));
+        if (!hasTarget && root.querySelector && root.querySelector('[role="radiogroup"]')) return true;
+      }
+      const rgs = Array.from(root.querySelectorAll ? root.querySelectorAll('[role="radiogroup"]') : []);
       if (!rgs.length) return false;
       const txt = (rgs[rgs.length - 1].innerText || '').toLowerCase();
       const isPerm = (txt.includes('allow') && (txt.includes('this time') || txt.includes('always'))) ||
@@ -1049,55 +1045,6 @@ function generateMasterInjectScript() {
       return true;
     }
 
-    function clip(s, n) {
-      s = String(s || '').replace(/\\s+/g, ' ').trim();
-      if (s.length <= n) return s;
-      return s.slice(0, n - 1) + '…';
-    }
-
-    function extractRequestSummary(card) {
-      if (!card) return '';
-      const parts = [];
-      // 代码/命令块优先
-      const codes = Array.from(card.querySelectorAll('pre, code, [class*="command"], [class*="code"], [data-testid*="command"]'));
-      for (const c of codes) {
-        const t = (c.innerText || c.textContent || '').trim();
-        if (t && t.length > 1 && t.length < 500) {
-          parts.push(t);
-          if (parts.length >= 2) break;
-        }
-      }
-      // 文件路径类
-      const paths = Array.from(card.querySelectorAll('[class*="path"], [class*="file"], [title]'));
-      for (const p of paths) {
-        const t = (p.getAttribute('title') || p.innerText || '').trim();
-        if (t && /[\\\\/]|:\\\\/.test(t) && t.length < 200) {
-          parts.push(t);
-          break;
-        }
-      }
-      // 描述段落：排除按钮/选项行
-      if (parts.length === 0) {
-        const texts = Array.from(card.querySelectorAll('p, span, div'))
-          .map(el => (el.innerText || '').trim())
-          .filter(t => t.length > 8 && t.length < 180)
-          .filter(t => !isSubmitLabel(t))
-          .filter(t => !/^(1|2|3|4)[\\s\\.\\:：\\-]/.test(norm(t)))
-          .filter(t => !/^(submit|提交|confirm|确认|allow|允许|run|运行)/i.test(t));
-        if (texts.length) {
-          // 取最长的一段作为请求描述
-          texts.sort((a, b) => b.length - a.length);
-          parts.push(texts[0]);
-        }
-      }
-      const uniq = [];
-      for (const p of parts) {
-        const v = clip(p, 160);
-        if (v && uniq.indexOf(v) < 0) uniq.push(v);
-      }
-      return uniq.join(' | ');
-    }
-
     // ── 翻译禁区：保护代码块/编辑器/终端/输入框不被误翻 ──
     const BLOCKED_TAGS = ['SCRIPT','STYLE','CODE','PRE','INPUT','TEXTAREA','SVG','CANVAS','KBD','SAMP','VAR'];
     const BLOCKED_CLASS_SUBSTR = [
@@ -1111,6 +1058,9 @@ function generateMasterInjectScript() {
 
     function isInBlockedZone(node) {
       let curr = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      if (!curr) return false;
+      // 审批卡/问答卡/接管卡极速豁免：浏览器原生 C++ 快速向上匹配，1微秒物理豁免
+      if (curr.closest && curr.closest('div[data-testid*="interaction"]')) return true;
       let depth = 0;
       while (curr && depth < 25) {
         if (curr.nodeType === Node.ELEMENT_NODE) {
@@ -1158,7 +1108,7 @@ function generateMasterInjectScript() {
         const hasApprovalBtn = !!el.querySelector(
           'button[data-testid*="interaction"], button[data-testid*="approval"], button[data-testid*="permission"], button[data-testid*="continue"]'
         );
-        const hasCode = !!el.querySelector('pre, code, [class*="code"], [data-testid*="command"]');
+        const hasCode = !!el.querySelector('textarea[aria-label="Edit permission target"], pre, code, [class*="code"], [data-testid*="command"]');
         if (hasApprovalBtn || (hasCode && !!el.querySelector('button, [role="button"]'))) return true;
       }
       return false;
@@ -1198,13 +1148,6 @@ function generateMasterInjectScript() {
       return false;
     }
 
-    // 弃用审批框动态正则翻译：审批选项、按钮全保留原生英文，杜绝 React 节点重绘
-    const DYNAMIC_RULES = [];
-
-    function tryDynamicTranslate(text) {
-      return null;
-    }
-
     function translateDOM(root) {
       if (!window.__ea_config.enableI18n || !window.__ea_dict || !root) return;
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -1213,22 +1156,12 @@ function generateMasterInjectScript() {
         if (isInBlockedZone(node)) continue;
         const text = node.nodeValue.trim();
         if (!text) continue;
-        // 1. 词典精确匹配
+        // 词典精确匹配
         if (window.__ea_dict[text]) {
           if (node.__ea_translated !== node.nodeValue) {
             node.__ea_orig = node.nodeValue;
           }
           node.nodeValue = node.nodeValue.replace(text, window.__ea_dict[text]);
-          node.__ea_translated = node.nodeValue;
-          continue;
-        }
-        // 2. 动态正则规则（审批选项等含变量文本）
-        const dynamic = tryDynamicTranslate(text);
-        if (dynamic) {
-          if (node.__ea_translated !== node.nodeValue) {
-            node.__ea_orig = node.nodeValue;
-          }
-          node.nodeValue = node.nodeValue.replace(text, dynamic);
           node.__ea_translated = node.nodeValue;
         }
       }
@@ -1383,14 +1316,17 @@ function generateMasterInjectScript() {
         // ── 终极权限弹窗直接破解与方案问答识别 ──
         const radioGroups = doc.querySelectorAll('[role="radiogroup"]');
         for (const rg of radioGroups) {
+          const card = getInteractionRoot(rg) || rg.closest('div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"], div[class*="card"], div.relative') || rg.parentElement || rg;
+          const isDismiss = !!(card && card.querySelector && card.querySelector('button[data-testid="ask-question-dismiss-button"]'));
+          const hasTarget = !!(card && card.querySelector && card.querySelector('textarea[aria-label="Edit permission target"]'));
           const txt = (rg.innerText || rg.textContent || '').toLowerCase();
-          // 权限审批卡的单选项严格具有权限授权特征：allow this time / always allow / 允许本次 / 始终允许
-          const isPermission = (txt.includes('allow') && (txt.includes('this time') || txt.includes('always'))) ||
+          // 权限审批卡的单选项严格具有权限授权特征：包含权限目标输入框且无取消问答按钮，或选项包含 allow this time / always allow / 允许本次 / 始终允许
+          const isPermission = (!isDismiss && hasTarget) ||
+                               (txt.includes('allow') && (txt.includes('this time') || txt.includes('always'))) ||
                                (txt.includes('允许') && (txt.includes('本次') || txt.includes('始终') || txt.includes('总是')));
           
           if (!isPermission) {
             // 纯业务/方案问答框：触发薄荷青提示，绝对禁止自动放行，静候用户操作
-            const card = getInteractionRoot(rg) || rg.closest('[role="dialog"], [role="alertdialog"], div[data-testid*="interaction"], div[class*="card"], div.relative') || rg.parentElement || rg;
             if (card) {
               reportedRoots.add(card);
             }
@@ -1408,24 +1344,26 @@ function generateMasterInjectScript() {
           // 确认属于权限审批框：执行自动放行
           const radios = Array.from(rg.querySelectorAll('input[type="radio"]'));
           if (radios.length >= 1) {
-            // 正确映射：
-            // p = 1: 选项1 仅允许本次 -> radios[0]
-            // p = 2: 选项2 对话中始终允许 -> radios[1]
-            // p = 3: 选项3 项目中始终允许 -> radios[2]
-            // p = 4: 选项4 全局始终允许 -> radios[3]
-            const p = Number(window.__ea_config.preferOption) || 1;
-            const targetIdx = Math.min(Math.max(p - 1, 0), radios.length - 1);
-            const targetInput = radios[targetIdx];
+            const p = String(Number(window.__ea_config.preferOption) || 1);
+            const pNum = Number(p);
+            const targetIdx = Math.min(Math.max(pNum - 1, 0), radios.length - 1);
+            // 优先按 value="1"~"4" 匹配，其次按下标匹配
+            const targetInput = rg.querySelector('input[type="radio"][value="' + p + '"]') || radios[targetIdx];
             
             if (targetInput && !targetInput.checked) {
               const label = targetInput.closest('label');
               if (label) realClick(label);
+              else realClick(targetInput);
             }
 
-            const submitBtn = Array.from(doc.querySelectorAll('button')).find(b => {
+            // 优先在当前 card 内部寻找提交按钮，其次全页面寻找
+            const searchScope = card ? Array.from(card.querySelectorAll('button')).concat(Array.from(doc.querySelectorAll('button'))) : Array.from(doc.querySelectorAll('button'));
+            const submitBtn = searchScope.find(b => {
               if (b.disabled || b.hasAttribute('data-ea-ok')) return false;
+              const tid = b.getAttribute('data-testid') || '';
+              if (tid === 'interaction-continue-button') return true;
               const bt = (b.innerText || '').trim().toLowerCase();
-              return bt === 'submit' || bt === 'continue' || bt === 'allow' || bt === '确认' || bt === '提交' || b.getAttribute('data-testid') === 'interaction-continue-button';
+              return bt === 'submit' || bt === 'continue' || bt === 'allow' || bt === '确认' || bt === '提交';
             });
             
             if (submitBtn) {
@@ -1452,14 +1390,13 @@ function generateMasterInjectScript() {
           if (tryApprove(btn, 'testid:' + (btn.getAttribute('data-testid') || ''))) return;
         }
 
-        // ── 策略2: 结构指纹 — 容器内同时存在代码块+按钮 ──
+        // ── 策略2: 结构指纹 — 容器内同时存在代码块/目标框+按钮 ──
         const containers = doc.querySelectorAll(
-          '[role="dialog"], [role="alertdialog"],' +
-          'div[data-testid*="interaction"], div[data-testid*="approval"],' +
-          'div[data-testid*="permission"], div[data-testid*="command"]'
+          'div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"],' +
+          'div[data-testid*="approval"], div[data-testid*="permission"], div[data-testid*="command"]'
         );
         for (const card of containers) {
-          const codeEl = card.querySelector('pre, code, [data-testid*="command"], [class*="code"]');
+          const codeEl = card.querySelector('textarea[aria-label="Edit permission target"], pre, code, [data-testid*="command"], [class*="code"]');
           const btns = Array.from(card.querySelectorAll('button, [role="button"]'));
           if (!codeEl || !btns.length) continue;
           // 只接受明确的最终确认按钮，不能把“运行”这类发起请求按钮当成授权。
@@ -1469,17 +1406,6 @@ function generateMasterInjectScript() {
           if (submitBtn) {
             reportInteractionRequest(submitBtn);
             if (tryApprove(submitBtn, '结构指纹审批卡')) return;
-          }
-        }
-
-        // ── 策略3: 关键字兜底（中英双写，兼容汉化后） ──
-        const kws = ['accept', 'continue', 'always allow', 'allow', 'submit',
-                     '接受', '继续', '始终允许', '允许', '确认', '提交'];
-        for (const btn of Array.from(doc.querySelectorAll('button, [role="button"]'))) {
-          const txt = norm(btn.innerText || btn.getAttribute('aria-label'));
-          if (!txt || txt.length > 24) continue;
-          if (kws.some(k => txt === k || txt.startsWith(k))) {
-            if (tryApprove(btn, txt)) return;
           }
         }
       }
@@ -1770,6 +1696,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/api/danger-rules/reload' && req.method === 'POST') {
     loadDangerRules();
+    pushDangerRules();
     let broadcastCount = 0;
     for (const [, entry] of cdpSockets) {
       if (entry && entry.ws && entry.ws.readyState === WebSocket.OPEN) {
@@ -1805,7 +1732,6 @@ const server = http.createServer((req, res) => {
     return res.end('pong');
   }
   if (req.url === '/api/status') {
-    ensureProxyWatchdog();
     // 快速检测 AG 进程是否存活
     if (state.clientRunning) {
       if (launchedClient && launchedClient.pid) {
@@ -1867,13 +1793,19 @@ const server = http.createServer((req, res) => {
         if (data.port) {
           const portNum = parseInt(data.port, 10);
           if (portNum >= 1 && portNum <= 65535) {
-            syncProxyPort(portNum);
+            if (portNum !== state.port) {
+              syncProxyPort(portNum);
+            }
           } else {
             logToGUI('PROXY', `非法端口输入 [${data.port}]，已忽略`, 'tag-warn');
           }
         }
 
+        const prevAutoAccept = state.autoAccept;
+        const prevBlockDangerous = state.blockDangerous;
         const prevI18n = state.enableI18n;
+        const prevPreferOption = state.preferOption;
+
         if (typeof data.autoAccept === 'boolean') state.autoAccept = data.autoAccept;
         if (typeof data.blockDangerous === 'boolean') state.blockDangerous = data.blockDangerous;
         if (typeof data.enableI18n === 'boolean') state.enableI18n = data.enableI18n;
@@ -1881,8 +1813,18 @@ const server = http.createServer((req, res) => {
         if (data.preferOption) state.preferOption = data.preferOption;
         fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ port: state.port, autoAccept: state.autoAccept, blockDangerous: state.blockDangerous, preferOption: state.preferOption, enableI18n: state.enableI18n, debugApproval: state.debugApproval }, null, 2));
 
+        if (typeof data.autoAccept === 'boolean' && data.autoAccept !== prevAutoAccept) {
+          logToGUI('SYSTEM', state.autoAccept ? '自动审批已开启' : '自动审批已停用', 'tag-proxy');
+        }
+        if (typeof data.blockDangerous === 'boolean' && data.blockDangerous !== prevBlockDangerous) {
+          logToGUI('SECURITY', state.blockDangerous ? '高危指令熔断已开启' : '高危指令熔断已停用', 'tag-proxy');
+        }
         if (typeof data.enableI18n === 'boolean' && data.enableI18n !== prevI18n) {
           logToGUI('I18N', state.enableI18n ? '汉化引擎已启用' : '汉化引擎已停用，已还原原生英文界面', 'tag-i18n');
+        }
+        if (data.preferOption && data.preferOption !== prevPreferOption) {
+          const optNames = ['仅允许本次', '对话中始终允许', '项目中始终允许', '全局始终允许'];
+          logToGUI('SYSTEM', `首选审批选项已设置为: 选项[${state.preferOption}] ${optNames[state.preferOption - 1] || ''}`, 'tag-proxy');
         }
 
         broadcastConfig();
@@ -1896,14 +1838,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (req.url === '/api/launch' && req.method === 'POST') {
-    const restored = ensureProxyWatchdog();
-    if (nativeProxyMode) {
-      logToGUI('PROXY', `原生代理模式：Chromium + language_server 使用 HTTP 代理 127.0.0.1:${state.port}，本地回环直连`, 'tag-proxy');
-    } else if (restored) {
-      logToGUI('PROXY', '检测到客户端更新抹除补丁，已自动从备份恢复！', 'tag-warn');
-    } else {
-      logToGUI('PROXY', 'DLL 兼容模式校验通过', 'tag-proxy');
-    }
+    logToGUI('PROXY', `原生代理已就绪：Chromium + language_server 使用 HTTP 代理 127.0.0.1:${state.port}，本地回环直连`, 'tag-proxy');
 
     if (state.enableI18n) logToGUI('I18N', `已装载汉化引擎 (${state.dictEntries} 条词条)`, 'tag-i18n');
 
@@ -1915,9 +1850,7 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    const launch = nativeProxyMode
-      ? buildNativeProxyLaunch()
-      : { args: [`--remote-debugging-port=${CDP_PORT}`], env: process.env };
+    const launch = buildNativeProxyLaunch();
     const currentPaths = getAntigravityPaths();
     const launchCmd = currentPaths.appExe;
     if (!fs.existsSync(launchCmd)) {
@@ -1939,13 +1872,7 @@ const server = http.createServer((req, res) => {
     state.clientRunning = true;
     state.cdpError = '';
     state.cdpFailStreak = 0;
-    logToGUI(
-      'SYSTEM',
-      nativeProxyMode
-        ? '✓ Antigravity 已以原生代理模式启动，CDP 接管就绪'
-        : '✓ Antigravity 已以 DLL 兼容模式启动，CDP 接管就绪',
-      'tag-proxy'
-    );
+    logToGUI('SYSTEM', '✓ Antigravity 已以原生代理模式启动，CDP 接管就绪', 'tag-proxy');
     pushClientStatus();
 
     startCDPLoop();
@@ -1992,7 +1919,6 @@ function writeCrashLog(msg) {
 
 server.on('error', (err) => {
   if (err && err.code === 'EADDRINUSE') {
-    focusExistingGui();
     process.exit(0);
   }
   writeCrashLog(err && err.stack ? err.stack : String(err));
@@ -2015,7 +1941,7 @@ if (TAURI_MODE) {
 
 server.listen(GUI_PORT, '127.0.0.1', () => {
   if (!TAURI_MODE) try { fs.writeFileSync(LOCK_FILE, String(process.pid), 'utf-8'); } catch (e) {}
-  ensureProxyWatchdog();
+  cleanupLegacyDll();
   logToGUI('SECURITY', `高危规则已加载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效`, 'tag-proxy');
   if (TAURI_MODE) {
     const ready = { port: server.address().port, pid: process.pid };
