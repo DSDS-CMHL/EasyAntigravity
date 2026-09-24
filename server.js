@@ -87,6 +87,13 @@ function isPidAlive(pid) {
 }
 
 function releaseLock() {
+  if (residentProcess) {
+    try {
+      residentProcess.stdin.write(JSON.stringify({ cmd: 'exit' }) + '\n');
+      residentProcess.kill();
+    } catch (e) {}
+    residentProcess = null;
+  }
   if (TAURI_MODE) return;
   try {
     const pid = readLockPid();
@@ -414,6 +421,89 @@ function pushDangerRules() {
 function popupGuiWindow() {
   if (TAURI_MODE) {
     try { process.stdout.write('popup\n'); } catch (e) {}
+  }
+}
+
+let residentProcess = null;
+
+function sendResident(cmd) {
+  if (residentProcess && residentProcess.stdin && !residentProcess.stdin.destroyed) {
+    try {
+      residentProcess.stdin.write(JSON.stringify(cmd) + '\n');
+    } catch (e) {}
+  }
+}
+
+function initResidentHelper() {
+  if (TEST_MODE || !IS_WIN) return;
+  const candidatePaths = [
+    path.join(__dirname, 'assets', 'EasyAG-Resident.exe'),
+    path.join(__dirname, 'scripts', 'resident', 'EasyAG-Resident.exe'),
+    path.join(__dirname, '..', 'assets', 'EasyAG-Resident.exe')
+  ];
+  const exePath = candidatePaths.find(p => fs.existsSync(p));
+  if (!exePath) return;
+
+  try {
+    residentProcess = spawn(exePath, [], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true
+    });
+
+    sendResident({ cmd: 'init', port: state.port, ea_pid: process.pid });
+
+    let stdoutBuffer = '';
+    residentProcess.stdout.on('data', (chunk) => {
+      stdoutBuffer += chunk.toString();
+      const lines = stdoutBuffer.split('\n');
+      stdoutBuffer = lines.pop();
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const ev = JSON.parse(trimmed);
+          handleResidentEvent(ev);
+        } catch (e) {}
+      }
+    });
+
+    residentProcess.on('exit', () => {
+      residentProcess = null;
+    });
+
+    logToGUI('SYSTEM', '✓ EasyAG 后台托盘驻留与灵动胶囊引擎已就绪', 'tag-proxy');
+  } catch (e) {
+    logToGUI('SYSTEM', `托盘驻留组件启动异常: ${e.message}`, 'tag-warn');
+  }
+}
+
+function handleResidentEvent(ev) {
+  if (!ev || !ev.event) return;
+  if (ev.event === 'tray_open' || ev.event === 'request_popup') {
+    popupGuiWindow();
+  } else if (ev.event === 'capsule_action') {
+    for (const [, entry] of cdpSockets) {
+      if (entry.ws.readyState === WebSocket.OPEN) {
+        cdpSend(entry.ws, 'Page.bringToFront', {});
+        if (ev.type === 'danger') {
+          cdpSend(entry.ws, 'Runtime.evaluate', {
+            expression: `(() => {
+              const el = document.querySelector('[data-ea-ok="blocked"]') || document.querySelector('[data-testid*="interaction"]');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            })()`
+          });
+        } else if (ev.type === 'interaction') {
+          cdpSend(entry.ws, 'Runtime.evaluate', {
+            expression: `(() => {
+              const el = document.querySelector('[role="radiogroup"]') || document.querySelector('[data-testid*="interaction"]');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            })()`
+          });
+        }
+      }
+    }
+  } else if (ev.event === 'tray_exit') {
+    quitApp('系统托盘选择退出');
   }
 }
 
@@ -1415,6 +1505,26 @@ function generateMasterInjectScript() {
       iframes.forEach(f => {
         try { if (f.contentDocument) scan(f.contentDocument); } catch (e) {}
       });
+
+      // ── 任务完成状态机监控 ──
+      const inputBox = document.querySelector('[data-testid="agent-input-box"]');
+      if (inputBox) {
+        const isAgentBusy = !!inputBox.querySelector('button[data-tooltip-id="input-send-button-cancel-tooltip"]');
+        if (isAgentBusy) {
+          window.__ea_agent_was_running = true;
+          window.__ea_agent_stopped_at = 0;
+        } else if (window.__ea_agent_was_running) {
+          if (!window.__ea_agent_stopped_at) {
+            window.__ea_agent_stopped_at = Date.now();
+          } else if (Date.now() - window.__ea_agent_stopped_at > 1200) {
+            window.__ea_agent_was_running = false;
+            window.__ea_agent_stopped_at = 0;
+            if (!window.__ea_danger_lock && !document.querySelector('[data-ea-interact-reported]')) {
+              console.log('[EA_READY] 本轮任务完成：代码与执行步骤已就绪');
+            }
+          }
+        }
+      }
     }, 800);
   })();`;
 }
@@ -1583,12 +1693,32 @@ async function startCDPLoop() {
                   logToGUI('PERMISSION REQUEST', text.replace('[EA_REQUEST]', '').trim(), 'tag-warn');
                 } else if (text.includes('[EA_ALERT]')) {
                   state.blockCount += 1;
-                  logToGUI('SECURITY ALERT', text.replace('[EA_ALERT]', '').trim(), 'tag-alert');
+                  const alertMsg = text.replace('[EA_ALERT]', '').trim();
+                  logToGUI('SECURITY ALERT', alertMsg, 'tag-alert');
                   pushCounters();
-                  popupGuiWindow();
+                  sendResident({
+                    cmd: 'show_capsule',
+                    type: 'danger',
+                    title: alertMsg.replace(/^.*?等待用户手动确认:\s*/, ''),
+                    detail: '已阻断自动放行，需人工核查确认。'
+                  });
                 } else if (text.includes('[EA_INTERACT]')) {
-                  logToGUI('INTERACTION', text.replace('[EA_INTERACT]', '').trim(), 'tag-mint');
-                  popupGuiWindow();
+                  const interactMsg = text.replace('[EA_INTERACT]', '').trim();
+                  logToGUI('INTERACTION', interactMsg, 'tag-mint');
+                  sendResident({
+                    cmd: 'show_capsule',
+                    type: 'interaction',
+                    title: interactMsg.replace(/^.*?方案问答：\s*/, ''),
+                    detail: 'Agent 暂缓后续操作，等待您的指引。'
+                  });
+                } else if (text.includes('[EA_READY]')) {
+                  logToGUI('TASK READY', '本轮任务完成：代码与步骤已就绪', 'tag-aa');
+                  sendResident({
+                    cmd: 'show_capsule',
+                    type: 'ready',
+                    title: '生成完毕，所有步骤已就绪',
+                    detail: '代码已就绪，随时可检视或开启下一轮。'
+                  });
                 } else if (text.includes('[EA_DOM]')) {
                   logToGUI('DOM-CAPTURE', text.replace('[EA_DOM]', '').trim(), 'tag-i18n');
                 } else if (text.includes('[EA_HTML]')) {
@@ -1875,6 +2005,12 @@ const server = http.createServer((req, res) => {
     logToGUI('SYSTEM', '✓ Antigravity 已以原生代理模式启动，CDP 接管就绪', 'tag-proxy');
     pushClientStatus();
 
+    // 自动隐藏 EasyAG 窗口至托盘，转为后台静默
+    sendResident({ cmd: 'hide_easyag' });
+    if (child && child.pid) {
+      sendResident({ cmd: 'set_ag_pid', ag_pid: child.pid });
+    }
+
     startCDPLoop();
     child.on('exit', () => {
       state.clientRunning = false;
@@ -1886,6 +2022,12 @@ const server = http.createServer((req, res) => {
       logToGUI('SYSTEM', 'Antigravity 客户端已关闭', 'tag-warn');
       pushClientStatus();
     });
+    res.end('ok');
+    return;
+  }
+
+  if (req.url === '/api/hide' && req.method === 'POST') {
+    sendResident({ cmd: 'hide_easyag' });
     res.end('ok');
     return;
   }
@@ -1942,6 +2084,7 @@ if (TAURI_MODE) {
 server.listen(GUI_PORT, '127.0.0.1', () => {
   if (!TAURI_MODE) try { fs.writeFileSync(LOCK_FILE, String(process.pid), 'utf-8'); } catch (e) {}
   cleanupLegacyDll();
+  initResidentHelper();
   logToGUI('SECURITY', `高危规则已加载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效`, 'tag-proxy');
   if (TAURI_MODE) {
     const ready = { port: server.address().port, pid: process.pid };

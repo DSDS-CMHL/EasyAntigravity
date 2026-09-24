@@ -78,7 +78,8 @@ fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Erro
                 let reader = BufReader::new(stdout);
                 for line in reader.lines() {
                     if let Ok(line) = line {
-                        if line.trim() == "popup" || line.trim() == "focus" {
+                        let trimmed = line.trim();
+                        if trimmed == "popup" || trimmed == "focus" {
                             if let Some(window) = handle.get_webview_window("main") {
                                 let _ = window.unminimize();
                                 let _ = window.show();
@@ -86,6 +87,13 @@ fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Erro
                                 let _ = window.set_always_on_top(false);
                                 let _ = window.set_focus();
                             }
+                        } else if trimmed == "hide" {
+                            if let Some(window) = handle.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        } else if trimmed == "quit" || trimmed == "exit" {
+                            stop_backend(&handle.state::<Backend>());
+                            handle.exit(0);
                         }
                     }
                 }
@@ -147,9 +155,9 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { .. } = event {
-                stop_backend(&window.app_handle().state::<Backend>());
-                window.app_handle().exit(0);
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
             }
         })
         .build(tauri::generate_context!()).expect("Failed to build EasyAG")

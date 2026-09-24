@@ -129,6 +129,32 @@
       50% { opacity: 0.4; transform: scale(1.2); }
     }
 
+    .tray-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      cursor: pointer;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+    .tray-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-1px);
+    }
+    .tray-btn:active {
+      transform: translateY(0);
+    }
+
     /* Bento 卡片通用质感 */
     .card {
       background: var(--card-bg);
@@ -418,6 +444,9 @@
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
+      <button type="button" class="tray-btn" onclick="hideToTray()" title="收起至系统托盘，后台静默运行">
+        <span>📥 托盘静默</span>
+      </button>
       <div class="status-capsule" id="clientStatusBadge">
         <div class="dot"></div>
         <span>客户端未就绪</span>
@@ -752,6 +781,12 @@
       btn.disabled = true;
       btn.innerHTML = '<span>⏳</span><span>正在启动 Antigravity...</span>';
       await fetch('/api/launch', { method: 'POST' });
+    }
+
+    async function hideToTray() {
+      try {
+        await fetch('/api/hide', { method: 'POST' });
+      } catch (e) {}
     }
 
     init();
