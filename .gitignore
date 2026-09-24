@@ -3,6 +3,7 @@ EasyAntigravity.exe
 EasyAntigravity-dist/
 EasyAntigravity*.zip
 *.zip
+scripts/resident/*.exe
 
 # Temp/test files
 _dom_probe*.js
