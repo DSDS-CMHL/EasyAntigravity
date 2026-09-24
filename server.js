@@ -427,6 +427,9 @@ function popupGuiWindow() {
 let residentProcess = null;
 
 function sendResident(cmd) {
+  if (!residentProcess || !residentProcess.stdin || residentProcess.stdin.destroyed) {
+    initResidentHelper();
+  }
   if (residentProcess && residentProcess.stdin && !residentProcess.stdin.destroyed) {
     try {
       residentProcess.stdin.write(JSON.stringify(cmd) + '\n');
@@ -601,20 +604,26 @@ function generateMasterInjectScript() {
     function isSubmitLabel(s) {
       const t = norm(s);
       if (!t || t.length > 40) return false;
+      if (/^(?:deny|cancel|reject|disallow|拒绝|取消|放弃|关闭)/i.test(t)) return false;
       return (
         t === 'submit' ||
-        t === 'submit ↵' ||
-        t === 'submit enter' ||
-        t === '提交' ||
-        t === '提交 ↵' ||
+        t.startsWith('submit') ||
         t === 'confirm' ||
-        t === 'confirm ↵' ||
-        t === '确认' ||
-        t === '确认 ↵' ||
-        t === 'allow' ||
-        t === '允许' ||
+        t.startsWith('confirm') ||
         t === 'continue' ||
-        t === '继续'
+        t.startsWith('continue') ||
+        t === 'allow' ||
+        t.startsWith('allow') ||
+        t.endsWith('allow') ||
+        t.includes('allow') ||
+        t === '提交' ||
+        t.startsWith('提交') ||
+        t === '确认' ||
+        t.startsWith('确认') ||
+        t === '允许' ||
+        t.includes('允许') ||
+        t === '继续' ||
+        t.startsWith('继续')
       );
     }
 
@@ -1025,33 +1034,45 @@ function generateMasterInjectScript() {
     const processedRoots = window.__ea_processed_roots || (window.__ea_processed_roots = new WeakSet());
     const reportedRoots = window.__ea_reported_roots || (window.__ea_reported_roots = new WeakSet());
 
-        function isQuestionCard(card) {
+    function isQuestionCard(card) {
       if (!card) return false;
       const root = (card.closest && card.closest('div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"], div[class*="card"]')) || card;
+
+      // ── 绝对守卫：包含明确权限放行特征的卡片，绝非业务方案问答！──
+      const rootText = (root.innerText || root.textContent || '').toLowerCase();
+      const hasPermBtn = !!(root.querySelector && (
+        root.querySelector('button[data-testid="permission-allow"]') ||
+        root.querySelector('button[data-testid="approval-submit"]')
+      ));
+      const hasPermKeyword = /allow querying|allow reading|allow executing|allow running|querying|始终允许|总是允许|仅允许本次|只允许本次|本次会话|本项目中|所有项目/.test(rootText);
+      const hasPermTextarea = !!(root.querySelector && root.querySelector('textarea[aria-label*="permission"]'));
+
+      // 明确属于权限审批卡，直接排除
+      if (hasPermBtn || hasPermTextarea || (hasPermKeyword && !root.querySelector('button[data-testid="ask-question-dismiss-button"]'))) {
+        return false;
+      }
+
+      // ── 真正的方案问答特征判定 ──
+      // 1. 含有 Antigravity ask_question 专属控件
       if (root.querySelector && (
         root.querySelector('button[data-testid="ask-question-dismiss-button"]') ||
-        root.querySelector('button[data-testid="interaction-continue-button"]') ||
-        root.querySelector('[data-testid*="ask-question"]') ||
-        root.querySelector('[data-testid*="question"]')
+        root.querySelector('[data-testid*="ask-question"]')
       )) return true;
-      if (root.getAttribute && (root.getAttribute('data-testid') || '').includes('interaction')) {
-        const hasTarget = !!(root.querySelector && root.querySelector('textarea[aria-label="Edit permission target"]'));
-        if (!hasTarget) return true;
-      }
+
+      // 2. 检查单选组/多选组是否为方案选择（而非权限单选）
       const rgs = Array.from(root.querySelectorAll ? root.querySelectorAll('[role="radiogroup"]') : []);
       if (!rgs.length) {
         const radios = Array.from(root.querySelectorAll ? root.querySelectorAll('input[type="radio"]') : []);
         if (radios.length > 0) {
-          const txt = (root.innerText || '').toLowerCase();
-          const isPerm = (txt.includes('allow') && (txt.includes('this time') || txt.includes('always'))) ||
-                         (txt.includes('允许') && (txt.includes('本次') || txt.includes('始终') || txt.includes('总是')));
+          const isPerm = (rootText.includes('allow') && (rootText.includes('this time') || rootText.includes('always') || rootText.includes('querying'))) ||
+                         (rootText.includes('允许') && (rootText.includes('本次') || rootText.includes('始终') || rootText.includes('总是')));
           return !isPerm;
         }
         return false;
       }
-      const txt = (rgs[rgs.length - 1].innerText || '').toLowerCase();
-      const isPerm = (txt.includes('allow') && (txt.includes('this time') || txt.includes('always'))) ||
-                     (txt.includes('允许') && (txt.includes('本次') || txt.includes('始终') || txt.includes('总是')));
+      const lastRgText = (rgs[rgs.length - 1].innerText || '').toLowerCase();
+      const isPerm = (lastRgText.includes('allow') && (lastRgText.includes('this time') || lastRgText.includes('always') || lastRgText.includes('querying'))) ||
+                     (lastRgText.includes('允许') && (lastRgText.includes('本次') || lastRgText.includes('始终') || lastRgText.includes('总是')));
       return !isPerm;
     }
 
@@ -1378,6 +1399,8 @@ function generateMasterInjectScript() {
         const card = e.target && e.target.closest ? e.target.closest('div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"], [role="radiogroup"], div[class*="card"]') : null;
         if (card) {
           card.setAttribute('data-ea-user-manual', 'true');
+          const subBtns = card.querySelectorAll ? card.querySelectorAll('button, [role="button"]') : [];
+          subBtns.forEach(b => b.setAttribute('data-ea-user-manual', 'true'));
         }
       }, true);
     }
@@ -1537,15 +1560,16 @@ function generateMasterInjectScript() {
           if (tryApprove(btn, 'testid:' + (btn.getAttribute('data-testid') || ''))) return;
         }
 
-        // ── 策略2: 结构指纹 — 容器内同时存在代码块/目标框+按钮 ──
+        // ── 策略2: 结构指纹 — 容器内同时存在代码块/目标框+按钮，或明确权限放行卡 ──
         const containers = doc.querySelectorAll(
           'div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"],' +
           'div[data-testid*="approval"], div[data-testid*="permission"], div[data-testid*="command"]'
         );
         for (const card of containers) {
           const codeEl = card.querySelector('textarea[aria-label="Edit permission target"], pre, code, [data-testid*="command"], [class*="code"]');
+          const isPermText = /allow querying|allow reading|allow executing|allow running|allow|permission|始终允许|仅允许本次|允许/.test((card.innerText || '').toLowerCase());
           const btns = Array.from(card.querySelectorAll('button, [role="button"]'));
-          if (!codeEl || !btns.length) continue;
+          if ((!codeEl && !isPermText) || !btns.length) continue;
           // 只接受明确的最终确认按钮，不能把“运行”这类发起请求按钮当成授权。
           const submitBtn =
             btns.find(b => /(?:approval-submit|permission-allow)/i.test(b.getAttribute('data-testid') || '')) ||
@@ -1563,27 +1587,41 @@ function generateMasterInjectScript() {
         try { if (f.contentDocument) scan(f.contentDocument); } catch (e) {}
       });
 
-      // ── 任务完成状态机监控 ──
+      // ── 任务完成状态机监控（消除后台任务运行时的空闲误报） ──
       const inputBox = document.querySelector('[data-testid="agent-input-box"]');
-      if (inputBox) {
-        const isAgentBusy = !!inputBox.querySelector('button[data-tooltip-id="input-send-button-cancel-tooltip"]');
-        if (isAgentBusy) {
-          window.__ea_agent_was_running = true;
+      const hasCancelBtn = !!(inputBox && inputBox.querySelector('button[data-tooltip-id="input-send-button-cancel-tooltip"]'));
+      
+      const runningPanel = document.querySelector('[data-testid="running-items-panel"]');
+      const hasRunningPanelItems = !!(runningPanel && (
+        runningPanel.classList.contains('grid-rows-[1fr]') ||
+        (runningPanel.querySelectorAll('.overflow-y-auto > *').length > 0) ||
+        (runningPanel.querySelector('.animate-spin'))
+      ));
+
+      const hasActiveRunStep = Array.from(document.querySelectorAll('[data-testid="run-command-step"]')).some(step => {
+        const firstWord = (step.innerText || '').trim().split(/\s+/)[0] || '';
+        return /^run$/i.test(firstWord);
+      });
+
+      const isAgentBusy = hasCancelBtn || hasRunningPanelItems || hasActiveRunStep;
+
+      if (isAgentBusy) {
+        window.__ea_agent_was_running = true;
+        window.__ea_agent_stopped_at = 0;
+        window.__ea_agent_user_cancelled = false;
+      } else if (window.__ea_agent_was_running) {
+        if (window.__ea_agent_user_cancelled) {
+          // 用户手动点击了停止执行，绝不触发本轮任务完成胶囊
+          window.__ea_agent_was_running = false;
           window.__ea_agent_stopped_at = 0;
-          window.__ea_agent_user_cancelled = false;
-        } else if (window.__ea_agent_was_running) {
-          if (window.__ea_agent_user_cancelled) {
-            // 用户手动点击了停止执行，绝不触发本轮任务完成胶囊
-            window.__ea_agent_was_running = false;
-            window.__ea_agent_stopped_at = 0;
-          } else if (!window.__ea_agent_stopped_at) {
-            window.__ea_agent_stopped_at = Date.now();
-          } else if (Date.now() - window.__ea_agent_stopped_at > 1200) {
-            window.__ea_agent_was_running = false;
-            window.__ea_agent_stopped_at = 0;
-            if (!window.__ea_danger_lock && !document.querySelector('[data-ea-interact-reported]')) {
-              console.log('[EA_READY] 本轮任务完成：代码与执行步骤已就绪');
-            }
+        } else if (!window.__ea_agent_stopped_at) {
+          window.__ea_agent_stopped_at = Date.now();
+        } else if (Date.now() - window.__ea_agent_stopped_at > 1200) {
+          window.__ea_agent_was_running = false;
+          window.__ea_agent_stopped_at = 0;
+          const hasPendingQuestion = !!document.querySelector('button[data-testid="interaction-continue-button"], [data-testid="ask-question-dismiss-button"]');
+          if (!window.__ea_danger_lock && !document.querySelector('[data-ea-interact-reported]') && !hasPendingQuestion) {
+            console.log('[EA_READY] 本轮任务完成：代码与执行步骤已就绪');
           }
         }
       }
@@ -1760,7 +1798,7 @@ async function startCDPLoop() {
                   pushCounters();
 
                   // 简要信息：写命中的规则 [windows-del] 等；详细信息：写具体拦截指令
-                  const m = alertMsg.match(/拦截高危指令\[(.*?)\][，,]等待用户手动确认:\s*(.*)$/);
+                  const m = alertMsg.match(/\[(.*?)\](?:[，,].*?:\s*|\s*:\s*)(.*)$/);
                   const ruleId = m ? m[1] : 'high-risk';
                   const cmdDetail = m ? m[2] : alertMsg;
                   sendResident({

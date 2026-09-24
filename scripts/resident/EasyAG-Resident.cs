@@ -239,14 +239,24 @@ namespace EasyAGResident {
         private static void InitTrayIcon() {
             try {
                 trayMenu = new ContextMenuStrip();
-                var itemOpen = trayMenu.Items.Add("🚀 打开控制面板");
-                itemOpen.Font = new System.Drawing.Font(itemOpen.Font, System.Drawing.FontStyle.Bold);
+                trayMenu.ShowImageMargin = false;
+                trayMenu.ShowCheckMargin = false;
+                trayMenu.BackColor = System.Drawing.Color.FromArgb(0x18, 0x19, 0x22);
+                trayMenu.ForeColor = System.Drawing.Color.FromArgb(0xF1, 0xF5, 0xF9);
+                trayMenu.Font = new System.Drawing.Font("Segoe UI", 9.5f, System.Drawing.FontStyle.Regular);
+                trayMenu.Renderer = new ModernMenuRenderer();
+                trayMenu.Padding = new Padding(2);
+
+                var itemOpen = trayMenu.Items.Add("打开控制面板");
+                itemOpen.Font = new System.Drawing.Font("Segoe UI", 9.5f, System.Drawing.FontStyle.Bold);
+                itemOpen.Padding = new Padding(14, 6, 14, 6);
                 itemOpen.Click += (s, e) => {
                     ShowEasyAG();
                     LogEvent("{\"event\":\"tray_open\"}");
                 };
 
-                var itemWeb = trayMenu.Items.Add("🌐 浏览器控制台");
+                var itemWeb = trayMenu.Items.Add("浏览器控制台");
+                itemWeb.Padding = new Padding(14, 6, 14, 6);
                 itemWeb.Click += (s, e) => {
                     try {
                         System.Diagnostics.Process.Start(string.Format("http://127.0.0.1:{0}", backendPort));
@@ -254,9 +264,12 @@ namespace EasyAGResident {
                     LogEvent("{\"event\":\"tray_web\"}");
                 };
 
-                trayMenu.Items.Add(new ToolStripSeparator());
+                var sep = new ToolStripSeparator();
+                sep.Margin = new Padding(4, 2, 4, 2);
+                trayMenu.Items.Add(sep);
 
-                var itemExit = trayMenu.Items.Add("🛑 退出 EasyAntigravity");
+                var itemExit = trayMenu.Items.Add("退出 EasyAntigravity");
+                itemExit.Padding = new Padding(14, 6, 14, 6);
                 itemExit.Click += (s, e) => {
                     LogEvent("{\"event\":\"tray_exit\"}");
                     ShutdownResident();
@@ -449,7 +462,7 @@ namespace EasyAGResident {
                 stateCatText.Text = "命中危险命令";
                 stateCatText.Foreground = new SolidColorBrush(rose);
 
-                stateMainText.Text = string.IsNullOrEmpty(titleText) ? "危险指令待人工审查" : ("危险指令：" + titleText);
+                stateMainText.Text = string.IsNullOrEmpty(titleText) ? "命中危险指令" : titleText;
                 stateSubText.Text = string.IsNullOrEmpty(subText) ? "已阻断自动放行，需人工核查确认。" : subText;
 
                 actionBtn.Background = new SolidColorBrush(Color.FromRgb(0xE1, 0x1D, 0x48));
@@ -457,7 +470,7 @@ namespace EasyAGResident {
                 actionBtnText.Text = "前往审查 ↵";
 
             } else if (type == "interaction") {
-                // 💡 等待方案决策
+                // 等待方案决策
                 Color mint = Color.FromRgb(0x00, 0xF5, 0xD4);
                 cardBorder.BorderBrush = new SolidColorBrush(mint);
                 cardGlow.Color = mint;
@@ -474,7 +487,7 @@ namespace EasyAGResident {
                 actionBtnText.Text = "前往选择 ↵";
 
             } else {
-                // ✅ 本轮任务完成
+                // 本轮任务完成
                 Color emerald = Color.FromRgb(0x10, 0xB9, 0x81);
                 cardBorder.BorderBrush = new SolidColorBrush(emerald);
                 cardGlow.Color = emerald;
@@ -565,19 +578,25 @@ namespace EasyAGResident {
 
         private static void ReadCommandsLoop() {
             try {
-                using (StreamReader reader = new StreamReader(Console.OpenStandardInput(), Encoding.UTF8)) {
-                    string line;
-                    while ((line = reader.ReadLine()) != null) {
-                        line = line.Trim();
-                        if (string.IsNullOrEmpty(line)) continue;
+                if (Console.IsInputRedirected) {
+                    using (StreamReader reader = new StreamReader(Console.OpenStandardInput(), Encoding.UTF8)) {
+                        string line;
+                        while ((line = reader.ReadLine()) != null) {
+                            line = line.Trim();
+                            if (string.IsNullOrEmpty(line)) continue;
 
-                        if (line.StartsWith("{") && line.EndsWith("}")) {
-                            ProcessJsonCommand(line);
+                            if (line.StartsWith("{") && line.EndsWith("}")) {
+                                ProcessJsonCommand(line);
+                            }
                         }
+                    }
+                    ShutdownResident();
+                } else {
+                    while (true) {
+                        Thread.Sleep(5000);
                     }
                 }
             } catch { }
-            ShutdownResident();
         }
 
         private static string UnescapeJson(string s) {
@@ -674,6 +693,69 @@ namespace EasyAGResident {
                 HideCapsule();
             } else if (cmd == "exit") {
                 ShutdownResident();
+            }
+        }
+    }
+
+    public class ModernMenuColorTable : ProfessionalColorTable {
+        public override System.Drawing.Color MenuBorder {
+            get { return System.Drawing.Color.FromArgb(0x2E, 0x32, 0x45); }
+        }
+        public override System.Drawing.Color MenuItemBorder {
+            get { return System.Drawing.Color.Transparent; }
+        }
+        public override System.Drawing.Color MenuItemSelected {
+            get { return System.Drawing.Color.FromArgb(0x2A, 0x2D, 0x3D); }
+        }
+        public override System.Drawing.Color ToolStripDropDownBackground {
+            get { return System.Drawing.Color.FromArgb(0x18, 0x19, 0x22); }
+        }
+        public override System.Drawing.Color ImageMarginGradientBegin {
+            get { return System.Drawing.Color.FromArgb(0x18, 0x19, 0x22); }
+        }
+        public override System.Drawing.Color ImageMarginGradientMiddle {
+            get { return System.Drawing.Color.FromArgb(0x18, 0x19, 0x22); }
+        }
+        public override System.Drawing.Color ImageMarginGradientEnd {
+            get { return System.Drawing.Color.FromArgb(0x18, 0x19, 0x22); }
+        }
+        public override System.Drawing.Color SeparatorDark {
+            get { return System.Drawing.Color.FromArgb(0x2E, 0x32, 0x45); }
+        }
+        public override System.Drawing.Color SeparatorLight {
+            get { return System.Drawing.Color.Transparent; }
+        }
+    }
+
+    public class ModernMenuRenderer : ToolStripProfessionalRenderer {
+        public ModernMenuRenderer() : base(new ModernMenuColorTable()) { }
+
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e) {
+            using (var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(0x2E, 0x32, 0x45), 1)) {
+                e.Graphics.DrawRectangle(pen, 0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1);
+            }
+        }
+
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e) {
+            if (e.Item.Selected) {
+                var rc = new System.Drawing.Rectangle(4, 1, e.Item.Width - 8, e.Item.Height - 2);
+                using (var brush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0x2A, 0x2D, 0x3D))) {
+                    e.Graphics.FillRectangle(brush, rc);
+                }
+            } else {
+                base.OnRenderMenuItemBackground(e);
+            }
+        }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e) {
+            e.TextColor = e.Item.Selected ? System.Drawing.Color.White : System.Drawing.Color.FromArgb(0xF1, 0xF5, 0xF9);
+            base.OnRenderItemText(e);
+        }
+
+        protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e) {
+            var rc = new System.Drawing.Rectangle(10, e.Item.Height / 2, e.Item.Width - 20, 1);
+            using (var brush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0x2E, 0x32, 0x45))) {
+                e.Graphics.FillRectangle(brush, rc);
             }
         }
     }
