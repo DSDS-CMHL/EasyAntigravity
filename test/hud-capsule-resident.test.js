@@ -35,6 +35,8 @@ const injectCode = fn(mockState, {}, {}, () => [{ id: 'test', re: /rm\s+-rf/i, n
 assert.ok(injectCode.includes('[EA_READY]'), '注入脚本中必须包含 [EA_READY] 任务完成监控特征码');
 assert.ok(injectCode.includes('agent-input-box'), '注入脚本中必须包含 agent-input-box 检测特征码');
 assert.ok(injectCode.includes('input-send-button-cancel-tooltip'), '注入脚本中必须包含 cancel-tooltip 状态检测特征码');
+assert.ok(injectCode.includes('settings-editor'), '注入脚本中必须允许 settings-editor 设置界面汉化');
+assert.ok(injectCode.includes('data-ea-user-manual'), '注入脚本中必须包含人工点选保护 data-ea-user-manual 特征码');
 
 // 用 Node VM 校验生成的 JS 语法
 try {

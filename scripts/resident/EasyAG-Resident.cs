@@ -124,11 +124,32 @@ namespace EasyAGResident {
             } catch { }
         }
 
+        public static bool IsAntigravityForeground() {
+            try {
+                IntPtr fgWnd = GetForegroundWindow();
+                if (fgWnd == IntPtr.Zero) return false;
+                if (agHwnd != IntPtr.Zero && fgWnd == agHwnd) return true;
+
+                uint pId = 0;
+                GetWindowThreadProcessId(fgWnd, out pId);
+                if (agPid != 0 && pId == agPid) return true;
+
+                var proc = System.Diagnostics.Process.GetProcessById((int)pId);
+                if (proc.ProcessName.Equals("Antigravity", StringComparison.OrdinalIgnoreCase)) return true;
+            } catch { }
+            return false;
+        }
+
         public static void RefreshWindowHandles() {
             try {
+                IntPtr bestAgHwnd = IntPtr.Zero;
+                int bestAgArea = 0;
+
                 EnumWindows((hWnd, lParam) => {
-                    StringBuilder title = new StringBuilder(256);
-                    GetWindowText(hWnd, title, 256);
+                    if (!IsWindowVisible(hWnd)) return true;
+
+                    StringBuilder title = new StringBuilder(512);
+                    GetWindowText(hWnd, title, 512);
                     StringBuilder cls = new StringBuilder(256);
                     GetClassName(hWnd, cls, 256);
                     string t = title.ToString();
@@ -142,11 +163,13 @@ namespace EasyAGResident {
                         eaHwnd = hWnd;
                     }
 
-                    // Find Antigravity
-                    if (c.StartsWith("Chrome_WidgetWin_") && pId != eaPid) {
+                    // Find Antigravity:
+                    // 1. Must be Chrome_WidgetWin_1 (main viewport), never 0 or utility
+                    // 2. Not EasyAntigravity process or window
+                    // 3. Must be visible, non-empty title, and substantial size
+                    if (c == "Chrome_WidgetWin_1" && pId != eaPid && t != "EasyAntigravity" && t != "Hidden Window" && !string.IsNullOrEmpty(t)) {
                         bool isAg = false;
                         if (agPid != 0 && pId == agPid) isAg = true;
-                        else if (t.IndexOf("Antigravity", StringComparison.OrdinalIgnoreCase) >= 0 && t != "EasyAntigravity") isAg = true;
                         else {
                             try {
                                 var proc = System.Diagnostics.Process.GetProcessById((int)pId);
@@ -156,18 +179,31 @@ namespace EasyAGResident {
                         if (isAg) {
                             RECT r;
                             GetWindowRect(hWnd, out r);
-                            if (r.Right - r.Left > 250 && r.Bottom - r.Top > 200) {
-                                agHwnd = hWnd;
+                            int w = r.Right - r.Left;
+                            int h = r.Bottom - r.Top;
+                            int area = w * h;
+                            if (w > 400 && h > 300 && area > bestAgArea) {
+                                bestAgArea = area;
+                                bestAgHwnd = hWnd;
                             }
                         }
                     }
                     return true;
                 }, IntPtr.Zero);
+
+                if (bestAgHwnd != IntPtr.Zero) {
+                    agHwnd = bestAgHwnd;
+                }
             } catch { }
         }
 
         [STAThread]
         public static void Main(string[] args) {
+            try {
+                Console.InputEncoding = Encoding.UTF8;
+                Console.OutputEncoding = Encoding.UTF8;
+            } catch { }
+
             // Attach to interactive desktop station if possible
             try {
                 IntPtr hWinsta = OpenWindowStation("winsta0", false, 0x037F);
@@ -457,11 +493,21 @@ namespace EasyAGResident {
         }
 
         private static void ShowCapsule(string type, string titleText, string subText) {
+            RefreshWindowHandles();
+            if (IsAntigravityForeground()) {
+                // 当 Antigravity 在前台时无需弹窗打扰用户
+                return;
+            }
             wpfApp.Dispatcher.Invoke(() => {
                 ApplyStateVisuals(type, titleText, subText);
                 Rect workArea = SystemParameters.WorkArea;
-                capsuleWin.Left = workArea.Right - capsuleWin.Width - 18;
-                capsuleWin.Top = workArea.Bottom - capsuleWin.Height - 16;
+                if (workArea.Width > 0 && workArea.Height > 0) {
+                    capsuleWin.Left = workArea.Right - capsuleWin.Width - 18;
+                    capsuleWin.Top = workArea.Bottom - capsuleWin.Height - 16;
+                } else {
+                    capsuleWin.Left = 800;
+                    capsuleWin.Top = 600;
+                }
                 capsuleWin.Show();
                 try {
                     System.Media.SystemSounds.Asterisk.Play();
@@ -519,17 +565,57 @@ namespace EasyAGResident {
 
         private static void ReadCommandsLoop() {
             try {
-                string line;
-                while ((line = Console.ReadLine()) != null) {
-                    line = line.Trim();
-                    if (string.IsNullOrEmpty(line)) continue;
+                using (StreamReader reader = new StreamReader(Console.OpenStandardInput(), Encoding.UTF8)) {
+                    string line;
+                    while ((line = reader.ReadLine()) != null) {
+                        line = line.Trim();
+                        if (string.IsNullOrEmpty(line)) continue;
 
-                    if (line.StartsWith("{") && line.EndsWith("}")) {
-                        ProcessJsonCommand(line);
+                        if (line.StartsWith("{") && line.EndsWith("}")) {
+                            ProcessJsonCommand(line);
+                        }
                     }
                 }
             } catch { }
             ShutdownResident();
+        }
+
+        private static string UnescapeJson(string s) {
+            if (string.IsNullOrEmpty(s)) return "";
+            StringBuilder sb = new StringBuilder(s.Length);
+            for (int i = 0; i < s.Length; i++) {
+                if (s[i] == '\\' && i + 1 < s.Length) {
+                    char next = s[++i];
+                    switch (next) {
+                        case '"': sb.Append('"'); break;
+                        case '\\': sb.Append('\\'); break;
+                        case '/': sb.Append('/'); break;
+                        case 'b': sb.Append('\b'); break;
+                        case 'f': sb.Append('\f'); break;
+                        case 'n': sb.Append('\n'); break;
+                        case 'r': sb.Append('\r'); break;
+                        case 't': sb.Append('\t'); break;
+                        case 'u':
+                            if (i + 4 < s.Length) {
+                                string hex = s.Substring(i + 1, 4);
+                                int code;
+                                if (int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out code)) {
+                                    sb.Append((char)code);
+                                    i += 4;
+                                } else {
+                                    sb.Append("\\u");
+                                }
+                            } else {
+                                sb.Append("\\u");
+                            }
+                            break;
+                        default: sb.Append(next); break;
+                    }
+                } else {
+                    sb.Append(s[i]);
+                }
+            }
+            return sb.ToString();
         }
 
         private static string ExtractJsonVal(string json, string key) {
@@ -541,11 +627,26 @@ namespace EasyAGResident {
             int end = idx;
             bool inQuotes = (idx > 0 && json[idx - 1] == '\"');
             if (inQuotes) {
-                while (end < json.Length && json[end] != '\"') end++;
+                while (end < json.Length) {
+                    if (json[end] == '"') {
+                        int backslashCount = 0;
+                        int b = end - 1;
+                        while (b >= idx && json[b] == '\\') {
+                            backslashCount++;
+                            b--;
+                        }
+                        if (backslashCount % 2 == 0) {
+                            break;
+                        }
+                    }
+                    end++;
+                }
             } else {
                 while (end < json.Length && json[end] != ',' && json[end] != '}' && json[end] != ' ') end++;
             }
-            return json.Substring(idx, end - idx);
+            if (end > json.Length) end = json.Length;
+            string raw = json.Substring(idx, end - idx);
+            return inQuotes ? UnescapeJson(raw) : raw;
         }
 
         private static void ProcessJsonCommand(string json) {

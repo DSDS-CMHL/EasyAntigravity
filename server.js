@@ -1027,14 +1027,28 @@ function generateMasterInjectScript() {
 
         function isQuestionCard(card) {
       if (!card) return false;
-      const root = (card.closest && card.closest('div[data-testid*="interaction"]')) || card;
-      if (root.querySelector && root.querySelector('button[data-testid="ask-question-dismiss-button"]')) return true;
+      const root = (card.closest && card.closest('div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"], div[class*="card"]')) || card;
+      if (root.querySelector && (
+        root.querySelector('button[data-testid="ask-question-dismiss-button"]') ||
+        root.querySelector('button[data-testid="interaction-continue-button"]') ||
+        root.querySelector('[data-testid*="ask-question"]') ||
+        root.querySelector('[data-testid*="question"]')
+      )) return true;
       if (root.getAttribute && (root.getAttribute('data-testid') || '').includes('interaction')) {
         const hasTarget = !!(root.querySelector && root.querySelector('textarea[aria-label="Edit permission target"]'));
-        if (!hasTarget && root.querySelector && root.querySelector('[role="radiogroup"]')) return true;
+        if (!hasTarget) return true;
       }
       const rgs = Array.from(root.querySelectorAll ? root.querySelectorAll('[role="radiogroup"]') : []);
-      if (!rgs.length) return false;
+      if (!rgs.length) {
+        const radios = Array.from(root.querySelectorAll ? root.querySelectorAll('input[type="radio"]') : []);
+        if (radios.length > 0) {
+          const txt = (root.innerText || '').toLowerCase();
+          const isPerm = (txt.includes('allow') && (txt.includes('this time') || txt.includes('always'))) ||
+                         (txt.includes('允许') && (txt.includes('本次') || txt.includes('始终') || txt.includes('总是')));
+          return !isPerm;
+        }
+        return false;
+      }
       const txt = (rgs[rgs.length - 1].innerText || '').toLowerCase();
       const isPerm = (txt.includes('allow') && (txt.includes('this time') || txt.includes('always'))) ||
                      (txt.includes('允许') && (txt.includes('本次') || txt.includes('始终') || txt.includes('总是')));
@@ -1059,8 +1073,19 @@ function generateMasterInjectScript() {
 
     function tryApprove(btn, kind) {
       if (!btn || btn.disabled || btn.hasAttribute('data-ea-ok')) return false;
+      // 方案问答提交按钮必须由用户手动确认，严禁自动点击抢跑！
+      const tid = btn.getAttribute('data-testid') || '';
+      if (tid === 'interaction-continue-button') return false;
+
       const root = getInteractionRoot(btn);
       if (isQuestionCard(root)) return false;
+      // 用户正在手动操作的卡片，严禁自动抢跑提交，保护用户防误触
+      if (root && (root.getAttribute('data-ea-user-manual') === 'true' || root.getAttribute('data-ea-ok') === 'user-manual')) {
+        return false;
+      }
+      if (btn.hasAttribute('data-ea-user-manual') || btn.getAttribute('data-ea-ok') === 'user-manual') {
+        return false;
+      }
       
       if (window.__ea_danger_lock) {
         if (Date.now() - (window.__ea_danger_lock.at || 0) > 60000) {
@@ -1135,10 +1160,10 @@ function generateMasterInjectScript() {
       return true;
     }
 
-    // ── 翻译禁区：保护代码块/编辑器/终端/输入框不被误翻 ──
+    // ── 翻译禁区：保护代码块/编辑器文本/终端/输入框不被误翻 ──
     const BLOCKED_TAGS = ['SCRIPT','STYLE','CODE','PRE','INPUT','TEXTAREA','SVG','CANVAS','KBD','SAMP','VAR'];
     const BLOCKED_CLASS_SUBSTR = [
-      'code-view','editor-container','monaco-editor','suggest-widget',
+      'code-view','view-lines','lines-content','suggest-widget',
       'output-view','debug-console','artifact-container','code-block',
       'diff-view','input-area','chat-input','cm-editor','CodeMirror',
       'highlight','syntax','prism','hljs',
@@ -1149,6 +1174,17 @@ function generateMasterInjectScript() {
     function isInBlockedZone(node) {
       let curr = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
       if (!curr) return false;
+      // 设置界面与扩展面板：明确豁免禁区，允许词条翻译！
+      if (curr.closest && curr.closest('.settings-editor, .keybindings-editor, .extensions-viewlet')) {
+        const tag = (curr.tagName || '').toUpperCase();
+        if (BLOCKED_TAGS.includes(tag)) return true;
+        if (curr.getAttribute && curr.getAttribute('contenteditable') === 'true') return true;
+        const role = (curr.getAttribute && curr.getAttribute('role')) || '';
+        if (role === 'code' || role === 'textbox') return true;
+        const cls = curr.className || '';
+        if (typeof cls === 'string' && (cls.includes('view-lines') || cls.includes('lines-content'))) return true;
+        return false;
+      }
       // 审批卡/问答卡/接管卡极速豁免：浏览器原生 C++ 快速向上匹配，1微秒物理豁免
       if (curr.closest && curr.closest('div[data-testid*="interaction"]')) return true;
       let depth = 0;
@@ -1328,6 +1364,24 @@ function generateMasterInjectScript() {
       });
     };
 
+    if (!window.__ea_click_listener_attached) {
+      window.__ea_click_listener_attached = true;
+      document.addEventListener('click', (e) => {
+        // 用户手动点击停止执行 (Cancel) 按钮
+        const cancelBtn = e.target && e.target.closest ? e.target.closest('button[data-tooltip-id="input-send-button-cancel-tooltip"]') : null;
+        if (cancelBtn) {
+          window.__ea_agent_user_cancelled = true;
+          window.__ea_agent_was_running = false;
+          window.__ea_agent_stopped_at = 0;
+        }
+        // 用户手动点击了卡片中的选项或按钮，标记为人工接管状态，严禁后台抢跑 auto-submit
+        const card = e.target && e.target.closest ? e.target.closest('div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"], [role="radiogroup"], div[class*="card"]') : null;
+        if (card) {
+          card.setAttribute('data-ea-user-manual', 'true');
+        }
+      }, true);
+    }
+
     if (window.__ea_scan_interval) clearInterval(window.__ea_scan_interval);
     window.__ea_scan_interval = setInterval(() => {
       function scan(doc) {
@@ -1407,6 +1461,9 @@ function generateMasterInjectScript() {
         const radioGroups = doc.querySelectorAll('[role="radiogroup"]');
         for (const rg of radioGroups) {
           const card = getInteractionRoot(rg) || rg.closest('div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"], div[class*="card"], div.relative') || rg.parentElement || rg;
+          if (card && (card.getAttribute('data-ea-user-manual') === 'true' || card.getAttribute('data-ea-ok') === 'user-manual')) {
+            continue; // 用户正在人工交互，绝不抢跑自动提交
+          }
           const isDismiss = !!(card && card.querySelector && card.querySelector('button[data-testid="ask-question-dismiss-button"]'));
           const hasTarget = !!(card && card.querySelector && card.querySelector('textarea[aria-label="Edit permission target"]'));
           const txt = (rg.innerText || rg.textContent || '').toLowerCase();
@@ -1451,7 +1508,7 @@ function generateMasterInjectScript() {
             const submitBtn = searchScope.find(b => {
               if (b.disabled || b.hasAttribute('data-ea-ok')) return false;
               const tid = b.getAttribute('data-testid') || '';
-              if (tid === 'interaction-continue-button') return true;
+              if (tid === 'interaction-continue-button') return false; // 严禁抢跑问答提交
               const bt = (b.innerText || '').trim().toLowerCase();
               return bt === 'submit' || bt === 'continue' || bt === 'allow' || bt === '确认' || bt === '提交';
             });
@@ -1470,8 +1527,8 @@ function generateMasterInjectScript() {
         }
 
         // ── 策略1: data-testid 精确匹配（最稳定，语言无关） ──
+        // 严格排除 interaction-continue-button（方案问答提交必须由人工确认，绝不自动提交抢跑）
         const testidBtns = doc.querySelectorAll(
-          'button[data-testid="interaction-continue-button"],' +
           'button[data-testid="approval-submit"],' +
           'button[data-testid="permission-allow"]'
         );
@@ -1491,7 +1548,7 @@ function generateMasterInjectScript() {
           if (!codeEl || !btns.length) continue;
           // 只接受明确的最终确认按钮，不能把“运行”这类发起请求按钮当成授权。
           const submitBtn =
-            btns.find(b => /(?:continue|submit|allow)/i.test(b.getAttribute('data-testid') || '')) ||
+            btns.find(b => /(?:approval-submit|permission-allow)/i.test(b.getAttribute('data-testid') || '')) ||
             btns.find(b => isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label')));
           if (submitBtn) {
             reportInteractionRequest(submitBtn);
@@ -1513,8 +1570,13 @@ function generateMasterInjectScript() {
         if (isAgentBusy) {
           window.__ea_agent_was_running = true;
           window.__ea_agent_stopped_at = 0;
+          window.__ea_agent_user_cancelled = false;
         } else if (window.__ea_agent_was_running) {
-          if (!window.__ea_agent_stopped_at) {
+          if (window.__ea_agent_user_cancelled) {
+            // 用户手动点击了停止执行，绝不触发本轮任务完成胶囊
+            window.__ea_agent_was_running = false;
+            window.__ea_agent_stopped_at = 0;
+          } else if (!window.__ea_agent_stopped_at) {
             window.__ea_agent_stopped_at = Date.now();
           } else if (Date.now() - window.__ea_agent_stopped_at > 1200) {
             window.__ea_agent_was_running = false;
@@ -1696,11 +1758,16 @@ async function startCDPLoop() {
                   const alertMsg = text.replace('[EA_ALERT]', '').trim();
                   logToGUI('SECURITY ALERT', alertMsg, 'tag-alert');
                   pushCounters();
+
+                  // 简要信息：写命中的规则 [windows-del] 等；详细信息：写具体拦截指令
+                  const m = alertMsg.match(/拦截高危指令\[(.*?)\][，,]等待用户手动确认:\s*(.*)$/);
+                  const ruleId = m ? m[1] : 'high-risk';
+                  const cmdDetail = m ? m[2] : alertMsg;
                   sendResident({
                     cmd: 'show_capsule',
                     type: 'danger',
-                    title: alertMsg.replace(/^.*?等待用户手动确认:\s*/, ''),
-                    detail: '已阻断自动放行，需人工核查确认。'
+                    title: `命中规则 [${ruleId}]`,
+                    detail: cmdDetail || '已阻断自动审批，请人工核查确认。'
                   });
                 } else if (text.includes('[EA_INTERACT]')) {
                   const interactMsg = text.replace('[EA_INTERACT]', '').trim();
@@ -2047,6 +2114,16 @@ async function tryAttachExistingClient() {
     state.clientRunning = true;
     logToGUI('SYSTEM', '检测到 Antigravity 已在运行，自动接管其界面', 'tag-proxy');
     startCDPLoop();
+    if (IS_WIN) {
+      exec('tasklist /FI "IMAGENAME eq Antigravity.exe" /FO CSV /NH', { windowsHide: true }, (err, stdout) => {
+        if (!err && stdout) {
+          const match = stdout.match(/"Antigravity\.exe","(\d+)"/i);
+          if (match && match[1]) {
+            sendResident({ cmd: 'set_ag_pid', ag_pid: parseInt(match[1], 10) });
+          }
+        }
+      });
+    }
     return true;
   } catch (e) {
     return false;
