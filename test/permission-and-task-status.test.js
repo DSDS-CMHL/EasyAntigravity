@@ -65,44 +65,53 @@ for (const label of negativeSubmitLabels) {
 }
 console.log(`✓ 通过: ${negativeSubmitLabels.length} 种拒绝/取消/命令文本均被严格排除`);
 
-// 2. 测试 isQuestionCard
-console.log('\n--- 2. 验证 isQuestionCard 判定能力 ---');
+// 2. 测试 isQuestionCard (严格按流程图元素判定)
+console.log('\n--- 2. 验证 isQuestionCard 元素级判定能力 ---');
 
-// Mock 场景 A: "Allow querying" 授权弹窗（没有 textarea[aria-label="Edit permission target"]）
-const allowQueryingMockCard = {
-  innerText: 'Allow querying codebase files\nAgent wants permission to read files in workspace.\n1. Allow this time\n2. Always allow',
-  textContent: 'Allow querying codebase files\nAgent wants permission to read files in workspace.\n1. Allow this time\n2. Always allow',
+// Mock 场景 A: 包含 textarea[aria-label="Edit permission target"] 的正规权限审批卡（命令 / 文件 / 网络）
+const permTargetMockCard = {
+  getAttribute: (attr) => attr === 'data-testid' ? 'interaction-takeover-card' : null,
   querySelector: (sel) => {
-    if (sel === 'button[data-testid="permission-allow"]') return { text: 'Allow' };
+    if (sel === 'textarea[aria-label="Edit permission target"]') return { value: 'npm run test' };
     return null;
   },
-  querySelectorAll: (sel) => {
-    if (sel === '[role="radiogroup"]') return [{ innerText: '1. Allow this time\n2. Always allow' }];
-    return [];
+  closest: () => permTargetMockCard
+};
+assert.strictEqual(isQuestionCard(permTargetMockCard), false, '含 textarea[aria-label="Edit permission target"] 必须判定为权限卡 (false)');
+console.log('✓ 通过: 正规权限审批卡 (含 permission target textarea) 正确判定为权限审批卡 (false)');
+
+// Mock 场景 B: "Allow querying" 授权弹窗（含 permission-allow / approval-submit 专属按钮）
+const allowQueryingMockCard = {
+  getAttribute: (attr) => attr === 'data-testid' ? 'interaction-takeover-card' : null,
+  querySelector: (sel) => {
+    if (sel.includes('permission-allow') || sel.includes('approval-submit')) return { text: 'Allow' };
+    return null;
   },
   closest: () => allowQueryingMockCard
 };
-
 assert.strictEqual(isQuestionCard(allowQueryingMockCard), false, 'Allow querying 授权弹窗绝对不能被误判为方案问答！');
 console.log('✓ 通过: "Allow querying" 权限请求卡片正确判定为权限审批卡 (false)');
 
-// Mock 场景 B: 真实的 ask_question 方案问答卡
+// Mock 场景 C: 真实的 ask_question 方案问答卡（含 dismiss 按钮）
 const askQuestionMockCard = {
-  innerText: 'Which architecture pattern do you prefer?\nOption 1: Microservices\nOption 2: Modular Monolith',
-  textContent: 'Which architecture pattern do you prefer?\nOption 1: Microservices\nOption 2: Modular Monolith',
+  getAttribute: (attr) => attr === 'data-testid' ? 'interaction-takeover-card' : null,
   querySelector: (sel) => {
-    if (sel.includes('ask-question')) return { text: 'Dismiss' };
+    if (sel.includes('ask-question-dismiss-button') || sel.includes('ask-question')) return { text: 'Dismiss' };
     return null;
-  },
-  querySelectorAll: (sel) => {
-    if (sel === '[role="radiogroup"]') return [{ innerText: 'Microservices\nModular Monolith' }];
-    return [];
   },
   closest: () => askQuestionMockCard
 };
-
-assert.strictEqual(isQuestionCard(askQuestionMockCard), true, '真实的 ask_question 必须判定为方案问答！');
+assert.strictEqual(isQuestionCard(askQuestionMockCard), true, '含 dismiss 按钮的必须判定为方案问答 (true)！');
 console.log('✓ 通过: 真实的 ask_question 方案问答卡正确判定为方案问答 (true)');
+
+// Mock 场景 D: 普通确认框（Confirm Undo / Delete 等，无专属接管卡属性）
+const ordinaryDialogCard = {
+  getAttribute: (attr) => attr === 'data-testid' ? null : (attr === 'role' ? 'dialog' : null),
+  querySelector: () => null,
+  closest: () => null
+};
+assert.strictEqual(isQuestionCard(ordinaryDialogCard), false, '普通确认框绝不误判为方案问答！');
+console.log('✓ 通过: 普通确认框 (Confirm Delete 等) 彻底免疫不处理 (false)');
 
 // 3. 验证任务完成状态机监控逻辑
 console.log('\n--- 3. 验证多任务状态机防误报逻辑 ---');

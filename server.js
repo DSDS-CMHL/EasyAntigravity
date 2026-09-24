@@ -1038,42 +1038,40 @@ function generateMasterInjectScript() {
       if (!card) return false;
       const root = (card.closest && card.closest('div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"], div[class*="card"]')) || card;
 
-      // ── 绝对守卫：包含明确权限放行特征的卡片，绝非业务方案问答！──
-      const rootText = (root.innerText || root.textContent || '').toLowerCase();
+      // 流程图分支：若含 dismiss 按钮，确定为方案问答选择题
+      if (root.querySelector && (
+        root.querySelector('button[data-testid="ask-question-dismiss-button"]') ||
+        root.querySelector('[data-testid*="ask-question"]')
+      )) {
+        return true;
+      }
+
+      // 流程图分支：是否存在 textarea[aria-label='Edit permission target']？
+      // 是 -> 正规权限审批卡（命令 / 文件 / 网络），绝非方案问答！
+      const hasTarget = !!(root.querySelector && root.querySelector('textarea[aria-label="Edit permission target"]'));
+      if (hasTarget) {
+        return false;
+      }
+
+      // 补充：存在明确权限专属按钮（如 permission-allow / approval-submit）
       const hasPermBtn = !!(root.querySelector && (
         root.querySelector('button[data-testid="permission-allow"]') ||
         root.querySelector('button[data-testid="approval-submit"]')
       ));
-      const hasPermKeyword = /allow querying|allow reading|allow executing|allow running|querying|始终允许|总是允许|仅允许本次|只允许本次|本次会话|本项目中|所有项目/.test(rootText);
-      const hasPermTextarea = !!(root.querySelector && root.querySelector('textarea[aria-label*="permission"]'));
-
-      // 明确属于权限审批卡，直接排除
-      if (hasPermBtn || hasPermTextarea || (hasPermKeyword && !root.querySelector('button[data-testid="ask-question-dismiss-button"]'))) {
+      if (hasPermBtn) {
         return false;
       }
 
-      // ── 真正的方案问答特征判定 ──
-      // 1. 含有 Antigravity ask_question 专属控件
-      if (root.querySelector && (
-        root.querySelector('button[data-testid="ask-question-dismiss-button"]') ||
-        root.querySelector('[data-testid*="ask-question"]')
-      )) return true;
-
-      // 2. 检查单选组/多选组是否为方案选择（而非权限单选）
-      const rgs = Array.from(root.querySelectorAll ? root.querySelectorAll('[role="radiogroup"]') : []);
-      if (!rgs.length) {
-        const radios = Array.from(root.querySelectorAll ? root.querySelectorAll('input[type="radio"]') : []);
-        if (radios.length > 0) {
-          const isPerm = (rootText.includes('allow') && (rootText.includes('this time') || rootText.includes('always') || rootText.includes('querying'))) ||
-                         (rootText.includes('允许') && (rootText.includes('本次') || rootText.includes('始终') || rootText.includes('总是')));
-          return !isPerm;
-        }
+      // 流程图分支：外层是否为专属接管卡？div[data-testid*="interaction"]
+      // 否（普通 role='dialog' 如撤销/删除确认框） -> 绝不触碰！彻底免疫！返回 false
+      const rootTestid = (root.getAttribute && root.getAttribute('data-testid')) || '';
+      const isTakeover = rootTestid.includes('interaction') || (root.closest && !!root.closest('div[data-testid*="interaction"]'));
+      if (!isTakeover) {
         return false;
       }
-      const lastRgText = (rgs[rgs.length - 1].innerText || '').toLowerCase();
-      const isPerm = (lastRgText.includes('allow') && (lastRgText.includes('this time') || lastRgText.includes('always') || lastRgText.includes('querying'))) ||
-                     (lastRgText.includes('允许') && (lastRgText.includes('本次') || lastRgText.includes('始终') || lastRgText.includes('总是')));
-      return !isPerm;
+
+      // 位于接管卡内，但既无 permission target textarea 又无明确权限按钮 -> 判定为方案问答选择题
+      return true;
     }
 
     function reportInteractionRequest(btn) {
@@ -1094,12 +1092,11 @@ function generateMasterInjectScript() {
 
     function tryApprove(btn, kind) {
       if (!btn || btn.disabled || btn.hasAttribute('data-ea-ok')) return false;
-      // 方案问答提交按钮必须由用户手动确认，严禁自动点击抢跑！
-      const tid = btn.getAttribute('data-testid') || '';
-      if (tid === 'interaction-continue-button') return false;
 
       const root = getInteractionRoot(btn);
+      // 方案问答选择题必须由用户手动确认，严禁自动抢跑
       if (isQuestionCard(root)) return false;
+
       // 用户正在手动操作的卡片，严禁自动抢跑提交，保护用户防误触
       if (root && (root.getAttribute('data-ea-user-manual') === 'true' || root.getAttribute('data-ea-ok') === 'user-manual')) {
         return false;
@@ -1480,23 +1477,16 @@ function generateMasterInjectScript() {
                 if (checkDangerous(doc)) return;
 
         
-        // ── 终极权限弹窗直接破解与方案问答识别 ──
+        // ── 终极权限弹窗直接破解与方案问答识别（严格按流程图元素判定） ──
         const radioGroups = doc.querySelectorAll('[role="radiogroup"]');
         for (const rg of radioGroups) {
           const card = getInteractionRoot(rg) || rg.closest('div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"], div[class*="card"], div.relative') || rg.parentElement || rg;
           if (card && (card.getAttribute('data-ea-user-manual') === 'true' || card.getAttribute('data-ea-ok') === 'user-manual')) {
             continue; // 用户正在人工交互，绝不抢跑自动提交
           }
-          const isDismiss = !!(card && card.querySelector && card.querySelector('button[data-testid="ask-question-dismiss-button"]'));
-          const hasTarget = !!(card && card.querySelector && card.querySelector('textarea[aria-label="Edit permission target"]'));
-          const txt = (rg.innerText || rg.textContent || '').toLowerCase();
-          // 权限审批卡的单选项严格具有权限授权特征：包含权限目标输入框且无取消问答按钮，或选项包含 allow this time / always allow / 允许本次 / 始终允许
-          const isPermission = (!isDismiss && hasTarget) ||
-                               (txt.includes('allow') && (txt.includes('this time') || txt.includes('always'))) ||
-                               (txt.includes('允许') && (txt.includes('本次') || txt.includes('始终') || txt.includes('总是')));
           
-          if (!isPermission) {
-            // 纯业务/方案问答框：触发薄荷青提示，绝对禁止自动放行，静候用户操作
+          // 流程图分支：若为方案问答卡，绝对不自动审批
+          if (isQuestionCard(card)) {
             if (card) {
               reportedRoots.add(card);
             }
@@ -1511,7 +1501,7 @@ function generateMasterInjectScript() {
             continue;
           }
 
-          // 确认属于权限审批框：执行自动放行
+          // 确认属于正规权限审批框：执行自动勾选与提交放行
           const radios = Array.from(rg.querySelectorAll('input[type="radio"]'));
           if (radios.length >= 1) {
             const p = String(Number(window.__ea_config.preferOption) || 1);
@@ -1531,9 +1521,8 @@ function generateMasterInjectScript() {
             const submitBtn = searchScope.find(b => {
               if (b.disabled || b.hasAttribute('data-ea-ok')) return false;
               const tid = b.getAttribute('data-testid') || '';
-              if (tid === 'interaction-continue-button') return false; // 严禁抢跑问答提交
-              const bt = (b.innerText || '').trim().toLowerCase();
-              return bt === 'submit' || bt === 'continue' || bt === 'allow' || bt === '确认' || bt === '提交';
+              if (tid === 'interaction-continue-button' || tid === 'approval-submit' || tid === 'permission-allow') return true;
+              return isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label'));
             });
             
             if (submitBtn) {
@@ -1550,8 +1539,8 @@ function generateMasterInjectScript() {
         }
 
         // ── 策略1: data-testid 精确匹配（最稳定，语言无关） ──
-        // 严格排除 interaction-continue-button（方案问答提交必须由人工确认，绝不自动提交抢跑）
         const testidBtns = doc.querySelectorAll(
+          'button[data-testid="interaction-continue-button"],' +
           'button[data-testid="approval-submit"],' +
           'button[data-testid="permission-allow"]'
         );
