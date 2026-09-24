@@ -47,6 +47,7 @@ jobs:
           node test/approval-lifecycle.test.js
           node test/i18n-revert.test.js
           node test/standard-workflow.test.js
+          node test/hud-capsule-resident.test.js
       - name: Prepare self-contained runtime
         run: node scripts/prepare-tauri.cjs ${{ matrix.target }}
       - name: Include runtime license
@@ -66,7 +67,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $name = 'EasyAntigravity-2.2.1-windows-x64'
+          $name = 'EasyAntigravity-2.3.0-windows-x64'
           $stage = Join-Path 'dist-tauri' $name
           New-Item -ItemType Directory -Path $stage | Out-Null
           $release = 'src-tauri/target/${{ matrix.target }}/release'
@@ -109,33 +110,33 @@ jobs:
           "$app/Contents/MacOS/easyag-node" -e "console.log('easyag-node JIT OK, V8:', process.versions.v8)"
 
           # 5. 打包外壳：放入 stage 目录，确保 GitHub Artifact 下载解压后具有完整的 EasyAntigravity.app 外壳，而非散落的 Contents/
-          stage="dist-tauri/EasyAntigravity-2.2.1-${{ matrix.name }}"
+          stage="dist-tauri/EasyAntigravity-2.3.0-${{ matrix.name }}"
           mkdir -p "$stage"
           ditto "$app" "$stage/EasyAntigravity.app"
           cp LICENSE "$stage/"
           cp docs/PORTABLE.md "$stage/" 2>/dev/null || true
-          ditto -c -k --sequesterRsrc --keepParent "$app" "$stage/EasyAntigravity-2.2.1-${{ matrix.name }}-beta.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$stage/EasyAntigravity-2.3.0-${{ matrix.name }}-beta.zip"
       - name: Upload Windows package
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: EasyAntigravity-2.2.1-${{ matrix.name }}
-          path: dist-tauri/EasyAntigravity-2.2.1-windows-x64
+          name: EasyAntigravity-2.3.0-${{ matrix.name }}
+          path: dist-tauri/EasyAntigravity-2.3.0-windows-x64
           if-no-files-found: error
           retention-days: 14
       - name: Upload macOS app (Beta)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: EasyAntigravity-2.2.1-${{ matrix.name }}-beta
-          path: dist-tauri/EasyAntigravity-2.2.1-${{ matrix.name }}
+          name: EasyAntigravity-2.3.0-${{ matrix.name }}-beta
+          path: dist-tauri/EasyAntigravity-2.3.0-${{ matrix.name }}
           if-no-files-found: error
           retention-days: 14
       - name: Upload Standard Workflow Test Suite
         if: matrix.name == 'windows-x64'
         uses: actions/upload-artifact@v4
         with:
-          name: EasyAntigravity-2.2.1-standard-workflow-test-suite
+          name: EasyAntigravity-2.3.0-standard-workflow-test-suite
           path: |
             test/STANDARD_TEST_WORKFLOW.md
             test/standard-workflow.test.js
