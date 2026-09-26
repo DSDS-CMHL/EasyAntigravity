@@ -82,7 +82,7 @@ fn open_url(url: &str) {
 
 const CAPSULE_HTML: &str = r#"data:text/html;charset=utf-8,<!doctype html>
 <html><head><meta charset="utf-8"><style>
-html,body{margin:0;height:100%;background:transparent;font-family:system-ui,'Segoe UI',sans-serif}
+html,body{margin:0;height:100%;background:#12141c;font-family:system-ui,'Segoe UI',sans-serif}
 #card{box-sizing:border-box;height:100%;padding:14px 16px;border-radius:16px;border:1px solid rgba(255,255,255,.12);
 background:rgba(18,20,28,.92);color:#f1f5f9;box-shadow:0 12px 40px rgba(0,0,0,.45)}
 #t{font-size:14px;font-weight:650;margin:0 0 6px;line-height:1.3}
@@ -110,7 +110,6 @@ fn ensure_capsule(app: &tauri::AppHandle) {
     let _ = WebviewWindowBuilder::new(app, "capsule", url)
         .title("EasyAG Capsule")
         .decorations(false)
-        .transparent(true)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
