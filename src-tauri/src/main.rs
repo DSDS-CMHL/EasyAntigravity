@@ -80,34 +80,11 @@ fn open_url(url: &str) {
     }
 }
 
-const CAPSULE_HTML: &str = r#"data:text/html;charset=utf-8,<!doctype html>
-<html><head><meta charset="utf-8"><style>
-html,body{margin:0;height:100%;background:#12141c;font-family:system-ui,'Segoe UI',sans-serif}
-#card{box-sizing:border-box;height:100%;padding:14px 16px;border-radius:16px;border:1px solid rgba(255,255,255,.12);
-background:rgba(18,20,28,.92);color:#f1f5f9;box-shadow:0 12px 40px rgba(0,0,0,.45)}
-#t{font-size:14px;font-weight:650;margin:0 0 6px;line-height:1.3}
-#d{font-size:12px;line-height:1.45;color:#cbd5e1;margin:0;white-space:pre-wrap;word-break:break-word}
-#bar{height:3px;border-radius:2px;margin-top:10px;background:linear-gradient(90deg,#f43f5e,#fb7185)}
-.mode-amber #bar{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
-.mode-green #bar{background:linear-gradient(90deg,#10b981,#34d399)}
-</style></head><body>
-<div id="card"><div id="t">EasyAG</div><p id="d"></p><div id="bar"></div></div>
-<script>
-function apply(type,title,detail){
-  var c=document.getElementById('card');
-  c.className=type==='ready'?'mode-green':(type==='interaction'?'mode-amber':'');
-  document.getElementById('t').textContent=title||'EasyAG';
-  document.getElementById('d').textContent=detail||'';
-}
-window.__ea_capsule=apply;
-</script></body></html>"#;
-
 fn ensure_capsule(app: &tauri::AppHandle) {
     if app.get_webview_window("capsule").is_some() {
         return;
     }
-    let url = WebviewUrl::External(CAPSULE_HTML.parse().unwrap());
-    let _ = WebviewWindowBuilder::new(app, "capsule", url)
+    let _ = WebviewWindowBuilder::new(app, "capsule", WebviewUrl::App("capsule.html".into()))
         .title("EasyAG Capsule")
         .decorations(false)
         .always_on_top(true)
@@ -136,7 +113,7 @@ fn show_capsule(app: &tauri::AppHandle, kind: &str, title: &str, detail: &str) {
         }
     }
     let script = format!(
-        "window.__ea_capsule && window.__ea_capsule({},{},{})",
+        "(function(){{ var t={}; var a={}; var d={}; function go(){{ if(window.__ea_capsule) window.__ea_capsule(t,a,d); }}; if(document.readyState==='complete') go(); else window.addEventListener('load',go); setTimeout(go,50); setTimeout(go,200); }})();",
         serde_json::to_string(kind).unwrap_or_else(|_| "\"danger\"".into()),
         serde_json::to_string(title).unwrap_or_default(),
         serde_json::to_string(detail).unwrap_or_default()

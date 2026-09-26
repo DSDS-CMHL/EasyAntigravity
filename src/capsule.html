@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>EasyAG Capsule</title>
+  <style>
+    html, body {
+      margin: 0; height: 100%;
+      background: #12141c;
+      font-family: system-ui, "Segoe UI", sans-serif;
+    }
+    #card {
+      box-sizing: border-box;
+      height: 100%;
+      padding: 14px 16px;
+      color: #f1f5f9;
+    }
+    #t {
+      font-size: 14px;
+      font-weight: 650;
+      margin: 0 0 6px;
+      line-height: 1.3;
+    }
+    #d {
+      font-size: 12px;
+      line-height: 1.45;
+      color: #cbd5e1;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #bar {
+      height: 3px;
+      border-radius: 2px;
+      margin-top: 10px;
+      background: linear-gradient(90deg, #f43f5e, #fb7185);
+    }
+    .mode-amber #bar { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .mode-green #bar { background: linear-gradient(90deg, #10b981, #34d399); }
+  </style>
+</head>
+<body>
+  <div id="card">
+    <div id="t">EasyAG</div>
+    <p id="d"></p>
+    <div id="bar"></div>
+  </div>
+  <script>
+    window.__ea_capsule = function (type, title, detail) {
+      var c = document.getElementById('card');
+      c.className = type === 'ready' ? 'mode-green' : (type === 'interaction' ? 'mode-amber' : '');
+      document.getElementById('t').textContent = title || 'EasyAG';
+      document.getElementById('d').textContent = detail || '';
+    };
+  </script>
+</body>
+</html>
