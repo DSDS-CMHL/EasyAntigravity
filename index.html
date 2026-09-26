@@ -494,50 +494,38 @@
     </div>
   </div>
 
-  <!-- 卡片 3: 自动化与风控 -->
+  <!-- 卡片 3: Turbo Pilot -->
   <div class="card">
-    <div class="card-label">自动化审批与高危风控</div>
+    <div class="card-label">Turbo Pilot · 风险控制</div>
     <div class="row">
-      <span style="font-weight: 500;">操作卡片自动放行:</span>
+      <span style="font-weight: 500;">全局 Turbo Pilot</span>
       <label class="switch">
-        <input type="checkbox" id="autoAcceptToggle" checked>
+        <input type="checkbox" id="pilotToggle" checked>
         <span class="slider"></span>
       </label>
     </div>
     <div class="row">
-      <span style="font-weight: 500;">复合权限自动选定:</span>
-      <select id="optionSelect">
-        <option value="1" selected>选项 1: 仅允许本次</option>
-        <option value="2">选项 2: 对话中始终允许</option>
-        <option value="3">选项 3: 项目中始终允许</option>
-        <option value="4">选项 4: 全局始终允许</option>
-      </select>
+      <span style="font-size: 11.5px; color: var(--text-dark);">开启后：启动 AG 前自动配置 Turbo + 高危 ASK + Hooks</span>
     </div>
     <div class="row">
-      <span style="font-weight: 500;">高危破坏命令熔断:</span>
-      <label class="switch">
-        <input type="checkbox" id="guardToggle" checked>
-        <span class="slider"></span>
-      </label>
+      <span style="font-weight: 500;">本会话:</span>
+      <span id="approveCountBadge" style="color: var(--yellow); font-size: 12px; font-weight: 700;">风险 0</span>
     </div>
     <div class="row">
-      <span style="font-weight: 500;">本次会话审批:</span>
-      <span id="approveCountBadge" style="color: var(--green); font-size: 12px; font-weight: 700;">批准 0 · 拦截 0</span>
-    </div>
-    <div class="row">
-      <span style="font-weight: 500;">规则库:</span>
       <div class="port-cluster">
-        <span id="rulesCountBadge" style="color: var(--yellow); font-size: 11.5px; font-weight: 600;">--</span>
+        <button type="button" class="quick-tag" onclick="pilotProject()">配置当前项目</button>
         <button type="button" class="quick-tag" onclick="openRules()">打开规则</button>
         <button type="button" class="quick-tag" onclick="reloadRules()">重载</button>
+        <button type="button" class="quick-tag" onclick="cleanupRules()">清理注入</button>
       </div>
     </div>
     <div class="row">
-      <span style="font-size: 11px; color: var(--text-dark);">danger-rules.json · 可自行增删正则，改完点重载</span>
+      <span id="rulesCountBadge" style="color: var(--yellow); font-size: 11px; font-weight: 600;">--</span>
+      <span id="kbCountBadge" style="color: #c084fc; font-size: 11px; font-weight: 600;">KB --</span>
     </div>
   </div>
 
-  <!-- 启动大按钮 -->
+  <!-- 启动大按钮 -->  <!-- 启动大按钮 -->  <!-- 启动大按钮 -->
   <button class="launch-btn" id="launchBtn" onclick="launchClient()">
     <span>🚀</span>
     <span>启动 Antigravity</span>
@@ -600,23 +588,23 @@
       document.getElementById('patchStatusBadge').innerText = '● 原生代理已就绪';
       document.getElementById('patchStatusBadge').style.color = 'var(--green)';
       document.getElementById('proxyPortInput').value = d.port;
-      document.getElementById('autoAcceptToggle').checked = d.autoAccept;
-      document.getElementById('guardToggle').checked = d.blockDangerous;
-      document.getElementById('optionSelect').value = d.preferOption;
+      
+      document.getElementById('pilotToggle').checked = d.blockDangerous;
+      
       document.getElementById('i18nToggle').checked = d.enableI18n;
       document.getElementById('dictCountBadge').innerText = `已载入 ${d.dictEntries} 条汉化词条`;
       refreshRulesBadge(d.dangerRulesOn, d.dangerRulesTotal);
       refreshClientBadge(d);
       updateLaunchBtn(d.clientRunning);
       if (typeof d.approveCount === 'number' || typeof d.blockCount === 'number') {
-        refreshApproveBadge(d.approveCount || 0, d.blockCount || 0);
+        refreshApproveBadge(d.riskHits || 0);
       }
 
       const evt = new EventSource('/api/events');
       evt.onmessage = (e) => {
         const item = JSON.parse(e.data);
         if (item.counters) {
-          refreshApproveBadge(item.approveCount || 0, item.blockCount || 0);
+          refreshApproveBadge(item.riskHits || 0);
         }
         if (item.dangerRules) {
           refreshRulesBadge(item.dangerRulesOn, item.dangerRulesTotal);
@@ -636,7 +624,7 @@
           const d = await res.json();
           refreshClientBadge(d);
           updateLaunchBtn(d.clientRunning);
-          refreshApproveBadge(d.approveCount || 0, d.blockCount || 0);
+          refreshApproveBadge(d.riskHits || 0);
           refreshRulesBadge(d.dangerRulesOn, d.dangerRulesTotal);
         } catch (e) {}
       }, 3000);
@@ -672,10 +660,10 @@
       updateConfig();
     }
 
-    function refreshApproveBadge(approve, block) {
+    function refreshApproveBadge(risk, block) {
       const el = document.getElementById('approveCountBadge');
       if (!el) return;
-      el.innerText = `批准 ${approve || 0} · 拦截 ${block || 0}`;
+      el.innerText = '风险 ' + (risk || 0);
     }
 
     function refreshRulesBadge(on, total) {
@@ -718,6 +706,45 @@
       }
     }
 
+    async function pilotProject() {
+      try {
+        const r = await fetch('/api/pilot/project', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: 'EasyAntigravity' })
+        });
+        const d = await r.json();
+        if (!r.ok || d.ok === false) {
+          appendLog('SECURITY', '配置当前项目失败: ' + (d.error || ('HTTP ' + r.status)), 'tag-alert');
+          return;
+        }
+        appendLog('SECURITY', '当前项目已配置：Turbo + ASK ' + (d.count || 0) + ' 条', 'tag-proxy');
+      } catch (e) {
+        appendLog('SECURITY', '配置当前项目失败: ' + (e && e.message ? e.message : e), 'tag-alert');
+      }
+    }
+
+    async function applyGlobalPilot() {
+      const on = document.getElementById('pilotToggle').checked;
+      if (!on) return { ok: true, skipped: true };
+      const r = await fetch('/api/pilot/global', { method: 'POST' });
+      return await r.json();
+    }
+
+    async function cleanupRules() {
+      try {
+        const r = await fetch('/api/danger-rules/cleanup', { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok || d.ok === false) {
+          appendLog('SECURITY', '清理注入失败: ' + (d.error || ('HTTP ' + r.status)), 'tag-alert');
+          return;
+        }
+        appendLog('SECURITY', '已清理注入 ' + (d.removed || 0) + ' 条' + (d.restored ? '，策略已恢复' : ''), 'tag-proxy');
+      } catch (e) {
+        appendLog('SECURITY', '清理注入失败: ' + (e && e.message ? e.message : e), 'tag-alert');
+      }
+    }
+
     async function copyLogs() {
       const box = document.getElementById('consoleBox');
       const text = box.innerText || '';
@@ -740,9 +767,7 @@
       const portVal = parseInt(document.getElementById('proxyPortInput').value, 10);
       const payload = {
         port: (portVal >= 1 && portVal <= 65535) ? portVal : 7890,
-        autoAccept: document.getElementById('autoAcceptToggle').checked,
-        blockDangerous: document.getElementById('guardToggle').checked,
-        preferOption: parseInt(document.getElementById('optionSelect').value),
+        blockDangerous: document.getElementById('pilotToggle').checked,
         enableI18n: document.getElementById('i18nToggle').checked
       };
       fetch('/api/config', {
@@ -757,9 +782,7 @@
       this.value = this.value.replace(/\D/g, '');
     };
     portEl.onchange = updateConfig;
-    document.getElementById('autoAcceptToggle').onchange = updateConfig;
-    document.getElementById('guardToggle').onchange = updateConfig;
-    document.getElementById('optionSelect').onchange = updateConfig;
+    document.getElementById('pilotToggle').onchange = updateConfig;
     document.getElementById('i18nToggle').onchange = updateConfig;
 
     function updateLaunchBtn(clientRunning) {
@@ -779,7 +802,15 @@
     async function launchClient() {
       const btn = document.getElementById('launchBtn');
       btn.disabled = true;
-      btn.innerHTML = '<span>⏳</span><span>正在启动 Antigravity...</span>';
+      btn.innerHTML = '<span>⏳</span><span>正在配置并启动...</span>';
+      try {
+        const d = await applyGlobalPilot();
+        if (d && d.ok === false) {
+          appendLog('SECURITY', '启动前配置失败: ' + (d.error || ''), 'tag-alert');
+        } else if (d && !d.skipped) {
+          appendLog('SECURITY', '全局 Turbo Pilot 已配置（ASK ' + (d.count || 0) + ' + Hooks）', 'tag-proxy');
+        }
+      } catch (e) {}
       await fetch('/api/launch', { method: 'POST' });
     }
 

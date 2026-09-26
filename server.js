@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { spawn, exec } = require('child_process');
 const WebSocket = require('ws');
 
@@ -227,18 +228,15 @@ const debugMode = process.argv.includes('--debug') || fs.existsSync(path.join(__
 
 let state = {
   port: 7890,
-  proxyMode: 'native',
-  autoAccept: true,
   blockDangerous: true,
-  preferOption: 1,
   enableI18n: true,
   dictEntries: 0,
   clientRunning: false,
-  debugApproval: debugMode,
   dangerRulesTotal: 0,
   dangerRulesOn: 0,
-  approveCount: 0,
   blockCount: 0,
+  riskHits: 0,
+  kbRules: 0,
   cdpTargets: 0,
   cdpSockets: 0,
   injectCount: 0,
@@ -250,11 +248,10 @@ let state = {
 
 try {
   const saved = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
-  for (const key of ['autoAccept', 'blockDangerous', 'enableI18n', 'debugApproval']) {
+  for (const key of ['blockDangerous', 'enableI18n']) {
     if (typeof saved[key] === 'boolean') state[key] = saved[key];
   }
   if (Number.isInteger(saved.port) && saved.port > 0 && saved.port < 65536) state.port = saved.port;
-  if ([1, 2, 3, 4].includes(Number(saved.preferOption))) state.preferOption = Number(saved.preferOption);
 } catch (_) {}
 
 let quitting = false;
@@ -264,6 +261,12 @@ function quitApp(reason) {
   if (quitting) return;
   quitting = true;
   logToGUI('SYSTEM', '正在退出: ' + reason, 'tag-warn');
+  try {
+    const c = cleanupInjectedAsk();
+    if (c && c.removed) {
+      logToGUI('SECURITY', `已清理注入的 ASK ${c.removed} 条${c.restored ? '，并恢复注入前策略' : ''}`, 'tag-proxy');
+    }
+  } catch (e) {}
   state.clientRunning = false;
   for (const [, entry] of cdpSockets) {
     try { entry.ws.close(); } catch (e) {}
@@ -330,17 +333,112 @@ function getActiveDangerPatterns() {
     .map(r => ({ id: r.id || 'rule', name: r.name || r.id || 'rule', pattern: r.pattern, flags: r.flags || 'i' }));
 }
 
-let translationDict = {};
-let reverseDict = {};
-
-function buildReverseDict() {
-  reverseDict = {};
-  for (const [en, zh] of Object.entries(translationDict)) {
-    if (typeof zh === 'string' && zh.trim() && !reverseDict[zh.trim()]) {
-      reverseDict[zh.trim()] = en.trim();
-    }
+// ── AgentGuard 病毒库（EAS 特征）：命中 Ask 时旁路给风险处方 ──
+let agentGuardRules = [];
+function loadAgentGuardSignatures() {
+  agentGuardRules = [];
+  const candidates = [
+    // 源文件优先（dist 可能是旧编译产物）
+    path.join(ROOT_DIR, 'Agentguard-dev', 'src', 'rules', 'signatures.json'),
+    path.join(ROOT_DIR, 'knowledge', 'signatures.json'),
+    path.join(ROOT_DIR, 'Agentguard-dev', 'dist', 'rules', 'signatures.json')
+  ];
+  for (const p of candidates) {
+    if (!fs.existsSync(p)) continue;
+    try {
+      const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      if (Array.isArray(data.rules)) {
+        agentGuardRules = data.rules.filter(r => r && r.pattern);
+        break;
+      }
+    } catch (e) {}
   }
+  state.kbRules = agentGuardRules.length;
+  return agentGuardRules;
 }
+
+function normalizeRiskLevel(sev) {
+  const s = String(sev || '').toLowerCase();
+  if (s === 'critical' || s === 'high' || s === '高') return 'high';
+  if (s === 'medium' || s === 'med' || s === '中') return 'medium';
+  if (s === 'low' || s === '低') return 'low';
+  return 'medium';
+}
+
+function matchDangerRules(cmd) {
+  if (!cmd || dangerRules.enabled === false) return [];
+  return dangerRules.rules
+    .filter(r => r && r.pattern && r.enabled !== false)
+    .map(r => {
+      try {
+        if (new RegExp(r.pattern, r.flags || 'i').test(cmd)) {
+          return {
+            id: r.id,
+            name: r.name,
+            severity: normalizeRiskLevel(r.severity),
+            source: 'danger-rules',
+            root_cause: r.description || r.name || ''
+          };
+        }
+      } catch (e) {}
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function matchKnowledgeBase(cmd) {
+  if (!cmd || !agentGuardRules.length) return [];
+  const hits = [];
+  for (const r of agentGuardRules) {
+    try {
+      const re = new RegExp(r.pattern, r.flags || 'i');
+      if (re.test(cmd)) {
+        hits.push({
+          id: r.id,
+          name: r.name,
+          severity: normalizeRiskLevel(r.severity),
+          category: r.category || '',
+          source: 'eas',
+          root_cause: r.root_cause || '',
+          destructive_impact: r.destructive_impact || '',
+          safe_alternative: r.safe_alternative || ''
+        });
+      }
+    } catch (e) {}
+  }
+  return hits;
+}
+
+/** 合并 danger-rules + EAS，给出最高风险等级与最佳处方 */
+function assessCommandRisk(cmd) {
+  const dHits = matchDangerRules(cmd);
+  const kHits = matchKnowledgeBase(cmd);
+  const all = [...dHits, ...kHits];
+  if (!all.length) return null;
+  const order = { high: 3, medium: 2, low: 1 };
+  let level = 'low';
+  for (const h of all) {
+    if ((order[h.severity] || 0) > (order[level] || 0)) level = h.severity;
+  }
+  // 优先带完整处方的 EAS 条目
+  const primary = kHits[0] || dHits[0];
+  return {
+    level,
+    levelLabel: { high: '高风险', medium: '中风险', low: '低风险' }[level] || level,
+    primary,
+    danger: dHits.map(h => ({ id: h.id, name: h.name, severity: h.severity })),
+    eas: kHits.slice(0, 3).map(h => ({
+      id: h.id,
+      name: h.name,
+      severity: h.severity,
+      root_cause: h.root_cause,
+      destructive_impact: h.destructive_impact,
+      safe_alternative: h.safe_alternative
+    }))
+  };
+}
+
+let translationDict = {};
 
 function loadDictionaries() {
   translationDict = {};
@@ -355,13 +453,12 @@ function loadDictionaries() {
     }
   });
   state.dictEntries = Object.keys(translationDict).length;
-  buildReverseDict();
 }
 
 let sseClients = [];
 let logBuffer = [];
 let logHistory = [];
-if (debugMode) logToGUI('DEBUG', '调试模式已开启，审批卡 DOM 结构将输出到日志', 'tag-i18n');
+if (debugMode) logToGUI('DEBUG', '调试模式已开启', 'tag-i18n');
 
 function logToGUI(category, message, cls = '') {
   const item = { at: new Date().toISOString(), category, message, cls };
@@ -403,8 +500,8 @@ function flushLogBuffer() {
 function pushCounters() {
   const payload = JSON.stringify({
     counters: true,
-    approveCount: state.approveCount,
-    blockCount: state.blockCount
+    blockCount: state.blockCount,
+    riskHits: state.riskHits
   });
   sseClients.forEach(res => res.write(`data: ${payload}\n\n`));
 }
@@ -427,6 +524,13 @@ function popupGuiWindow() {
 let residentProcess = null;
 
 function sendResident(cmd) {
+  // Tauri 壳：走 stdout JSON 协议（托盘/胶囊由 Tauri 实现）
+  if (TAURI_MODE) {
+    try {
+      process.stdout.write(JSON.stringify(cmd) + '\n');
+    } catch (e) {}
+    return;
+  }
   if (!residentProcess || !residentProcess.stdin || residentProcess.stdin.destroyed) {
     initResidentHelper();
   }
@@ -438,7 +542,8 @@ function sendResident(cmd) {
 }
 
 function initResidentHelper() {
-  if (TEST_MODE || !IS_WIN) return;
+  // Tauri 一体壳不再拉起 C# Resident（托盘+胶囊均由 Tauri 负责）
+  if (TAURI_MODE || TEST_MODE || !IS_WIN) return;
   const candidatePaths = [
     path.join(__dirname, 'assets', 'EasyAG-Resident.exe'),
     path.join(__dirname, 'scripts', 'resident', 'EasyAG-Resident.exe'),
@@ -453,7 +558,7 @@ function initResidentHelper() {
       windowsHide: true
     });
 
-    sendResident({ cmd: 'init', port: state.port, ea_pid: process.pid });
+    sendResident({ cmd: 'init', port: (server && server.address() && server.address().port) || GUI_PORT, ea_pid: process.pid });
 
     let stdoutBuffer = '';
     residentProcess.stdout.on('data', (chunk) => {
@@ -488,21 +593,6 @@ function handleResidentEvent(ev) {
     for (const [, entry] of cdpSockets) {
       if (entry.ws.readyState === WebSocket.OPEN) {
         cdpSend(entry.ws, 'Page.bringToFront', {});
-        if (ev.type === 'danger') {
-          cdpSend(entry.ws, 'Runtime.evaluate', {
-            expression: `(() => {
-              const el = document.querySelector('[data-ea-ok="blocked"]') || document.querySelector('[data-testid*="interaction"]');
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            })()`
-          });
-        } else if (ev.type === 'interaction') {
-          cdpSend(entry.ws, 'Runtime.evaluate', {
-            expression: `(() => {
-              const el = document.querySelector('[role="radiogroup"]') || document.querySelector('[data-testid*="interaction"]');
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            })()`
-          });
-        }
       }
     }
   } else if (ev.event === 'tray_exit') {
@@ -551,1070 +641,103 @@ function syncProxyPort(newPort) {
 }
 
 function generateMasterInjectScript() {
+  // CDP：汉化 + 审批卡风险旁路（只读，不点击）
   const dictJSON = JSON.stringify(translationDict);
-  const reverseDictJSON = JSON.stringify(reverseDict);
-  const patternsJSON = JSON.stringify(getActiveDangerPatterns());
   return `(() => {
     window.__ea_config = Object.assign(window.__ea_config || {}, {
-      preferOption: ${state.preferOption},
-      blockDangerous: ${state.blockDangerous},
-      autoAccept: ${state.autoAccept},
-      enableI18n: ${state.enableI18n},
-      debugApproval: ${state.debugApproval ? 'true' : 'false'}
+      enableI18n: ${state.enableI18n}
     });
     window.__ea_dict = ${dictJSON};
-    window.__ea_reverse_dict = ${reverseDictJSON};
-    window.__ea_danger_patterns = ${patternsJSON};
-    window.__ea_compiled_danger_patterns = (window.__ea_danger_patterns || []).map(r => {
-      try { return { id: r.id, name: r.name, re: new RegExp(r.pattern, r.flags || 'i') }; }
-      catch (e) { return null; }
-    }).filter(Boolean);
-
-    // 若当前处于高危锁定中，重载后立即以新规则重新评估：若不再命中，自动解除锁定并解封按钮
-    if (window.__ea_danger_lock) {
-      const activePatterns = window.__ea_compiled_danger_patterns || [];
-      const stillHit = activePatterns.find(r => r.re.test(window.__ea_danger_lock.cmd));
-      if (!stillHit) {
-        if(window.__ea_config.debugApproval) { console.log('[EA_RELOAD] 高危指令已根据重载规则解除锁定: ' + window.__ea_danger_lock.cmd.slice(0, 60)); }
-        window.__ea_danger_lock = null;
-        try {
-          document.querySelectorAll('[data-ea-ok="blocked"]').forEach(el => el.removeAttribute('data-ea-ok'));
-        } catch (e) {}
-      }
-    }
-
-    if (window.__ea_engine_running) return;
-    window.__ea_engine_running = true;
-
-    function realClick(el) {
-      const opts = { bubbles: true, cancelable: true, view: window };
-      el.dispatchEvent(new PointerEvent('pointerdown', opts));
-      el.dispatchEvent(new MouseEvent('mousedown', opts));
-      el.dispatchEvent(new PointerEvent('pointerup', opts));
-      el.dispatchEvent(new MouseEvent('mouseup', opts));
-      el.dispatchEvent(new MouseEvent('click', opts));
-      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-      el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-    }
-
-    function norm(s) {
-      return String(s || '').toLowerCase().replace(/\\s+/g, ' ').trim();
-    }
-
-    function isSubmitLabel(s) {
-      const t = norm(s);
-      if (!t || t.length > 40) return false;
-      if (/^(?:deny|cancel|reject|disallow|拒绝|取消|放弃|关闭)/i.test(t)) return false;
-      return (
-        t === 'submit' ||
-        t.startsWith('submit') ||
-        t === 'confirm' ||
-        t.startsWith('confirm') ||
-        t === 'continue' ||
-        t.startsWith('continue') ||
-        t === 'allow' ||
-        t.startsWith('allow') ||
-        t.endsWith('allow') ||
-        t.includes('allow') ||
-        t === '提交' ||
-        t.startsWith('提交') ||
-        t === '确认' ||
-        t.startsWith('确认') ||
-        t === '允许' ||
-        t.includes('允许') ||
-        t === '继续' ||
-        t.startsWith('继续')
-      );
-    }
-
-    function cardForSubmit(btn) {
-      return (
-        btn.closest('[role="dialog"]') ||
-        btn.closest('[role="alertdialog"]') ||
-        btn.closest('div[data-testid*="interaction"]') ||
-        btn.closest('div[class*="modal"]') ||
-        btn.closest('[data-testid="run-command-step"]') ||
-        btn.closest('div.relative.flex.flex-col') ||
-        btn.closest('div[class*="card"]') ||
-        btn.closest('div[class*="container"]') ||
-        btn.parentElement?.parentElement?.parentElement?.parentElement ||
-        btn.parentElement
-      );
-    }
-
-    function oneLine(s, n) {
-      s = String(s || '').replace(/\\s+/g, ' ').trim();
-      if (n && s.length > n) s = s.slice(0, Math.max(1, n - 1)) + '…';
-      return s;
-    }
-
-    function clip(s, n) {
-      s = String(s || '').replace(/\\s+/g, ' ').trim();
-      if (s.length <= n) return s;
-      return s.slice(0, n - 1) + '…';
-    }
-
-    // 高危扫描用：尽量拿到完整命令正文（可多行）
-    function extractCommandText(card) {
-      if (!card) return '';
-      const targetArea = card.querySelector ? card.querySelector('textarea[aria-label="Edit permission target"]') : null;
-      if (targetArea && (targetArea.value || targetArea.innerText || targetArea.textContent || '').trim()) {
-        return (targetArea.value || targetArea.innerText || targetArea.textContent || '').trim();
-      }
-      const code = card.querySelector('pre, code, [class*="code"], [class*="mono"], .font-mono');
-      if (code && (code.innerText || code.textContent || '').trim()) {
-        const t = (code.innerText || code.textContent || '').trim();
-        if (t.length > 1) return t;
-      }
-      const step = (card.getAttribute && card.getAttribute('data-testid') === 'run-command-step')
-        ? card
-        : (card.querySelector ? card.querySelector('[data-testid="run-command-step"]') : null);
-      if (step) {
-        const mono = step.querySelector('.font-mono, [class*="mono"], pre, code');
-        if (mono && (mono.innerText || mono.textContent || '').trim()) {
-          return (mono.innerText || mono.textContent || '').trim();
-        }
-        const raw = (step.innerText || step.textContent || '').trim();
-        const cleaned = raw.replace(/^(run|ran)\\s+/i, '').trim();
-        if (cleaned.length > 1) return cleaned;
-      }
-      return '';
-    }
-
-    function isElementVisible(el) {
-      if (!el || el.disabled) return false;
-      if (el.offsetParent === null && el.offsetWidth === 0 && el.offsetHeight === 0) return false;
-      const s = window.getComputedStyle ? window.getComputedStyle(el) : null;
-      if (s && (s.display === 'none' || s.visibility === 'hidden')) return false;
-      return true;
-    }
-
-    function findActivePendingSubmit(doc) {
-      if (!doc || !doc.querySelectorAll) return null;
-      const testidBtns = Array.from(doc.querySelectorAll(
-        'button[data-testid="interaction-continue-button"],' +
-        'button[data-testid="approval-submit"],' +
-        'button[data-testid="permission-allow"]'
-      ));
-      const active = testidBtns.find(b => isElementVisible(b) && b.getAttribute('data-ea-ok') !== 'true' && b.getAttribute('data-ea-ok') !== 'user-interacted');
-      if (active) return active;
-      const allBtns = Array.from(doc.querySelectorAll('button, [role="button"]'));
-      return allBtns.find(b => isElementVisible(b) && b.getAttribute('data-ea-ok') !== 'true' && b.getAttribute('data-ea-ok') !== 'user-interacted' && isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label'))) || null;
-    }
-
-    function findActivePendingCommand(doc) {
-      if (!doc || !doc.querySelectorAll) return '';
-      const pendingBtn = findActivePendingSubmit(doc);
-      if (pendingBtn) {
-        return extractCommandForBtn(pendingBtn);
-      }
-      return '';
-    }
-
-    function extractCommandForBtn(btn) {
-      if (!btn) return '';
-      let root = btn.closest('[role="dialog"], [role="alertdialog"], [data-testid*="interaction"], div[class*="modal"], [data-testid="run-command-step"]');
-      if (!root) {
-        const steps = document.querySelectorAll('[data-testid="run-command-step"]');
-        if (steps.length) root = steps[steps.length - 1];
-      }
-      if (root) {
-        const cmd = extractCommandText(root);
-        if (cmd) return cmd;
-      }
-      const card = cardForSubmit(btn);
-      if (card) {
-        const cmd = extractCommandText(card);
-        if (cmd) return cmd;
-      }
-      // 审批按钮独立处于底部交互栏时，关联当前页面处于活动态的待运行命令（优先排除已完成的 Ran 历史步骤）
-      const doc = btn.ownerDocument || document;
-      if (doc && doc.querySelectorAll) {
-        const steps = doc.querySelectorAll('[data-testid="run-command-step"]');
-        if (steps.length) {
-          for (let i = steps.length - 1; i >= 0; i--) {
-            const firstWord = (steps[i].innerText || '').trim().split(/\\s+/)[0] || '';
-            if (!/^ran$/i.test(firstWord)) {
-              const txt = extractCommandText(steps[i]);
-              if (txt) return txt;
-            }
-          }
-          const lastTxt = extractCommandText(steps[steps.length - 1]);
-          if (lastTxt) return lastTxt;
-        }
-        const pres = doc.querySelectorAll('pre, code');
-        if (pres.length) {
-          for (let i = pres.length - 1; i >= 0; i--) {
-            const s = (pres[i].innerText || pres[i].textContent || '').trim();
-            if (s.length > 2 && s.length < 2000) return s;
-          }
-        }
-      }
-      return '';
-    }
-
-    // 日志用：单行短摘要（优先识别真实命令行，杜绝纯 testid）
-    function extractLogSummary(card, fallback, btn) {
-      let full = extractCommandText(card);
-      if (!full && btn) full = extractCommandForBtn(btn);
-      if (!full && typeof document !== 'undefined') {
-        full = findActivePendingCommand(document);
-        if (!full) {
-          const steps = document.querySelectorAll('[data-testid="run-command-step"]');
-          if (steps.length) full = extractCommandText(steps[steps.length - 1]);
-        }
-      }
-      if (full) {
-        const lines = full.split('\\n').map(s => s.trim()).filter(Boolean);
-        const cmdLine = lines.find(l => !/^(run|ran)$/i.test(l) && !/[?？]$/.test(l) && l.length > 2);
-        const q = lines.find(l => /[?？]$/.test(l) && l.length < 120);
-        return oneLine(cmdLine || q || lines[0], 80);
-      }
-      return oneLine(fallback || '', 80);
-    }
-
-    function classifyOption(tx) {
-      const t = norm(tx);
-      if (!t || t.length > 200) return 0;
-      const isAlways = /always allow|始终允许|总是允许|一直允许/.test(t);
-      const isThisTime = /\\bthis time\\b|仅允许本次|仅这一次|只允许本次|仅本次/.test(t);
-      const isSession = /\\bin this conversation\\b|\\bthis session\\b|\\bthis conversation\\b|对话中|本次会话|本次对话/.test(t);
-      const isProject = /\\bin (this|every) project\\b|\\bthis project\\b|项目中|本项目|所有项目/.test(t);
-      // 编号优先（1. / 2. / 3. / 4.）
-      const num = t.match(/^([1-4])[\\s\\.\\:：\\-]/);
-      if (num) return Number(num[1]);
-      // 互斥语义：this time ≠ always
-      if (isThisTime && !isAlways) return 1;
-      if (isAlways && isSession && !isProject) return 2;
-      if (isAlways && isProject) return 3;
-      if (isAlways && !isSession && !isProject && !isThisTime) return 4;
-      // 裸编号
-      if (t === '1' || t === '2' || t === '3' || t === '4') return Number(t);
-      return 0;
-    }
-
-    function collectOptionCands(card) {
-      const nodes = Array.from(card.querySelectorAll(
-        'label, [role="radio"], [role="option"], [data-testid*="option"], [data-testid*="radio"], button, div, span, li'
-      ));
-      const cands = [];
-      const seen = new Set();
-      for (const el of nodes) {
-        if (!el || seen.has(el)) continue;
-        const raw = (el.innerText || el.textContent || '').trim();
-        if (!raw || raw.length > 160) continue;
-        // 多行选项容器不是叶子选项
-        if (raw.includes('\\n') && raw.split('\\n').filter(Boolean).length > 2) continue;
-        // 只要叶子/近叶子：有更深子节点且文本相同则跳过父级，避免点到整块容器
-        const kids = el.children ? Array.from(el.children) : [];
-        if (kids.length) {
-          const kidTexts = kids.map(k => (k.innerText || '').trim()).join(' ');
-          if (kidTexts && norm(kidTexts) === norm(raw) && raw.length > 20) continue;
-        }
-        const cls = classifyOption(raw);
-        if (!cls) continue;
-        const st = el.getAttribute && el.getAttribute('data-state');
-        const checked = (
-          el.checked === true ||
-          el.getAttribute('aria-checked') === 'true' ||
-          st === 'checked' ||
-          st === 'on' ||
-          (el.classList && el.classList.contains('checked'))
-        );
-        const score =
-          (el.getAttribute && el.getAttribute('role') === 'radio' ? 40 : 0) +
-          (el.tagName === 'LABEL' ? 30 : 0) +
-          (el.getAttribute && /option|radio|choice/i.test(el.getAttribute('data-testid') || '') ? 35 : 0) +
-          (checked ? 10 : 0) -
-          Math.min(raw.length, 80) * 0.1;
-        cands.push({ el, cls, score, checked, text: clip(raw, 80) });
-        seen.add(el);
-      }
-      return cands;
-    }
-
-    function matchOptionEl(card, optIdx) {
-      const idx = Number(optIdx) || 4;
-      const cands = collectOptionCands(card);
-      const exact = cands.filter(c => c.cls === idx);
-      if (exact.length) {
-        exact.sort((a, b) => b.score - a.score);
-        return exact[0];
-      }
-      // 目标选项不存在时：若只有 this-time 语义选项，优先选它，避免默认落到 always
-      if (idx === 1) {
-        const t1 = cands.filter(c => c.cls === 1);
-        if (t1.length) return t1[0];
-      }
-      return null;
-    }
-
-    // 命中高危审批后，仅熔断这张命令卡。React 可能在标记按钮后重绘 DOM，
-    // 只给旧按钮加 data 属性不足以阻止下一轮扫描误点新按钮，因此命令指纹须持久化到 window。
-    // 不使用页面级总锁：用户手动确认该高危卡后，后续正常审批应继续自动处理。
-    function dangerKey(hit, cmd) {
-      return String(hit.id || 'rule') + ':' + String(cmd || '').replace(/\s+/g, ' ').trim().slice(0, 800);
-    }
-
-    function commandApprovalKey(card) {
-      const cmd = extractCommandText(card);
-      return cmd ? 'cmd:' + String(cmd).replace(/\s+/g, ' ').trim().slice(0, 800) : '';
-    }
-
-    function approvalKey(card, kind) {
-      const commandKey = commandApprovalKey(card);
-      if (commandKey) return commandKey;
-      // 无命令正文的通用确认卡也可去重，防止 React 在点击后的短暂重绘造成重复日志。
-      const text = card ? (card.innerText || card.textContent || '') : '';
-      return 'ui:' + oneLine(text || kind || '', 300);
-    }
-
-    // 命令审批状态机：按“卡片可见生命周期”而非时间窗口去重。
-    // 同一命令卡 React 重绘时保留状态；卡真正消失后才释放，下一张同命令卡才是新请求。
-    function approvalTracker() {
-      return window.__ea_approval_tracker || (window.__ea_approval_tracker = { nextId: 1, entries: new Map() });
-    }
-
-    function refreshVisibleCommandApprovals(doc) {
-      if (!doc || !doc.querySelectorAll) return;
-      const visible = new Set();
-      const cards = doc.querySelectorAll(
-        '[data-testid="run-command-step"], [role="dialog"], [role="alertdialog"],' +
-        'div[data-testid*="interaction"], div[data-testid*="approval"],' +
-        'div[data-testid*="permission"], div[data-testid*="command"]'
-      );
-      for (const card of cards) {
-        const key = commandApprovalKey(card);
-        if (key) visible.add(key);
-      }
-      const tracker = approvalTracker();
-      for (const key of visible) {
-        if (!tracker.entries.has(key)) {
-          tracker.entries.set(key, {
-            id: tracker.nextId++,
-            clicked: false,
-            dangerReported: false,
-            requestReported: false
-          });
-        }
-      }
-      for (const key of tracker.entries.keys()) {
-        if (!visible.has(key)) tracker.entries.delete(key);
-      }
-    }
-
-    function approvalEntry(card) {
-      const key = commandApprovalKey(card);
-      return key ? approvalTracker().entries.get(key) : null;
-    }
-
-    // 审批卡出现只代表权限请求，不是授权动作，不能写入批准计数。
-    function reportApprovalRequest(card) {
-      const entry = approvalEntry(card);
-      if (!entry || entry.requestReported) return;
-      entry.requestReported = true;
-      console.log('[EA_REQUEST] 权限请求 · ' + extractLogSummary(card, '审批请求'));
-    }
-
-    function reportVisibleApprovalRequests(doc) {
-      if (!doc || !doc.querySelectorAll) return;
-      const cards = doc.querySelectorAll(
-        '[data-testid="run-command-step"], [role="dialog"], [role="alertdialog"],' +
-        'div[data-testid*="interaction"], div[data-testid*="approval"],' +
-        'div[data-testid*="permission"], div[data-testid*="command"]'
-      );
-      for (const card of cards) {
-        if (commandApprovalKey(card)) reportApprovalRequest(card);
-      }
-    }
-
-    function recentlyAutoApproved(card, kind) {
-      const key = approvalKey(card, kind);
-      if (!key || key === 'ui:') return false;
-      if (key.startsWith('cmd:')) {
-        const entry = approvalEntry(card);
-        return !!(entry && entry.clicked);
-      }
-      const seen = window.__ea_recent_auto_approvals || (window.__ea_recent_auto_approvals = new Map());
-      const now = Date.now();
-      const last = seen.get(key) || 0;
-      // 无命令正文的 Continue 等控件没有稳定卡片键，只做短时降噪。
-      return now - last < 15000;
-    }
-
-    function markAutoApproved(card, kind) {
-      const key = approvalKey(card, kind);
-      if (!key || key === 'ui:') return;
-      if (key.startsWith('cmd:')) {
-        const entry = approvalEntry(card);
-        if (entry) entry.clicked = true;
-        return;
-      }
-      const seen = window.__ea_recent_auto_approvals || (window.__ea_recent_auto_approvals = new Map());
-      const now = Date.now();
-      seen.set(key, now);
-      if (seen.size > 100) {
-        for (const [oldKey, at] of seen) {
-          if (now - at > 30000) seen.delete(oldKey);
-        }
-      }
-    }
-
-    const reportedDangerRoots = window.__ea_reported_danger_roots || (window.__ea_reported_danger_roots = new WeakSet());
-
-    function blockCardApprovalButtons(container) {
-      if (!container || !container.querySelectorAll) return;
-      const btns = container.querySelectorAll('button[data-testid="interaction-continue-button"], button[data-testid="approval-submit"], button[data-testid="permission-allow"], button[role="button"]');
-      btns.forEach(b => {
-        if (isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label')) || b.getAttribute('data-testid')) {
-          b.setAttribute('data-ea-ok', 'blocked');
-        }
-      });
-    }
-
-    function checkDangerous(doc) {
-      if (!window.__ea_config.blockDangerous || !doc || !doc.querySelectorAll) return false;
-      const activePatterns = window.__ea_compiled_danger_patterns || [];
-      if (!activePatterns.length) return false;
-
-      // 仅检查当前页面上真实存在的“待审批活动按钮”
-      const pendingBtn = findActivePendingSubmit(doc);
-      if (!pendingBtn) {
-        // 页面已无待处理确认按钮（用户已手动放行或卡片已关闭），自动解除高危锁定
-        window.__ea_danger_lock = null;
-        return false;
-      }
-
-      // 若当前待确认按钮所属卡片已被标记为 blocked，说明已经拦截告警过，静待用户手动确认
-      if (pendingBtn.getAttribute('data-ea-ok') === 'blocked') {
-        return true;
-      }
-
-      // 提取当前活动待确认按钮所属卡片的命令正文
-      const pendingCmd = extractCommandForBtn(pendingBtn);
-      if (pendingCmd) {
-        const hit = activePatterns.find(r => r.re.test(pendingCmd));
-        if (hit) {
-          const root = getInteractionRoot(pendingBtn) || pendingBtn.parentElement;
-          window.__ea_danger_lock = { id: hit.id, name: hit.name, cmd: pendingCmd, at: Date.now() };
-          if (root) {
-            blockCardApprovalButtons(root);
-            processedRoots.add(root);
-          } else {
-            pendingBtn.setAttribute('data-ea-ok', 'blocked');
-          }
-          if (!root || !reportedDangerRoots.has(root)) {
-            if (root) reportedDangerRoots.add(root);
-            console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + oneLine(pendingCmd, 80));
-          }
-          return true;
-        }
-      }
-
-      // 当前待确认命令安全，清除残留的高危锁定
-      window.__ea_danger_lock = null;
-      return false;
-    }
-
-    function getInteractionRoot(btn) {
-      if (!btn) return null;
-      return (
-        btn.closest('[role="dialog"]') ||
-        btn.closest('[role="alertdialog"]') ||
-        btn.closest('div[data-testid*="interaction"]') ||
-        btn.closest('div[class*="modal"]') ||
-        btn.closest('[data-testid="run-command-step"]') ||
-        btn.closest('div.relative.flex.flex-col') ||
-        btn.closest('div[class*="card"]') ||
-        btn.parentElement?.parentElement ||
-        btn.parentElement
-      );
-    }
-
-    const processedRoots = window.__ea_processed_roots || (window.__ea_processed_roots = new WeakSet());
-    const reportedRoots = window.__ea_reported_roots || (window.__ea_reported_roots = new WeakSet());
-
-    function isQuestionCard(card) {
-      if (!card) return false;
-      const root = (card.closest && card.closest('div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"], div[class*="card"]')) || card;
-
-      // 流程图分支：若含 dismiss 按钮，确定为方案问答选择题
-      if (root.querySelector && (
-        root.querySelector('button[data-testid="ask-question-dismiss-button"]') ||
-        root.querySelector('[data-testid*="ask-question"]')
-      )) {
-        return true;
-      }
-
-      // 流程图分支：是否存在 textarea[aria-label='Edit permission target']？
-      // 是 -> 正规权限审批卡（命令 / 文件 / 网络），绝非方案问答！
-      const hasTarget = !!(root.querySelector && root.querySelector('textarea[aria-label="Edit permission target"]'));
-      if (hasTarget) {
-        return false;
-      }
-
-      // 补充：存在明确权限专属按钮（如 permission-allow / approval-submit）
-      const hasPermBtn = !!(root.querySelector && (
-        root.querySelector('button[data-testid="permission-allow"]') ||
-        root.querySelector('button[data-testid="approval-submit"]')
-      ));
-      if (hasPermBtn) {
-        return false;
-      }
-
-      // 流程图分支：外层是否为专属接管卡？div[data-testid*="interaction"]
-      // 否（普通 role='dialog' 如撤销/删除确认框） -> 绝不触碰！彻底免疫！返回 false
-      const rootTestid = (root.getAttribute && root.getAttribute('data-testid')) || '';
-      const isTakeover = rootTestid.includes('interaction') || (root.closest && !!root.closest('div[data-testid*="interaction"]'));
-      if (!isTakeover) {
-        return false;
-      }
-
-      // 位于接管卡内，但既无 permission target textarea 又无明确权限按钮 -> 判定为方案问答选择题
-      return true;
-    }
-
-    function reportInteractionRequest(btn) {
-      const root = getInteractionRoot(btn);
-      if (!root || reportedRoots.has(root)) return;
-      reportedRoots.add(root);
-      
-      if (isQuestionCard(root)) {
-        if (!root.hasAttribute('data-ea-interact-reported') && !root.querySelector('[data-ea-interact-reported]')) {
-          console.warn('[EA_INTERACT] 方案问答：等待您手动选择选项并放行...');
-        }
-        return;
-      }
-      
-      const cmd = extractLogSummary(root, '审批请求', btn);
-      console.log('[EA_REQUEST] 权限请求 · ' + cmd);
-    }
-
-    function tryApprove(btn, kind) {
-      if (!btn || btn.disabled || btn.hasAttribute('data-ea-ok')) return false;
-
-      const root = getInteractionRoot(btn);
-      // 方案问答选择题必须由用户手动确认，严禁自动抢跑
-      if (isQuestionCard(root)) return false;
-
-      // 用户正在手动操作的卡片，严禁自动抢跑提交，保护用户防误触
-      if (root && (root.getAttribute('data-ea-user-manual') === 'true' || root.getAttribute('data-ea-ok') === 'user-manual')) {
-        return false;
-      }
-      if (btn.hasAttribute('data-ea-user-manual') || btn.getAttribute('data-ea-ok') === 'user-manual') {
-        return false;
-      }
-      
-      if (window.__ea_danger_lock) {
-        if (Date.now() - (window.__ea_danger_lock.at || 0) > 60000) {
-          window.__ea_danger_lock = null;
-        } else {
-          return false;
-        }
-      }
-
-      if (root && processedRoots.has(root)) return false;
-
-      const doc = btn.ownerDocument || document;
-      if (window.__ea_config.blockDangerous) {
-        const cmd = extractCommandForBtn(btn);
-        const activePatterns = window.__ea_compiled_danger_patterns || [];
-        if (cmd) {
-          const hit = activePatterns.find(r => r.re.test(cmd));
-          if (hit) {
-            window.__ea_danger_lock = { id: hit.id, name: hit.name, cmd, at: Date.now() };
-            if (root) {
-              blockCardApprovalButtons(root);
-              processedRoots.add(root);
-            } else {
-              btn.setAttribute('data-ea-ok', 'blocked');
-            }
-            if (!root || !reportedDangerRoots.has(root)) {
-              if (root) reportedDangerRoots.add(root);
-              console.warn('[EA_ALERT] 拦截高危指令[' + hit.id + ']，等待用户手动确认: ' + oneLine(cmd, 80));
-            }
-            return true;
-          }
-        }
-      }
-
-      const card = cardForSubmit(btn);
-      const optIdx = (window.__ea_config && window.__ea_config.preferOption) || 1;
-      let optText = '';
-      let picked = null;
-      if (card) {
-        const cands = collectOptionCands(card);
-        if (cands.length) {
-          const brief = cands.map(c => '#' + c.cls + (c.checked ? '*' : '') + oneLine(c.text, 36)).join(' | ');
-          
-        }
-        picked = matchOptionEl(card, optIdx);
-        if (picked && picked.el) {
-          realClick(picked.el);
-          optText = oneLine(picked.text, 40);
-          // 若点击后仍无选中态，再点一次（部分自定义控件首次 pointer 无效）
-          const st = picked.el.getAttribute && picked.el.getAttribute('data-state');
-          const stillOff = picked.el.checked === false ||
-            picked.el.getAttribute('aria-checked') === 'false' ||
-            st === 'unchecked';
-          if (stillOff) realClick(picked.el);
-        } else if (cands.length) {
-          // 有选项组但没匹配到目标：不要默默点提交，避免落到会话级 always
-          console.warn('[EA_OPT] 未找到选项[' + optIdx + ']，暂不点击提交');
-          return false;
-        }
-      }
-      btn.setAttribute('data-ea-ok', 'true');
-      if (root) processedRoots.add(root);
-
-      realClick(btn);
-      const cmd = extractLogSummary(card, kind || (btn.innerText || ''), btn);
-      const optLabel = picked
-        ? '选项[' + picked.cls + '] ' + optText
-        : '无选项组';
-      // 有选项组 = 确认放行；无选项组 = 权限请求（避免双次「放行」误报）
-      const action = picked ? '放行' : '权限请求';
-      
-      return true;
-    }
-
-    // ── 翻译禁区：保护代码块/编辑器文本/终端/输入框不被误翻 ──
-    const BLOCKED_TAGS = ['SCRIPT','STYLE','CODE','PRE','INPUT','TEXTAREA','SVG','CANVAS','KBD','SAMP','VAR'];
-    const BLOCKED_CLASS_SUBSTR = [
-      'code-view','view-lines','lines-content','suggest-widget',
-      'output-view','debug-console','artifact-container','code-block',
-      'diff-view','input-area','chat-input','cm-editor','CodeMirror',
-      'highlight','syntax','prism','hljs',
-      'thought','thinking','reasoning','agent-turn','user-turn','chat-turn','chat-message','markdown-body'
-    ];
-    const BLOCKED_CLASS_TOKEN = ['terminal','xterm','preview','code'];
-
-    function isInBlockedZone(node) {
-      let curr = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-      if (!curr) return false;
-      // 设置界面与扩展面板：明确豁免禁区，允许词条翻译！
-      if (curr.closest && curr.closest('.settings-editor, .keybindings-editor, .extensions-viewlet')) {
-        const tag = (curr.tagName || '').toUpperCase();
-        if (BLOCKED_TAGS.includes(tag)) return true;
-        if (curr.getAttribute && curr.getAttribute('contenteditable') === 'true') return true;
-        const role = (curr.getAttribute && curr.getAttribute('role')) || '';
-        if (role === 'code' || role === 'textbox') return true;
-        const cls = curr.className || '';
-        if (typeof cls === 'string' && (cls.includes('view-lines') || cls.includes('lines-content'))) return true;
-        return false;
-      }
-      // 审批卡/问答卡/接管卡极速豁免：浏览器原生 C++ 快速向上匹配，1微秒物理豁免
-      if (curr.closest && curr.closest('div[data-testid*="interaction"]')) return true;
-      let depth = 0;
-      while (curr && depth < 25) {
-        if (curr.nodeType === Node.ELEMENT_NODE) {
-          // 审批卡与交互弹窗：绝对禁止翻译！彻底保护 React 组件树，避免触发组件重绘与状态脱节
-          if (isApprovalCard(curr)) return true;
-          // 人机交互区域（Agent思考路径、对话流、消息正文）：绝对禁止翻译！保持流式输出原生性与格式渲染
-          if (isHumanAgentInteractionZone(curr)) return true;
-          const tag = (curr.tagName || '').toUpperCase();
-          if (BLOCKED_TAGS.includes(tag)) return true;
-          if (curr.getAttribute && curr.getAttribute('contenteditable') === 'true') return true;
-          const role = (curr.getAttribute && curr.getAttribute('role')) || '';
-          if (role === 'code' || role === 'textbox') return true;
-          const cls = curr.className || '';
-          if (typeof cls === 'string' && cls) {
-            if (BLOCKED_CLASS_SUBSTR.some(c => cls.includes(c))) return true;
-            const tokens = cls.split(/[\s]+/);
-            if (tokens.some(t => BLOCKED_CLASS_TOKEN.includes(t))) return true;
-          }
-        }
-        curr = curr.parentElement || (curr.parentNode && curr.parentNode.host);
-        depth++;
-      }
-      return false;
-    }
-
-    // ── 审批框结构识别（绝对豁免翻译，保持原生纯净英文） ──
-    function isApprovalCard(el) {
-      if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
-      const tid = (el.getAttribute && el.getAttribute('data-testid')) || '';
-      if (
-        tid.includes('interaction') ||
-        tid.includes('approval') ||
-        tid.includes('permission') ||
-        tid.includes('run-command') ||
-        tid.includes('continue') ||
-        tid.includes('ask-question')
-      ) return true;
-      const cls = el.className || '';
-      if (typeof cls === 'string' && cls) {
-        if (/interaction|approval|permission|run-command/i.test(cls)) return true;
-      }
-      const role = (el.getAttribute && el.getAttribute('role')) || '';
-      if (role === 'radiogroup') return true;
-      if (role === 'dialog' || role === 'alertdialog') {
-        const hasApprovalBtn = !!el.querySelector(
-          'button[data-testid*="interaction"], button[data-testid*="approval"], button[data-testid*="permission"], button[data-testid*="continue"]'
-        );
-        const hasCode = !!el.querySelector('textarea[aria-label="Edit permission target"], pre, code, [class*="code"], [data-testid*="command"]');
-        if (hasApprovalBtn || (hasCode && !!el.querySelector('button, [role="button"]'))) return true;
-      }
-      return false;
-    }
-
-    // ── 人机交互界面识别（思考过程、对话流、消息正文、工具执行步骤等绝对豁免翻译，保护流式输出与格式渲染） ──
-    function isHumanAgentInteractionZone(el) {
-      if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
-      const tid = (el.getAttribute && el.getAttribute('data-testid')) || '';
-      if (
-        tid.includes('thought') ||
-        tid.includes('thinking') ||
-        tid.includes('reasoning') ||
-        tid.includes('agent-turn') ||
-        tid.includes('user-turn') ||
-        tid.includes('chat-turn') ||
-        tid.includes('chat-message') ||
-        tid.includes('chat-bubble') ||
-        tid.includes('chat-response') ||
-        tid.includes('chat-history') ||
-        tid.includes('chat-pane') ||
-        tid.includes('conversation-turn') ||
-        tid.includes('markdown-body') ||
-        tid.includes('rendered-markdown') ||
-        tid.includes('tool-call') ||
-        tid.includes('step') ||
-        tid.includes('review') ||
-        tid.includes('diff')
-      ) return true;
-
-      const cls = el.className || '';
-      if (typeof cls === 'string' && cls) {
-        if (/thought|thinking|reasoning|agent-turn|user-turn|chat-turn|chat-message|chat-bubble|chat-response|chat-markdown|markdown-body|rendered-markdown|prose|tool-call|step-|review-|diff-/i.test(cls)) {
-          return true;
-        }
-      }
-      return false;
-    }
 
     function translateDOM(root) {
       if (!window.__ea_config.enableI18n || !window.__ea_dict || !root) return;
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      let node;
-      while ((node = walker.nextNode())) {
-        if (isInBlockedZone(node)) continue;
-        const text = node.nodeValue.trim();
-        if (!text) continue;
-        // 词典精确匹配
-        if (window.__ea_dict[text]) {
-          if (node.__ea_translated !== node.nodeValue) {
-            node.__ea_orig = node.nodeValue;
-          }
-          node.nodeValue = node.nodeValue.replace(text, window.__ea_dict[text]);
+      const dict = window.__ea_dict;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      for (const node of nodes) {
+        const raw = node.nodeValue;
+        if (!raw || !raw.trim()) continue;
+        const key = raw.trim();
+        if (node.__ea_translated === raw) continue;
+        if (dict[key] && dict[key] !== key) {
+          node.nodeValue = dict[key];
           node.__ea_translated = node.nodeValue;
         }
       }
-      const elements = root.querySelectorAll ? root.querySelectorAll('[placeholder], [title], [aria-label]') : [];
-      elements.forEach(el => {
-        if (isInBlockedZone(el)) return;
-        ['placeholder','title','aria-label'].forEach(attr => {
-          const val = el.getAttribute(attr);
-          if (val && window.__ea_dict[val]) {
-            if (!el.hasAttribute('data-ea-orig-' + attr)) {
-              el.setAttribute('data-ea-orig-' + attr, val);
-            }
-            el.setAttribute(attr, window.__ea_dict[val]);
-          }
-        });
-      });
     }
 
-    function revertDOM(root) {
-      if (!root) return;
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      let node;
-      while ((node = walker.nextNode())) {
-        if (isInBlockedZone(node)) continue;
-        if (node.__ea_orig !== undefined) {
-          node.nodeValue = node.__ea_orig;
-          delete node.__ea_orig;
-          delete node.__ea_translated;
-          continue;
-        }
-        const text = node.nodeValue.trim();
-        if (text && window.__ea_reverse_dict && window.__ea_reverse_dict[text]) {
-          node.nodeValue = node.nodeValue.replace(text, window.__ea_reverse_dict[text]);
-          delete node.__ea_translated;
+    function extractCmd(card) {
+      if (!card) return '';
+      // 优先 run-command-step（旧版已验证的选择器），避免抓到选项 radio 文案
+      let steps = [];
+      if (card.getAttribute && card.getAttribute('data-testid') === 'run-command-step') {
+        steps = [card];
+      } else if (card.querySelectorAll) {
+        steps = Array.from(card.querySelectorAll('[data-testid="run-command-step"]'));
+      }
+      if (!steps.length && card.closest) {
+        const host = card.closest('[role="dialog"], [role="alertdialog"], [data-testid*="interaction"], [data-testid*="approval"], [data-testid*="permission"]') || card.parentElement;
+        if (host && host.querySelectorAll) {
+          steps = Array.from(host.querySelectorAll('[data-testid="run-command-step"]'));
         }
       }
-      const origAttrEls = root.querySelectorAll ? root.querySelectorAll('[data-ea-orig-placeholder], [data-ea-orig-title], [data-ea-orig-aria-label]') : [];
-      origAttrEls.forEach(el => {
-        ['placeholder','title','aria-label'].forEach(attr => {
-          const orig = el.getAttribute('data-ea-orig-' + attr);
-          if (orig !== null) {
-            el.setAttribute(attr, orig);
-            el.removeAttribute('data-ea-orig-' + attr);
-          }
-        });
-      });
-      const allAttrEls = root.querySelectorAll ? root.querySelectorAll('[placeholder], [title], [aria-label]') : [];
-      allAttrEls.forEach(el => {
-        if (isInBlockedZone(el)) return;
-        ['placeholder','title','aria-label'].forEach(attr => {
-          const val = el.getAttribute(attr);
-          if (val && window.__ea_reverse_dict && window.__ea_reverse_dict[val]) {
-            el.setAttribute(attr, window.__ea_reverse_dict[val]);
-          }
-        });
-      });
+      for (let i = steps.length - 1; i >= 0; i--) {
+        const t = (steps[i].innerText || steps[i].textContent || '').trim();
+        if (t && t.length < 2000) return t;
+      }
+      // 次选：命令相关 testid / code，不碰 radiogroup
+      const sel = '[data-testid*="command"], [data-testid*="cmd"], code, pre';
+      const nodes = (card.querySelectorAll && card.querySelectorAll(sel)) || [];
+      for (const c of nodes) {
+        if (c.closest('[role="radiogroup"], [role="listbox"]')) continue;
+        const t = (c.innerText || c.textContent || '').trim();
+        if (t && t.length < 2000 && !/^(allow|deny|ask|允许|拒绝|this time|always)/i.test(t)) return t;
+      }
+      return '';
     }
 
-    window.__ea_sync_config = function() {
-      function syncDoc(doc) {
-        if (!doc) return;
+    // 只读扫描审批/Ask 卡，上报命令供主进程做风险分级（不点按钮）
+    function scanRiskCards() {
+      const seen = window.__ea_risk_seen || (window.__ea_risk_seen = new WeakSet());
+      const roots = document.querySelectorAll('[data-testid="run-command-step"], [role="radiogroup"], [role="dialog"], [data-testid*="interaction"], [data-testid*="approval"], [data-testid*="permission"]');
+      for (const root of roots) {
+        const txt = (root.innerText || '').toLowerCase();
+        const isAsk = txt.includes('allow') || txt.includes('允许') || txt.includes('ask') || txt.includes('询问') || txt.includes('approve')
+          || (root.getAttribute && root.getAttribute('data-testid') === 'run-command-step');
+        if (!isAsk || seen.has(root)) continue;
+        seen.add(root);
+        const cmd = extractCmd(root);
+        if (!cmd) continue;
+        if (/^(allow|deny|ask|允许|拒绝)/i.test(cmd.trim())) continue;
+        console.log('[EA_RISK_CMD] ' + cmd);
+      }
+    }
+
+    if (!window.__ea_i18n_installed) {
+      window.__ea_i18n_installed = true;
+      const obs = new MutationObserver((muts) => {
         if (window.__ea_config && window.__ea_config.enableI18n) {
-          translateDOM(doc);
-          doc.__ea_i18n_applied = true;
-        } else {
-          revertDOM(doc);
-          doc.__ea_i18n_applied = false;
+          for (const m of muts) {
+            if (m.type === 'childList') {
+              m.addedNodes && m.addedNodes.forEach(n => {
+                if (n.nodeType === 1) translateDOM(n);
+                else if (n.nodeType === 3 && n.parentElement) translateDOM(n.parentElement);
+              });
+            } else if (m.type === 'characterData' && m.target && m.target.parentElement) {
+              translateDOM(m.target.parentElement);
+            }
+          }
         }
-      }
-      syncDoc(document);
-      const iframes = document.querySelectorAll('iframe');
-      iframes.forEach(f => {
-        try { if (f.contentDocument) syncDoc(f.contentDocument); } catch (e) {}
+        try { scanRiskCards(); } catch (e) {}
       });
-    };
-
-    if (!window.__ea_click_listener_attached) {
-      window.__ea_click_listener_attached = true;
-      document.addEventListener('click', (e) => {
-        // 用户手动点击停止执行 (Cancel) 按钮
-        const cancelBtn = e.target && e.target.closest ? e.target.closest('button[data-tooltip-id="input-send-button-cancel-tooltip"]') : null;
-        if (cancelBtn) {
-          window.__ea_agent_user_cancelled = true;
-          window.__ea_agent_was_running = false;
-          window.__ea_agent_stopped_at = 0;
-        }
-        // 用户手动点击了卡片中的选项或按钮，标记为人工接管状态，严禁后台抢跑 auto-submit
-        const card = e.target && e.target.closest ? e.target.closest('div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"], [role="radiogroup"], div[class*="card"]') : null;
-        if (card) {
-          card.setAttribute('data-ea-user-manual', 'true');
-          const subBtns = card.querySelectorAll ? card.querySelectorAll('button, [role="button"]') : [];
-          subBtns.forEach(b => b.setAttribute('data-ea-user-manual', 'true'));
-        }
-      }, true);
+      obs.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+      if (document.body) translateDOM(document.body);
+      setInterval(() => { try { scanRiskCards(); } catch (e) {} }, 1500);
+    } else {
+      if (window.__ea_config && window.__ea_config.enableI18n) translateDOM(document.body || document.documentElement);
+      try { scanRiskCards(); } catch (e) {}
     }
-
-    if (window.__ea_scan_interval) clearInterval(window.__ea_scan_interval);
-    window.__ea_scan_interval = setInterval(() => {
-      function scan(doc) {
-        if (!doc) return;
-        if (!doc.__ea_click_listener_installed) {
-          doc.__ea_click_listener_installed = true;
-          try {
-            doc.addEventListener('click', (e) => {
-              const btn = e.target && e.target.closest ? e.target.closest('button, [role="button"]') : null;
-              if (!btn) return;
-              const text = (btn.innerText || btn.value || btn.getAttribute('aria-label') || '').trim();
-              const tid = btn.getAttribute('data-testid') || '';
-              if (isSubmitLabel(text) || /(?:continue|submit|allow|reject|cancel|deny)/i.test(tid)) {
-                window.__ea_danger_lock = null;
-                btn.setAttribute('data-ea-ok', 'user-interacted');
-              }
-            }, true);
-          } catch (e) {}
-        }
-
-        if (window.__ea_config && window.__ea_config.enableI18n) {
-          translateDOM(doc);
-          doc.__ea_i18n_applied = true;
-        } else if (doc.__ea_i18n_applied) {
-          revertDOM(doc);
-          doc.__ea_i18n_applied = false;
-        }
-
-        // ── 调试模式：抓取审批卡 DOM 结构 ──
-        if (window.__ea_config.debugApproval) {
-          const debugSelectors = [
-            '[role="dialog"]', '[role="alertdialog"]',
-            'div[data-testid*="interaction"]', 'div[data-testid*="approval"]',
-            'div[data-testid*="permission"]', 'div[data-testid*="command"]',
-            'div[data-testid*="run"]', 'div[class*="card"]'
-          ];
-          const seen = new Set();
-          for (const sel of debugSelectors) {
-            doc.querySelectorAll(sel).forEach(el => {
-              if (seen.has(el)) return;
-              const text = (el.innerText || '').trim();
-              if (!text || text.length < 10 || text.length > 3000) return;
-              const hasCode = !!el.querySelector('pre, code, [class*="code"], [data-testid*="command"]');
-              const hasBtn = !!el.querySelector('button, [role="button"]');
-              if (!hasBtn) return;
-              // 只抓含审批关键词或含代码块的容器
-              const isApproval = /allow|deny|reject|run|accept|permission|允许|拒绝|运行|执行/i.test(text) || hasCode;
-              if (!isApproval) return;
-              seen.add(el);
-              // 输出结构摘要
-              const tid = el.getAttribute('data-testid') || '';
-              const role = el.getAttribute('role') || '';
-              const cls = (typeof el.className === 'string' ? el.className : '').slice(0, 80);
-              const btns = Array.from(el.querySelectorAll('button, [role="button"]')).map(b => {
-                const bt = (b.innerText || '').trim().slice(0, 40);
-                const btId = b.getAttribute('data-testid') || '';
-                return bt ? (btId ? bt + '[' + btId + ']' : bt) : null;
-              }).filter(Boolean);
-              const codeText = hasCode ? (el.querySelector('pre, code, [class*="code"]')?.innerText || '').trim().slice(0, 120) : '';
-              console.log('[EA_DOM] tag=' + el.tagName + ' role=' + role + ' testid=' + tid + ' class=' + cls);
-              console.log('[EA_DOM]   buttons: ' + (btns.join(' | ') || '(none)'));
-              if (codeText) console.log('[EA_DOM]   code: ' + codeText);
-              console.log('[EA_DOM]   text: ' + text.slice(0, 200).replace(/\\n/g, ' ⏎ '));
-              // 输出完整 HTML（截断到 1500 字符）
-              const html = el.outerHTML.slice(0, 1500);
-              console.log('[EA_HTML] ' + html);
-            });
-          }
-        }
-
-        if (!window.__ea_config.autoAccept) return;
-        // fail closed：高危锁定时绝不进入任何点击分支
-                if (checkDangerous(doc)) return;
-
-        
-        // ── 终极权限弹窗直接破解与方案问答识别（严格按流程图元素判定） ──
-        const radioGroups = doc.querySelectorAll('[role="radiogroup"]');
-        for (const rg of radioGroups) {
-          const card = getInteractionRoot(rg) || rg.closest('div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"], div[class*="card"], div.relative') || rg.parentElement || rg;
-          if (card && (card.getAttribute('data-ea-user-manual') === 'true' || card.getAttribute('data-ea-ok') === 'user-manual')) {
-            continue; // 用户正在人工交互，绝不抢跑自动提交
-          }
-          
-          // 流程图分支：若为方案问答卡，绝对不自动审批
-          if (isQuestionCard(card)) {
-            if (card) {
-              reportedRoots.add(card);
-            }
-            if (!rg.hasAttribute('data-ea-interact-reported')) {
-              rg.setAttribute('data-ea-interact-reported', 'true');
-              if (card && card.setAttribute) card.setAttribute('data-ea-interact-reported', 'true');
-              const titleEl = card ? card.querySelector('p, h1, h2, h3, h4, span') : null;
-              const qTitle = (titleEl ? titleEl.innerText : (card ? card.innerText : rg.innerText)) || '';
-              const summary = (qTitle.split(String.fromCharCode(10))[0] || '').slice(0, 80).trim();
-              console.warn('[EA_INTERACT] 方案问答：' + (summary || '等待您手动选择选项并提交...'));
-            }
-            continue;
-          }
-
-          // 确认属于正规权限审批框：执行自动勾选与提交放行
-          const radios = Array.from(rg.querySelectorAll('input[type="radio"]'));
-          if (radios.length >= 1) {
-            const p = String(Number(window.__ea_config.preferOption) || 1);
-            const pNum = Number(p);
-            const targetIdx = Math.min(Math.max(pNum - 1, 0), radios.length - 1);
-            // 优先按 value="1"~"4" 匹配，其次按下标匹配
-            const targetInput = rg.querySelector('input[type="radio"][value="' + p + '"]') || radios[targetIdx];
-            
-            if (targetInput && !targetInput.checked) {
-              const label = targetInput.closest('label');
-              if (label) realClick(label);
-              else realClick(targetInput);
-            }
-
-            // 优先在当前 card 内部寻找提交按钮，其次全页面寻找
-            const searchScope = card ? Array.from(card.querySelectorAll('button')).concat(Array.from(doc.querySelectorAll('button'))) : Array.from(doc.querySelectorAll('button'));
-            const submitBtn = searchScope.find(b => {
-              if (b.disabled || b.hasAttribute('data-ea-ok')) return false;
-              const tid = b.getAttribute('data-testid') || '';
-              if (tid === 'interaction-continue-button' || tid === 'approval-submit' || tid === 'permission-allow') return true;
-              return isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label'));
-            });
-            
-            if (submitBtn) {
-              reportInteractionRequest(submitBtn);
-              const cmd = extractCommandForBtn(submitBtn) || 'run-command';
-              const optNames = ['仅允许本次', '对话中始终允许', '项目中始终允许', '全局始终允许'];
-              const optText = optNames[targetIdx] || '仅允许本次';
-              console.log('[EA_AA] 放行 · 选项[' + (targetIdx + 1) + '] ' + optText + ' · ' + cmd);
-              submitBtn.setAttribute('data-ea-ok', 'true');
-              realClick(submitBtn);
-              return;
-            }
-          }
-        }
-
-        // ── 策略1: data-testid 精确匹配（最稳定，语言无关） ──
-        const testidBtns = doc.querySelectorAll(
-          'button[data-testid="interaction-continue-button"],' +
-          'button[data-testid="approval-submit"],' +
-          'button[data-testid="permission-allow"]'
-        );
-        for (const btn of testidBtns) {
-          reportInteractionRequest(btn);
-          if (tryApprove(btn, 'testid:' + (btn.getAttribute('data-testid') || ''))) return;
-        }
-
-        // ── 策略2: 结构指纹 — 容器内同时存在代码块/目标框+按钮，或明确权限放行卡 ──
-        const containers = doc.querySelectorAll(
-          'div[data-testid*="interaction"], [role="dialog"], [role="alertdialog"],' +
-          'div[data-testid*="approval"], div[data-testid*="permission"], div[data-testid*="command"]'
-        );
-        for (const card of containers) {
-          const codeEl = card.querySelector('textarea[aria-label="Edit permission target"], pre, code, [data-testid*="command"], [class*="code"]');
-          const isPermText = /allow querying|allow reading|allow executing|allow running|allow|permission|始终允许|仅允许本次|允许/.test((card.innerText || '').toLowerCase());
-          const btns = Array.from(card.querySelectorAll('button, [role="button"]'));
-          if ((!codeEl && !isPermText) || !btns.length) continue;
-          // 只接受明确的最终确认按钮，不能把“运行”这类发起请求按钮当成授权。
-          const submitBtn =
-            btns.find(b => /(?:approval-submit|permission-allow)/i.test(b.getAttribute('data-testid') || '')) ||
-            btns.find(b => isSubmitLabel(b.innerText || b.value || b.getAttribute('aria-label')));
-          if (submitBtn) {
-            reportInteractionRequest(submitBtn);
-            if (tryApprove(submitBtn, '结构指纹审批卡')) return;
-          }
-        }
-      }
-
-      scan(document);
-      const iframes = document.querySelectorAll('iframe');
-      iframes.forEach(f => {
-        try { if (f.contentDocument) scan(f.contentDocument); } catch (e) {}
-      });
-
-      // ── 任务完成状态机监控（消除后台任务运行时的空闲误报） ──
-      const inputBox = document.querySelector('[data-testid="agent-input-box"]');
-      const hasCancelBtn = !!(inputBox && inputBox.querySelector('button[data-tooltip-id="input-send-button-cancel-tooltip"]'));
-      
-      const runningPanel = document.querySelector('[data-testid="running-items-panel"]');
-      const hasRunningPanelItems = !!(runningPanel && (
-        runningPanel.classList.contains('grid-rows-[1fr]') ||
-        (runningPanel.querySelectorAll('.overflow-y-auto > *').length > 0) ||
-        (runningPanel.querySelector('.animate-spin'))
-      ));
-
-      const hasActiveRunStep = Array.from(document.querySelectorAll('[data-testid="run-command-step"]')).some(step => {
-        const firstWord = (step.innerText || '').trim().split(/\s+/)[0] || '';
-        return /^run$/i.test(firstWord);
-      });
-
-      const isAgentBusy = hasCancelBtn || hasRunningPanelItems || hasActiveRunStep;
-
-      if (isAgentBusy) {
-        window.__ea_agent_was_running = true;
-        window.__ea_agent_stopped_at = 0;
-        window.__ea_agent_user_cancelled = false;
-      } else if (window.__ea_agent_was_running) {
-        if (window.__ea_agent_user_cancelled) {
-          // 用户手动点击了停止执行，绝不触发本轮任务完成胶囊
-          window.__ea_agent_was_running = false;
-          window.__ea_agent_stopped_at = 0;
-        } else if (!window.__ea_agent_stopped_at) {
-          window.__ea_agent_stopped_at = Date.now();
-        } else if (Date.now() - window.__ea_agent_stopped_at > 1200) {
-          window.__ea_agent_was_running = false;
-          window.__ea_agent_stopped_at = 0;
-          const hasPendingQuestion = !!document.querySelector('button[data-testid="interaction-continue-button"], [data-testid="ask-question-dismiss-button"]');
-          if (!window.__ea_danger_lock && !document.querySelector('[data-ea-interact-reported]') && !hasPendingQuestion) {
-            console.log('[EA_READY] 本轮任务完成：代码与执行步骤已就绪');
-          }
-        }
-      }
-    }, 800);
   })();`;
 }
 
@@ -1665,15 +788,9 @@ function injectInto(ws, reason = '') {
 function broadcastConfig() {
   const script = `(() => {
     window.__ea_config = Object.assign(window.__ea_config || {}, {
-      preferOption: ${state.preferOption},
       blockDangerous: ${state.blockDangerous},
-      autoAccept: ${state.autoAccept},
-      enableI18n: ${state.enableI18n},
-      debugApproval: ${state.debugApproval ? 'true' : 'false'}
+      enableI18n: ${state.enableI18n}
     });
-    if (typeof window.__ea_sync_config === 'function') {
-      window.__ea_sync_config();
-    }
   })();`;
   for (const [, entry] of cdpSockets) {
     if (entry && entry.ws && entry.ws.readyState === WebSocket.OPEN) {
@@ -1773,52 +890,30 @@ async function startCDPLoop() {
               }
               if (msg.method === 'Runtime.consoleAPICalled') {
                 const text = msg.params.args.map(a => a.value || '').join(' ');
-                if (text.includes('[EA_AA]')) {
-                  state.approveCount += 1;
-                  logToGUI('AUTO-ACCEPT', text.replace('[EA_AA]', '').trim(), 'tag-aa');
-                  pushCounters();
-                } else if (text.includes('[EA_REQUEST]')) {
-                  // 仅表示审批卡出现；尚未点击最终确认按钮，因此不增加批准数。
-                  logToGUI('PERMISSION REQUEST', text.replace('[EA_REQUEST]', '').trim(), 'tag-warn');
-                } else if (text.includes('[EA_ALERT]')) {
-                  state.blockCount += 1;
-                  const alertMsg = text.replace('[EA_ALERT]', '').trim();
-                  logToGUI('SECURITY ALERT', alertMsg, 'tag-alert');
-                  pushCounters();
-
-                  // 简要信息：写命中的规则 [windows-del] 等；详细信息：写具体拦截指令
-                  const m = alertMsg.match(/\[(.*?)\](?:[，,].*?:\s*|\s*:\s*)(.*)$/);
-                  const ruleId = m ? m[1] : 'high-risk';
-                  const cmdDetail = m ? m[2] : alertMsg;
-                  sendResident({
-                    cmd: 'show_capsule',
-                    type: 'danger',
-                    title: `命中规则 [${ruleId}]`,
-                    detail: cmdDetail || '已阻断自动审批，请人工核查确认。'
-                  });
-                } else if (text.includes('[EA_INTERACT]')) {
-                  const interactMsg = text.replace('[EA_INTERACT]', '').trim();
-                  logToGUI('INTERACTION', interactMsg, 'tag-mint');
-                  sendResident({
-                    cmd: 'show_capsule',
-                    type: 'interaction',
-                    title: interactMsg.replace(/^.*?方案问答：\s*/, ''),
-                    detail: 'Agent 暂缓后续操作，等待您的指引。'
-                  });
-                } else if (text.includes('[EA_READY]')) {
-                  logToGUI('TASK READY', '本轮任务完成：代码与步骤已就绪', 'tag-aa');
-                  sendResident({
-                    cmd: 'show_capsule',
-                    type: 'ready',
-                    title: '生成完毕，所有步骤已就绪',
-                    detail: '代码已就绪，随时可检视或开启下一轮。'
-                  });
-                } else if (text.includes('[EA_DOM]')) {
-                  logToGUI('DOM-CAPTURE', text.replace('[EA_DOM]', '').trim(), 'tag-i18n');
-                } else if (text.includes('[EA_HTML]')) {
-                  logToGUI('DOM-HTML', text.replace('[EA_HTML]', '').trim(), 'tag-i18n');
-                } else if (text.includes('[EA_TRACE]') && state.debugApproval) {
-                  logToGUI('APPROVAL TRACE', text.replace('[EA_TRACE]', '').trim(), 'tag-warn');
+                if (text.includes('[EA_RISK_CMD]')) {
+                  const cmd = text.replace('[EA_RISK_CMD]', '').trim().slice(0, 240);
+                  const risk = assessCommandRisk(cmd);
+                  if (risk) {
+                    state.riskHits += 1;
+                    pushCounters();
+                    const lvCls = risk.level === 'high' ? 'tag-alert' : risk.level === 'medium' ? 'tag-warn' : 'tag-i18n';
+                    logToGUI('RISK', '[' + risk.levelLabel + '] ' + cmd.slice(0, 100), lvCls);
+                    if (risk.danger && risk.danger.length) {
+                      logToGUI('RISK', '规则: ' + risk.danger.map(x => x.id + '(' + x.severity + ')').join(', '), 'tag-warn');
+                    }
+                    const prim = risk.primary || {};
+                    if (prim.root_cause) logToGUI('RISK', '病理: ' + String(prim.root_cause).slice(0, 140), 'tag-warn');
+                    if (prim.destructive_impact) logToGUI('RISK', '后果: ' + String(prim.destructive_impact).slice(0, 140), 'tag-warn');
+                    if (prim.safe_alternative) logToGUI('RISK', '替代: ' + String(prim.safe_alternative).slice(0, 140), 'tag-proxy');
+                    sendResident({
+                      cmd: 'show_capsule',
+                      type: risk.level === 'high' ? 'danger' : 'interaction',
+                      title: risk.levelLabel + ' · ' + (prim.name || '命令待审'),
+                      detail: String(prim.destructive_impact || prim.root_cause || '请人工确认').slice(0, 120)
+                    });
+                  } else {
+                    logToGUI('ASK', '待审: ' + cmd.slice(0, 120), 'tag-warn');
+                  }
                 }
               }
             } catch (e) {}
@@ -1888,6 +983,217 @@ const MIME = {
   '.js': 'application/javascript; charset=utf-8'
 };
 
+// 将 danger-rules 正则编译为 Antigravity 官方 permission 资源（仅 target，禁止再包 command()）
+// 副驾策略：高危正则默认注入 Ask（永远询问），不写死 Deny
+// 语义：regex: 单 token = 整行 ^(?:…)$；用 .*(?:pat).* 还原 test() 部分匹配
+// （逻辑与 scripts/rule-compile.cjs 保持一致，内联以免打包缺文件）
+function compileJsPatternToOfficialTarget(jsPattern) {
+  let p = String(jsPattern == null ? '' : jsPattern);
+  if (!p) return '';
+  p = p.replace(/([^\\]|^)\s+/g, (m, pre) => pre + '\\s+');
+  p = p.replace(/^\s+/, '\\s+');
+  return 'regex:.*(?:' + p + ').*';
+}
+
+function compileDangerRulesToOfficialTargets() {
+  return getActiveDangerPatterns().map(p => compileJsPatternToOfficialTarget(p.pattern));
+}
+
+function findAntigravityPermissionFiles() {
+  const home = os.homedir();
+  const candidates = [path.join(home, '.gemini', 'config', 'config.json')];
+  const projectsDir = path.join(home, '.gemini', 'config', 'projects');
+  if (fs.existsSync(projectsDir)) {
+    for (const f of fs.readdirSync(projectsDir)) {
+      if (f.endsWith('.json')) candidates.push(path.join(projectsDir, f));
+    }
+  }
+  return candidates.filter(p => fs.existsSync(p));
+}
+
+function getGlobalConfigPath() {
+  return path.join(os.homedir(), '.gemini', 'config', 'config.json');
+}
+
+// EasyAG 注入清单：只回滚我们写入的条目，不动用户自己的 grant
+const INJECTED_FILE = () => path.join(DATA_DIR, 'injected-ask.json');
+
+function readInjectedManifest() {
+  try {
+    return JSON.parse(fs.readFileSync(INJECTED_FILE(), 'utf-8'));
+  } catch (e) {
+    return { resources: [], savedGlobal: null };
+  }
+}
+function writeInjectedManifest(m) {
+  fs.writeFileSync(INJECTED_FILE(), JSON.stringify(m, null, 2), 'utf-8');
+}
+
+function stripDoubleWrap(s) {
+  if (typeof s !== 'string') return s;
+  if (s.startsWith('command(command(') && s.endsWith('))')) {
+    return 'command(' + s.slice('command(command('.length, -2) + ')';
+  }
+  return s;
+}
+
+function injectRulesIntoConfig(obj, targets, listName) {
+  // listName: 'ask' | 'deny' | 'allow'
+  let changed = false;
+  const uniq = Array.from(new Set(targets));
+  const cleaned = uniq.map(t => t.replace(/^command\((.*)\)$/s, '$1'));
+  const resources = cleaned.map(c => 'command(' + c + ')');
+
+  function ensureList(host) {
+    if (!host || typeof host !== 'object') return null;
+    const isPermHost = host.allow !== undefined || host.ask !== undefined || host.deny !== undefined;
+    if (!isPermHost && !Array.isArray(host[listName])) return null;
+    if (!Array.isArray(host[listName])) host[listName] = [];
+    return host[listName];
+  }
+
+  function mergeInto(host) {
+    const list = ensureList(host);
+    if (!list) return;
+    for (let i = 0; i < list.length; i++) {
+      const fixed = stripDoubleWrap(list[i]);
+      if (fixed !== list[i]) {
+        list[i] = fixed;
+        changed = true;
+      }
+    }
+    for (const r of resources) {
+      if (!list.includes(r)) {
+        list.push(r);
+        changed = true;
+      }
+    }
+  }
+
+  if (obj && obj.userSettings && obj.userSettings.globalPermissionGrants) {
+    mergeInto(obj.userSettings.globalPermissionGrants);
+  }
+  if (obj && obj.permissionGrants) {
+    if (obj.permissionGrants.permissionGrants) mergeInto(obj.permissionGrants.permissionGrants);
+    else mergeInto(obj.permissionGrants);
+  }
+  return changed;
+}
+
+/**
+ * 把 danger-rules 注入官方 ASK。默认只写**全局**（所有项目生效）。
+ * 写入的 resource 记入 injected-ask.json，便于退出时精确回滚。
+ */
+function syncDangerRulesToAntigravity(listName = 'ask', scope = 'global') {
+  loadDangerRules();
+  const targets = compileDangerRulesToOfficialTargets();
+  if (!targets.length) return { ok: false, error: '没有可用的高危规则' };
+  const resources = targets.map(t => {
+    const cleaned = t.replace(/^command\((.*)\)$/s, '$1');
+    return 'command(' + cleaned + ')';
+  });
+
+  const files = scope === 'all'
+    ? findAntigravityPermissionFiles()
+    : [getGlobalConfigPath()].filter(p => fs.existsSync(p));
+
+  const updated = [];
+  for (const file of files) {
+    try {
+      const raw = fs.readFileSync(file, 'utf-8');
+      const obj = JSON.parse(raw);
+      if (injectRulesIntoConfig(obj, targets, listName)) {
+        fs.writeFileSync(file, JSON.stringify(obj, null, 2));
+        updated.push(file);
+      }
+    } catch (e) {}
+  }
+
+  // 登记清单（合并历史，去重）
+  const manifest = readInjectedManifest();
+  manifest.list = listName;
+  manifest.scope = scope;
+  manifest.resources = Array.from(new Set([...(manifest.resources || []), ...resources]));
+  manifest.at = new Date().toISOString();
+  if (!manifest.savedGlobal) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8'));
+      const us = cfg.userSettings || {};
+      manifest.savedGlobal = {
+        autoExecutionPolicy: us.autoExecutionPolicy,
+        nonWorkspaceFileAccessPolicy: us.nonWorkspaceFileAccessPolicy,
+        fileAccessPolicy: us.fileAccessPolicy,
+        enableTerminalSandbox: us.enableTerminalSandbox
+      };
+    } catch (e) {}
+  }
+
+  // 副驾组合：Turbo（自动放行）+ ASK（高危必停）
+  try {
+    const file = getGlobalConfigPath();
+    const cfg = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    cfg.userSettings = cfg.userSettings || {};
+    cfg.userSettings.autoExecutionPolicy = 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER';
+    cfg.userSettings.nonWorkspaceFileAccessPolicy = 'AGENT_SETTING_POLICY_ALLOW';
+    cfg.userSettings.fileAccessPolicy = 'AGENT_SETTING_POLICY_ALLOW';
+    fs.writeFileSync(file, JSON.stringify(cfg, null, 2), 'utf-8');
+    manifest.turboApplied = true;
+  } catch (e) {}
+
+  writeInjectedManifest(manifest);
+
+  return {
+    ok: true,
+    count: resources.length,
+    files: updated,
+    sample: resources.slice(0, 3),
+    list: listName,
+    scope,
+    turbo: manifest.turboApplied !== false
+  };
+}
+
+/** 退出清理：只移除 EasyAG 写入的 ASK，并恢复注入前的全局策略 */
+function cleanupInjectedAsk() {
+  const manifest = readInjectedManifest();
+  const resources = manifest.resources || [];
+  if (!resources.length) {
+    try { fs.unlinkSync(INJECTED_FILE()); } catch (e) {}
+    return { ok: true, removed: 0, restored: false };
+  }
+  let removed = 0;
+  try {
+    const file = getGlobalConfigPath();
+    const obj = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    const host = obj.userSettings && obj.userSettings.globalPermissionGrants;
+    if (host && Array.isArray(host.ask)) {
+      const before = host.ask.length;
+      host.ask = host.ask.filter(x => !resources.includes(x));
+      removed = before - host.ask.length;
+      // 顺带清历史双重包裹
+      host.ask = host.ask.map(stripDoubleWrap);
+      fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf-8');
+    }
+  } catch (e) {}
+
+  let restored = false;
+  if (manifest.savedGlobal) {
+    try {
+      const file = getGlobalConfigPath();
+      const obj = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      obj.userSettings = obj.userSettings || {};
+      for (const k of ['autoExecutionPolicy', 'nonWorkspaceFileAccessPolicy', 'fileAccessPolicy', 'enableTerminalSandbox']) {
+        if (manifest.savedGlobal[k] !== undefined) obj.userSettings[k] = manifest.savedGlobal[k];
+      }
+      fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf-8');
+      restored = true;
+    } catch (e) {}
+  }
+
+  try { fs.unlinkSync(INJECTED_FILE()); } catch (e) {}
+  return { ok: true, removed, restored };
+}
+
 const server = http.createServer((req, res) => {
   if (req.url === '/' || (req.url && req.url.startsWith('/?'))) {
     res.writeHead(200, {
@@ -1918,6 +1224,143 @@ const server = http.createServer((req, res) => {
       total: state.dangerRulesTotal
     }));
   }
+  if (req.url === '/api/kb' && req.method === 'GET') {
+    return res.end(JSON.stringify({
+      count: agentGuardRules.length,
+      rules: agentGuardRules.map(r => ({
+        id: r.id,
+        name: r.name,
+        severity: r.severity,
+        category: r.category,
+        root_cause: r.root_cause,
+        destructive_impact: r.destructive_impact,
+        safe_alternative: r.safe_alternative
+      }))
+    }));
+  }
+  if (req.url === '/api/injected' && req.method === 'GET') {
+    const m = readInjectedManifest();
+    return res.end(JSON.stringify({
+      count: (m.resources || []).length,
+      list: m.list || 'ask',
+      scope: m.scope || 'global',
+      at: m.at || null,
+      resources: (m.resources || []).map(s => s.slice(0, 120))
+    }));
+  }
+  // 全局 Turbo Pilot：Turbo + ASK + Hooks
+  if (req.url === '/api/pilot/global' && req.method === 'POST') {
+    try {
+      const result = syncDangerRulesToAntigravity('ask', 'global');
+      if (!result.ok) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify(result));
+      }
+      /* Hooks 默认不安装（会卡住 AG 命令闸门）；需要时手动 install-hooks.cjs */
+      logToGUI('SECURITY', `全局 Turbo Pilot：${result.count} 条 ASK + Turbo 已就绪`, 'tag-proxy');
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify(Object.assign({ ok: true }, result)));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ ok: false, error: String(e.message || e) }));
+    }
+  }
+  // 仅当前项目：项目级 ASK + 项目 Turbo
+  if (req.url === '/api/pilot/project' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const key = data.project || data.id || 'EasyAntigravity';
+        const targets = compileDangerRulesToOfficialTargets();
+        const resources = targets.map(t => {
+          const cleaned = t.replace(/^command\((.*)\)$/s, '$1');
+          return 'command(' + cleaned + ')';
+        });
+        // 定位项目文件
+        const projectsDir = path.join(os.homedir(), '.gemini', 'config', 'projects');
+        let projectFile = null;
+        if (fs.existsSync(projectsDir)) {
+          for (const f of fs.readdirSync(projectsDir).filter(x => x.endsWith('.json'))) {
+            try {
+              const obj = JSON.parse(fs.readFileSync(path.join(projectsDir, f), 'utf-8'));
+              if (obj.id === key || obj.name === key) {
+                projectFile = path.join(projectsDir, f);
+                obj.settings = obj.settings || {};
+                obj.settings.autoExecutionPolicy = 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER';
+                obj.settings.fileAccessPolicy = 'AGENT_SETTING_POLICY_ALLOW';
+                obj.settings.nonWorkspaceFileAccessPolicy = 'AGENT_SETTING_POLICY_ALLOW';
+                injectRulesIntoConfig(obj, targets, 'ask');
+                fs.writeFileSync(projectFile, JSON.stringify(obj, null, 2), 'utf-8');
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+        if (!projectFile) {
+          res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ ok: false, error: 'project not found: ' + key }));
+        }
+        /* Hooks 默认不安装（会卡住 AG 命令闸门）；需要时手动 install-hooks.cjs */
+        logToGUI('SECURITY', `项目「${key}」已配置 Turbo + ASK ${resources.length} 条`, 'tag-proxy');
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ ok: true, count: resources.length, project: key, file: projectFile }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ ok: false, error: String(e.message || e) }));
+      }
+    });
+    return;
+  }
+  if (req.url === '/api/agent-event' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        if (data.type === 'stop') {
+          handleAgentStop(data.terminationReason, data.fullyIdle);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: true }));
+        }
+        if (data.type === 'pre_tool') {
+          const cmd = String(data.command || '');
+          const risk = assessCommandRisk(cmd);
+          // 副驾策略：命中风险 → force_ask（Turbo 下也停下问人）；干净命令放行
+          let decision = 'allow';
+          if (risk) {
+            decision = 'force_ask';
+            const lvCls = risk.level === 'high' ? 'tag-alert' : risk.level === 'medium' ? 'tag-warn' : 'tag-i18n';
+            logToGUI('RISK', `[${risk.levelLabel}] ${cmd.slice(0, 100)}`, lvCls);
+            if (risk.danger && risk.danger.length) {
+              logToGUI('RISK', '规则: ' + risk.danger.map(x => x.id + '(' + x.severity + ')').join(', '), 'tag-warn');
+            }
+            const p = risk.primary || {};
+            if (p.root_cause) logToGUI('RISK', '病理: ' + String(p.root_cause).slice(0, 160), 'tag-warn');
+            if (p.destructive_impact) logToGUI('RISK', '后果: ' + String(p.destructive_impact).slice(0, 160), 'tag-warn');
+            if (p.safe_alternative) logToGUI('RISK', '替代: ' + String(p.safe_alternative).slice(0, 160), 'tag-proxy');
+            state.riskHits += 1;
+            pushCounters();
+            sendResident({
+              cmd: 'show_capsule',
+              type: risk.level === 'high' ? 'danger' : 'interaction',
+              title: risk.levelLabel + ' · ' + (p.name || '命令待审'),
+              detail: String(p.destructive_impact || p.root_cause || '请人工确认后再放行').slice(0, 120)
+            });
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: true, decision, risk }));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false }));
+      }
+    });
+    return;
+  }
   if (req.url === '/api/danger-rules/reload' && req.method === 'POST') {
     loadDangerRules();
     pushDangerRules();
@@ -1946,6 +1389,45 @@ const server = http.createServer((req, res) => {
       editor.unref();
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ ok: true, path: RULES_FILE }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ ok: false, error: String(e.message || e) }));
+    }
+  }
+  if (req.url === '/api/danger-rules/sync' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        let listName = 'ask';
+        let scope = 'global';
+        try {
+          const data = JSON.parse(body || '{}');
+          if (data.list === 'deny' || data.list === 'ask' || data.list === 'allow') listName = data.list;
+          if (data.scope === 'global' || data.scope === 'all') scope = data.scope;
+        } catch (_) {}
+        const result = syncDangerRulesToAntigravity(listName, scope);
+        if (!result.ok) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify(result));
+        }
+        logToGUI('SECURITY', `已注入 ${result.count} 条高危 ${listName.toUpperCase()}（${scope === 'global' ? '全局' : '全局+项目'}，${result.files.length} 个文件）`, 'tag-proxy');
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify(result));
+      } catch (e) {
+        logToGUI('SECURITY', '注入 ASK 异常: ' + (e && e.message ? e.message : e), 'tag-alert');
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ ok: false, error: String(e.message || e) }));
+      }
+    });
+    return;
+  }
+  if (req.url === '/api/danger-rules/cleanup' && req.method === 'POST') {
+    try {
+      const result = cleanupInjectedAsk();
+      logToGUI('SECURITY', `已清理 EasyAG 注入的 ASK ${result.removed} 条${result.restored ? '，策略已恢复' : ''}`, 'tag-proxy');
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify(result));
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ ok: false, error: String(e.message || e) }));
@@ -1983,7 +1465,10 @@ const server = http.createServer((req, res) => {
         } catch (e) {}
       }
     }
-    return res.end(JSON.stringify(state));
+    return res.end(JSON.stringify(Object.assign({}, state, {
+      kbRules: agentGuardRules.length,
+      injectedCount: (readInjectedManifest().resources || []).length
+    })));
   }
   if (req.url && req.url.startsWith('/api/logs') && req.method === 'GET') {
     const params = new URL(req.url, `http://127.0.0.1:${GUI_PORT}`).searchParams;
@@ -2025,30 +1510,18 @@ const server = http.createServer((req, res) => {
           }
         }
 
-        const prevAutoAccept = state.autoAccept;
         const prevBlockDangerous = state.blockDangerous;
         const prevI18n = state.enableI18n;
-        const prevPreferOption = state.preferOption;
 
-        if (typeof data.autoAccept === 'boolean') state.autoAccept = data.autoAccept;
         if (typeof data.blockDangerous === 'boolean') state.blockDangerous = data.blockDangerous;
         if (typeof data.enableI18n === 'boolean') state.enableI18n = data.enableI18n;
-        if (typeof data.debugApproval === 'boolean') state.debugApproval = data.debugApproval;
-        if (data.preferOption) state.preferOption = data.preferOption;
-        fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ port: state.port, autoAccept: state.autoAccept, blockDangerous: state.blockDangerous, preferOption: state.preferOption, enableI18n: state.enableI18n, debugApproval: state.debugApproval }, null, 2));
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ port: state.port, blockDangerous: state.blockDangerous, enableI18n: state.enableI18n }, null, 2));
 
-        if (typeof data.autoAccept === 'boolean' && data.autoAccept !== prevAutoAccept) {
-          logToGUI('SYSTEM', state.autoAccept ? '自动审批已开启' : '自动审批已停用', 'tag-proxy');
-        }
         if (typeof data.blockDangerous === 'boolean' && data.blockDangerous !== prevBlockDangerous) {
-          logToGUI('SECURITY', state.blockDangerous ? '高危指令熔断已开启' : '高危指令熔断已停用', 'tag-proxy');
+          logToGUI('SECURITY', state.blockDangerous ? '高危指令监控已开启' : '高危指令监控已停用', 'tag-proxy');
         }
         if (typeof data.enableI18n === 'boolean' && data.enableI18n !== prevI18n) {
           logToGUI('I18N', state.enableI18n ? '汉化引擎已启用' : '汉化引擎已停用，已还原原生英文界面', 'tag-i18n');
-        }
-        if (data.preferOption && data.preferOption !== prevPreferOption) {
-          const optNames = ['仅允许本次', '对话中始终允许', '项目中始终允许', '全局始终允许'];
-          logToGUI('SYSTEM', `首选审批选项已设置为: 选项[${state.preferOption}] ${optNames[state.preferOption - 1] || ''}`, 'tag-proxy');
         }
 
         broadcastConfig();
@@ -2133,6 +1606,106 @@ const server = http.createServer((req, res) => {
 
 loadDictionaries();
 loadDangerRules();
+loadAgentGuardSignatures();
+
+// ── 官方 Hooks：Stop（任务完成）+ PreToolUse（危险命令） ──
+function installStopHook() {
+  try {
+    const nodeBin = process.execPath;
+    const hooksDir = path.join(os.homedir(), '.gemini', 'config');
+    const hooksPath = path.join(hooksDir, 'hooks.json');
+    try { fs.writeFileSync(path.join(DATA_DIR, 'gui-port.txt'), String(server.address() ? server.address().port : GUI_PORT), 'utf8'); } catch (e) {}
+
+    const scripts = [
+      { src: 'easyag-stop-hook.cjs', name: 'easyag-stop-hook.cjs' },
+      { src: 'easyag-pretool-hook.cjs', name: 'easyag-pretool-hook.cjs' }
+    ];
+    const installed = {};
+    for (const s of scripts) {
+      const src = path.join(ROOT_DIR, 'scripts', s.src);
+      const dst = path.join(DATA_DIR, s.name);
+      if (fs.existsSync(src)) fs.copyFileSync(src, dst);
+      installed[s.name] = dst;
+    }
+
+    let hooks = {};
+    try { hooks = JSON.parse(fs.readFileSync(hooksPath, 'utf8')); } catch (e) {}
+
+    if (installed['easyag-stop-hook.cjs']) {
+      hooks['easyag-task-done'] = {
+        enabled: true,
+        Stop: [{
+          type: 'command',
+          command: '"' + nodeBin + '" "' + installed['easyag-stop-hook.cjs'] + '"',
+          timeout: 5
+        }]
+      };
+    }
+    if (installed['easyag-pretool-hook.cjs']) {
+      hooks['easyag-danger-gate'] = {
+        enabled: true,
+        PreToolUse: [{
+          matcher: 'run_command',
+          hooks: [{
+            type: 'command',
+            command: '"' + nodeBin + '" "' + installed['easyag-pretool-hook.cjs'] + '"',
+            timeout: 5
+          }]
+        }]
+      };
+    }
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(hooksPath, JSON.stringify(hooks, null, 2), 'utf8');
+    logToGUI('SYSTEM', '已安装官方 Hooks：Stop（任务完成）+ PreToolUse（危险门禁）', 'tag-proxy');
+    return { ok: true, hooksPath };
+  } catch (e) {
+    logToGUI('SYSTEM', 'Hook 安装失败: ' + e.message, 'tag-warn');
+    return { ok: false, error: String(e.message || e) };
+  }
+}
+
+// 标记：Stop Hook 已上报过近期结束，抑制 CDP 路径重复弹
+let lastAgentStopAt = 0;
+function handleAgentStop(reason, fullyIdle) {
+  lastAgentStopAt = Date.now();
+  if (fullyIdle === false) {
+    logToGUI('TASK', '执行环停止，但后台任务仍在运行', 'tag-warn');
+    sendResident({
+      cmd: 'show_capsule',
+      type: 'interaction',
+      title: '等待后台任务',
+      detail: 'Agent 已停，但仍有后台命令在跑。'
+    });
+    return;
+  }
+  logToGUI('TASK', '本轮任务完成（' + (reason || 'stop') + '）', 'tag-proxy');
+  sendResident({
+    cmd: 'show_capsule',
+    type: 'ready',
+    title: '任务完成',
+    detail: reason === 'error' ? '异常终止，请检查日志。' : 'Agent 已空闲，结果可检视或开始下一轮。'
+  });
+  sendResident({
+    cmd: 'show_capsule',
+    type: 'ready',
+    title: '任务完成',
+    detail: reason === 'error' ? '异常终止，请检查日志。' : 'Agent 已空闲，结果可检视或开始下一轮。'
+  });
+}
+
+// 首次启动：把高危正则注入**全局** Ask（所有项目生效，Turbo 下仍会询问）
+try {
+  const flag = path.join(DATA_DIR, 'ask-injected.flag');
+  const manifest = readInjectedManifest();
+  const already = (manifest.resources || []).length > 0;
+  if (!fs.existsSync(flag) && !already) {
+    const r = syncDangerRulesToAntigravity('ask', 'global');
+    if (r && r.ok) {
+      fs.writeFileSync(flag, new Date().toISOString());
+      logToGUI('SECURITY', `首次启动：已向全局注入 ${r.count} 条高危 ASK（退出时自动清理）`, 'tag-proxy');
+    }
+  }
+} catch (e) {}
 
 async function tryAttachExistingClient() {
   try {
@@ -2189,9 +1762,12 @@ server.listen(GUI_PORT, '127.0.0.1', () => {
   if (!TAURI_MODE) try { fs.writeFileSync(LOCK_FILE, String(process.pid), 'utf-8'); } catch (e) {}
   cleanupLegacyDll();
   initResidentHelper();
+  const boundPort = server.address().port;
+  try { fs.writeFileSync(path.join(DATA_DIR, 'gui-port.txt'), String(boundPort), 'utf8'); } catch (e) {}
+  /* Hooks 默认不安装（会卡住 AG 命令闸门）；需要时手动 install-hooks.cjs */
   logToGUI('SECURITY', `高危规则已加载: ${state.dangerRulesOn}/${state.dangerRulesTotal} 条生效`, 'tag-proxy');
   if (TAURI_MODE) {
-    const ready = { port: server.address().port, pid: process.pid };
+    const ready = { port: boundPort, pid: process.pid };
     const readyFile = normalizePath(process.env.EASYAG_READY_FILE);
     if (readyFile) fs.writeFileSync(readyFile, JSON.stringify(ready));
   } else openGuiWindow();

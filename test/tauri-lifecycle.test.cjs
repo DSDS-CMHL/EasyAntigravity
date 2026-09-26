@@ -41,7 +41,6 @@ async function stop(child, eof = false) {
     let app = await start(data); child = app.child;
     let status = await (await fetch(app.url + '/api/status')).json();
     assert.ok(status.dictEntries > 3000);
-    assert.equal(status.preferOption, 1);
     assert.equal(status.blockDangerous, true);
     const html = await (await fetch(app.url)).text();
     assert.ok(!html.includes('sendBeacon'));
@@ -51,11 +50,11 @@ async function stop(child, eof = false) {
     // Exceed the old 30 second deadline without any page polling or SSE connection.
     await delay(32000);
     assert.equal(child.exitCode, null, 'Background / disconnected UI must not stop backend');
-    await fetch(app.url + '/api/config', { method: 'POST', body: JSON.stringify({ port: 7897, autoAccept: false }) });
+    await fetch(app.url + '/api/config', { method: 'POST', body: JSON.stringify({ port: 7897, enableI18n: false }) });
     await stop(child);
     app = await start(data); child = app.child;
     status = await (await fetch(app.url + '/api/status')).json();
-    assert.equal(status.port, 7897); assert.equal(status.autoAccept, false);
+    assert.equal(status.port, 7897); assert.equal(status.enableI18n, false);
     assert.ok(fs.existsSync(path.join(data, 'danger-rules.json')));
     await stop(child, true);
     assert.ok(fs.readFileSync(path.join(data, 'easyag.log'), 'utf8').includes('原生宿主管道关闭'));

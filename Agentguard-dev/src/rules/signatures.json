@@ -1,0 +1,2811 @@
+{
+  "$schema": "https://agentguard.dev/schema/eas-v1.json",
+  "version": "2.0.0",
+  "updated_at": "2026-09-26T05:15:50.324Z",
+  "rules": [
+    {
+      "id": "EAS-001",
+      "name": "WIN-QUOTE-COLLAPSE (Windows 嵌套引号切词塌陷漏洞)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "(?:Start-Process|cmd(?:\\.exe)?)[\\s\\S]*?(?:/c\\s+(?:rd|rmdir)\\s+/s|[\"']{3,}|/c\\s+\"\\s*rd)",
+      "flags": "i",
+      "root_cause": "PowerShell 嵌套调用 cmd.exe 时多重双引号在 Win32 CommandLineToArgvW 规则下发生折叠，导致目标路径被 cmd.exe 误拆为孤立的反斜杠「\\」，在 Windows cmd 下孤立反斜杠代表当前盘符根目录。",
+      "destructive_impact": "系统将以管理员或当前提权身份执行「rd /s /q C:\\」，不可逆静默粉碎整个系统盘的所有文件与目录！",
+      "safe_alternative": "严禁使用 cmd.exe 嵌套外部删除。请直接改用原生 PowerShell 指令：Remove-Item -Path \"<target>\" -Recurse -Force。"
+    },
+    {
+      "id": "EAS-002",
+      "name": "SH-UNBOUND-VAR-ROOT (Shell 空变量未声明退化清空根目录)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "linux",
+        "darwin"
+      ],
+      "category": "unbound_variable_expansion",
+      "pattern": "\\brm\\s+(?:-[a-zA-Z]*[rf][a-zA-Z]*\\s+)?(?:\\$\\{?[a-zA-Z_][a-zA-Z0-9_]*\\}?/|\\$\\{?[a-zA-Z_][a-zA-Z0-9_]*\\}?/\\*)",
+      "flags": "i",
+      "root_cause": "在 bash/sh 中直接引用未初始化或拼写错误的变量（如 $DIR/ 或 ${CACHE}/*），若变量为空串，将被解释器瞬间展开为「rm -rf /」或「rm -rf /*」。",
+      "destructive_impact": "操作系统根目录所有关键系统文件被强制物理清除，导致整机崩溃并永久丢失数据。",
+      "safe_alternative": "必须使用参数扩展断言语法：rm -rf \"${TARGET_DIR:?Target variable not set}/\"，或先检查 [ -n \"$TARGET_DIR\" ] 再执行。"
+    },
+    {
+      "id": "EAS-003",
+      "name": "GIT-DESTRUCTIVE-WIPE (Git 破坏性硬重置抹除未暂存成果)",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "destructive_filesystem",
+      "pattern": "\\bgit\\s+(?:reset\\s+--hard|clean\\s+-[a-zA-Z]*[fxd][a-zA-Z]*)",
+      "flags": "i",
+      "root_cause": "AI Agent 在遇到代码冲突或执行报错时，常盲目尝试使用 git reset --hard HEAD 或 git clean -fdx 恢复环境，该操作直接丢弃工作区中所有尚未 commit 的代码。",
+      "destructive_impact": "开发者数小时甚至数天的最新编码心血瞬间蒸发，且无法通过 git reflog 找回。",
+      "safe_alternative": "请优先使用安全的非破坏性方案：git stash push -m \"agentguard-backup\"，或者先执行 git clean -n 预览待删文件。"
+    },
+    {
+      "id": "EAS-004",
+      "name": "DOS-RESERVED-DEADLOCK (Windows DOS 设备保留字死锁)",
+      "severity": "MEDIUM",
+      "platforms": [
+        "windows"
+      ],
+      "category": "reserved_device_deadlock",
+      "pattern": "\\b(?:New-Item|mkdir|touch|echo[\\s\\S]*?>|Set-Content)[\\s\\S]*?\\b(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\.[a-zA-Z0-9]+)?(?=[\\s\"'`;]|$)",
+      "flags": "i",
+      "root_cause": "Windows 保留了源自 MS-DOS 时代的特殊物理设备名（如 CON, AUX, NUL, PRN）。当程序试图在文件系统中创建同名文件或目录时，Win32 文件系统将尝试与设备通信导致挂起或损坏文件树。",
+      "destructive_impact": "导致当前命令行进程卡死、资源句柄死锁，生成的幽灵文件在资源管理器中无法正常删除或重命名。",
+      "safe_alternative": "避免使用 DOS 保留字。请为文件命名前后增加有意义的业务前缀，如：console_output.txt、auxiliary_data.json。"
+    },
+    {
+      "id": "EAS-005",
+      "name": "SH-FIND-DELETE-GLOB (Find 通配符展开陷阱全目录误删)",
+      "severity": "HIGH",
+      "platforms": [
+        "linux",
+        "darwin"
+      ],
+      "category": "wildcard_expansion_danger",
+      "pattern": "\\bfind\\s+[^\"']+\\s+-name\\s+[^*\"']+\\*[^*\"']*\\s+-delete",
+      "flags": "i",
+      "root_cause": "使用 find 命令结合 -delete 时，如果 -name 后面的通配符（如 *.log）没有用引号包裹，Shell 会在 find 执行前在当前目录提前展开通配符，导致 find 参数错位并抹去整个当前目录。",
+      "destructive_impact": "导致当前工作目录或指定目录下的全部文件被直接静默删除，引发灾难性代码丢失。",
+      "safe_alternative": "必须对所有通配符表达式进行严格引号转义：find . -name \"*.log\" -delete。"
+    },
+    {
+      "id": "EAS-006",
+      "name": "WIN-DEL-PATH-SPACE (Windows Del 路径空格未加引号整盘删除)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "\\b(?:del|erase)\\s+(?:/[a-zA-Z]\\s+)*[a-zA-Z]:\\\\[^\"'\\s]+\\s+[^\"'\\s]+\\*",
+      "flags": "i",
+      "root_cause": "Windows cmd.exe 中，如果路径包含空格（例如 C:\\Program Files\\...）而未用双引号包裹，del 命令会将空格后的部分拆成独立的参数，若后半截为通配符，会直接对当前执行目录实施全量删除。",
+      "destructive_impact": "误将当前根目录或工作目录内的所有文件全数清除。",
+      "safe_alternative": "Windows 路径包含空格时必须使用完整成对双引号：del /f /q \"C:\\Program Files\\target\\*\"。"
+    },
+    {
+      "id": "EAS-007",
+      "name": "SH-CHMOD-ROOT-777 (全盘递归滥用 777 破坏系统鉴权)",
+      "severity": "HIGH",
+      "platforms": [
+        "linux",
+        "darwin"
+      ],
+      "category": "permission_destruction",
+      "pattern": "\\b(?:chmod|chown)\\s+(?:-[a-zA-Z]*[R][a-zA-Z]*\\s+)?(?:777|a\\+rwx)\\s+/(?:$|\\s|\\*)",
+      "flags": "i",
+      "root_cause": "AI 遇到权限受限（Permission Denied）报错时，常病急乱投医执行 chmod -R 777 /。该操作会破坏 Linux /etc/shadow、/etc/sudoers、~/.ssh 等关键安全元数据。",
+      "destructive_impact": "导致操作系统安全子系统（PAM/Sudo/SSHD）拒绝加载，整台服务器无法远程登录或启动。",
+      "safe_alternative": "仅对项目工作区内部必要文件赋予最小必要权限：chmod 755 ./build.sh 或 chmod -R u+rw ./dist。"
+    },
+    {
+      "id": "EAS-008",
+      "name": "DD-RAW-DISK-OVERWRITE (DD 写入破坏裸磁盘引导分区)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "linux",
+        "darwin"
+      ],
+      "category": "disk_partition_wipe",
+      "pattern": "\\bdd\\s+[\\s\\S]*?of=(?:/dev/(?:sd[a-z]|nvme[0-9]|hd[a-z])|\\\\\\\\\\.\\\\PhysicalDrive)",
+      "flags": "i",
+      "root_cause": "直接使用 dd 命令将二进制流或镜像写入物理磁盘设备（/dev/sdX 或 Windows PhysicalDrive）。",
+      "destructive_impact": "在几毫秒内彻底擦除磁盘 MBR/GPT 分区表和引导记录，整块硬盘数据永久丢失不可恢复。",
+      "safe_alternative": "在 AI 辅助开发中严禁对裸盘设备执行 dd of 写入。如需制作镜像，请在经过确认的安全沙箱或虚拟盘中进行。"
+    },
+    {
+      "id": "EAS-009",
+      "name": "DISK-PARTITION-WIPE (磁盘与文件系统直接格式化抹除)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "all"
+      ],
+      "category": "disk_partition_wipe",
+      "pattern": "\\b(?:format\\s+[a-zA-Z]:|mkfs(?:\\.[a-z0-9]+)?\\s+|wipefs\\s+|diskpart\\b)",
+      "flags": "i",
+      "root_cause": "直接调用操作系统磁盘格式化指令或卷管理工具对驱动器进行重新划分与抹除。",
+      "destructive_impact": "文件系统全部元数据与存储数据彻底清空，系统分区或数据分区完全无法访问。",
+      "safe_alternative": "编码开发环境中严禁调用磁盘格式化命令。如果需要清理临时目录，请精确定位至项目内部缓存文件夹并执行逻辑删除。"
+    },
+    {
+      "id": "EAS-010",
+      "name": "SQL-UNBOUND-DROP (未受控的 DROP 数据库与表全量抹除)",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "database_wipe",
+      "pattern": "\\bDROP\\s+(?:DATABASE|SCHEMA)\\s+([a-zA-Z0-9_`\"']+)",
+      "flags": "i",
+      "root_cause": "在执行数据库迁移或测试脚本初始化时，直接执行 DROP DATABASE 语句清空整库。",
+      "destructive_impact": "测试或生产环境数据库全量数据在瞬间灰飞烟灭，无事务可供回滚。",
+      "safe_alternative": "严禁直接 DROP 数据库。请采用安全数据迁移流程（如 Prisma Migrate / Flyway）或在开发测试时对数据库进行快照备份。"
+    },
+    {
+      "id": "EAS-011",
+      "name": "PROCESS-FORK-BOMB (进程树炸弹无限自复制耗尽死机)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "all"
+      ],
+      "category": "process_exhaustion",
+      "pattern": "(?::\\(\\)\\s*\\{\\s*:\\|:&\\s*\\};:|while\\s*\\(\\s*\\$true\\s*\\)\\s*\\{\\s*Start-Process|while\\s*true;\\s*do\\s*.*&\\s*done)",
+      "flags": "i",
+      "root_cause": "编写了无终止条件的子进程自复制逻辑或 Fork Bomb，导致操作系统在短时间内创建数十万个进程。",
+      "destructive_impact": "系统 PID 和内存资源池瞬间耗尽，CPU 占满 100%，系统完全瘫痪只能硬重启电源。",
+      "safe_alternative": "编写并发任务时必须使用受限的 Worker 池（如 p-limit、xargs -P 4），并设置明确的退出条件与最大并发数量。"
+    },
+    {
+      "id": "EAS-012",
+      "name": "SECRET-EXFILTRATION (未授权凭证与环境变量泄露传输)",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "secret_exfiltration",
+      "pattern": "(?:curl|wget|Invoke-WebRequest)[\\s\\S]*?(?:--data|-d)[\\s\\S]*?@(?:\\.env|id_rsa|credentials)",
+      "flags": "i",
+      "root_cause": "命令中试图通过网络请求直接将包含敏感凭据的文件（.env、SSH 私钥、云厂商密钥）作为载荷上传至外部网址。",
+      "destructive_impact": "可能导致 API Key、生产数据库密码或企业私有凭据泄漏，引发严重数据外泄风险。",
+      "safe_alternative": "绝不能将凭据原文件直接挂载传输。如需测试接口，请使用脱敏后的假数据（Mock Data）。"
+    },
+    {
+      "id": "EAS-013",
+      "name": "SUDOERS-BLIND-INJECT (Sudoers 盲目注入破坏提权机制)",
+      "severity": "HIGH",
+      "platforms": [
+        "linux",
+        "darwin"
+      ],
+      "category": "privilege_escalation",
+      "pattern": ">>\\s*/etc/sudoers",
+      "flags": "i",
+      "root_cause": "直接使用重定向符号 >> 向 /etc/sudoers 追加配置，若存在微小的语法错误，sudo 子系统将直接死锁拒载。",
+      "destructive_impact": "导致当前系统所有的 sudo 权限永久失效，如果 root 账户未设置密码，机器将彻底失去管理员维护能力。",
+      "safe_alternative": "修改提权规则必须使用安全的 visudo 命令进行语法校验，或者在 /etc/sudoers.d/ 目录下创建独立文件并通过 visudo -cf 校验后生效。"
+    },
+    {
+      "id": "EAS-014",
+      "name": "POWERSHELL-IEX-REMOTE (盲目执行远程未受信任脚本)",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "remote_script_execution",
+      "pattern": "(?:powershell|pwsh)[\\s\\S]*?(?:Invoke-Expression|iex)[\\s\\S]*?(?:DownloadString|Net\\.WebClient|irm|iwr)",
+      "flags": "i",
+      "root_cause": "直接从外部 URL 下载未校验的远程脚本并通过 IEX（Invoke-Expression）盲目执行，缺乏签名与代码完整性审计。",
+      "destructive_impact": "一旦远端内容被中间人劫持或更新，将直接导致主机执行未知恶意代码或投毒代码。",
+      "safe_alternative": "请显式分步操作：先将脚本下载至本地临时文件，人工或自动化审计脚本源码后，再行本地显式调用执行。"
+    },
+    {
+      "id": "EAS-015",
+      "name": "DOCKER-PRUNE-ALL-WIPE (Docker 强制全量清空持久卷)",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "container_resource_wipe",
+      "pattern": "\\bdocker\\s+system\\s+prune[\\s\\S]*?(?:-a|--all)[\\s\\S]*?(?:--volumes|-f)",
+      "flags": "i",
+      "root_cause": "使用 docker system prune -a --volumes 极速清理空间，这会一次性抹掉所有非运行中的容器镜像，并直接物理销毁所有关联的 Docker Volume 数据卷。",
+      "destructive_impact": "本地运行的 Postgres、MySQL、Redis 等持久化数据库卷瞬间被物理销毁，开发测试数据永久清空。",
+      "safe_alternative": "仅清理无标签悬空镜像：docker image prune。如果确需清理容器，使用精确指定的 docker container rm <id>。"
+    },
+    {
+      "id": "EAS-016",
+      "name": "FIND-DELETE-WIPE (find -delete 通配符误删)",
+      "severity": "HIGH",
+      "platforms": [
+        "linux",
+        "darwin"
+      ],
+      "category": "wildcard_expansion_danger",
+      "pattern": "\\bfind\\s+[^\\n]*-delete\\b|\\bfind\\s+[^\\n]*-exec\\s+rm\\b",
+      "flags": "i",
+      "root_cause": "find -delete 或 -exec rm 在目录树上递归删除；配合未加引号的 -name 通配符时，Shell 可能提前展开导致路径错位。",
+      "destructive_impact": "工作目录或目标树内文件被批量静默删除，代码与数据难以恢复。",
+      "safe_alternative": "先用 find ... -print 预览，确认后再 -delete；通配符务必加引号：-name \"*.log\"。"
+    },
+    {
+      "id": "EAS-017",
+      "name": "CURL-PIPE-SHELL (下载管道进解释器)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "all"
+      ],
+      "category": "remote_script_execution",
+      "pattern": "\\b(curl|wget)\\b[^|\\n]*\\|\\s*(bash|sh|zsh|pwsh|powershell)\\b",
+      "flags": "i",
+      "root_cause": "从网络下载脚本并直接管道给解释器执行，无完整性校验、无审计。",
+      "destructive_impact": "远端被劫持或投毒时，本机立即执行任意恶意代码。",
+      "safe_alternative": "先下载到本地文件，检查哈希/源码后再显式执行；或改用包管理器锁定版本安装。"
+    },
+    {
+      "id": "EAS-018",
+      "name": "BCD-REG-SC-TAMPER (引导/注册表/服务破坏)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "windows"
+      ],
+      "category": "system_integrity_tamper",
+      "pattern": "\\bbcdedit\\b|\\breg\\s+delete\\s+HKLM\\\\|\\bsc\\s+delete\\s+",
+      "flags": "i",
+      "root_cause": "修改启动配置、删除 HKLM 关键键或删除系统服务，可导致无法开机或安全组件失效。",
+      "destructive_impact": "系统无法启动、安全软件失效、持久化后门被清掉痕迹后仍可能残留。",
+      "safe_alternative": "禁止 agent 直接改引导/服务/敏感注册表；如需排障，导出备份并仅在人工确认下操作。"
+    },
+    {
+      "id": "EAS-019",
+      "name": "NET-USER-BACKDOOR (创建隐藏管理员账号)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "windows"
+      ],
+      "category": "privilege_escalation",
+      "pattern": "\\bnet\\s+user\\s+\\S+\\s+/add|\\bnet\\s+localgroup\\s+administrators\\s+",
+      "flags": "i",
+      "root_cause": "创建新用户并加入 administrators，常被用作持久化后门。",
+      "destructive_impact": "主机出现未授权管理员账号，后续任意持久化与横向移动。",
+      "safe_alternative": "账户变更必须走 IAM/审批流程；agent 不得自行创建管理员账号。"
+    },
+    {
+      "id": "EAS-020",
+      "name": "ROBOCOPY-MIR-WIPE (robocopy /MIR 目标抹除)",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "destructive_filesystem",
+      "pattern": "\\brobocopy\\b[\\s\\S]*/mir\\b",
+      "flags": "i",
+      "root_cause": "/MIR 镜像模式会删除目标中源目录不存在的文件，目标若填反等同于清空重要目录。",
+      "destructive_impact": "目标目录被同步成空/残缺，未备份文件永久丢失。",
+      "safe_alternative": "先用 robocopy /L 预览，或改用 /E 仅复制不镜像；重要数据先备份。"
+    },
+    {
+      "id": "EAS-021",
+      "name": "SSH-CRED-WIPE (凭据与密钥目录破坏)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "all"
+      ],
+      "category": "secret_destruction",
+      "pattern": "\\b(rm|del|Remove-Item)\\b[\\s\\S]*(\\.ssh|id_rsa|id_ed25519|credentials|\\.aws|\\.netrc)",
+      "flags": "i",
+      "root_cause": "删除 SSH 私钥、云凭据或包管理器令牌文件。",
+      "destructive_impact": "无法登录服务器/云账号，或导致流水线集体失效。",
+      "safe_alternative": "禁止删除密钥与凭据目录；清理临时文件请限定在明确的 cache/tmp 路径。"
+    },
+    {
+      "id": "EAS-022",
+      "name": "FORK-BOMB (进程炸弹)",
+      "severity": "HIGH",
+      "platforms": [
+        "linux",
+        "darwin"
+      ],
+      "category": "resource_exhaustion",
+      "pattern": ":\\(\\)\\s*\\{\\s*:\\s*\\|\\s*:\\s*&\\s*\\}\\s*;\\s*:",
+      "flags": "i",
+      "root_cause": "经典 fork 炸弹，无限自我复制进程直至耗尽 PID/内存。",
+      "destructive_impact": "系统假死、需硬重启，未保存工作全部丢失。",
+      "safe_alternative": "严禁运行 fork 炉弹；压测请用受控工具并限制 ulimit。"
+    },
+    {
+      "id": "EAS-023",
+      "name": "CERTUTIL-BITS-SIDeload (系统工具侧载)",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "remote_script_execution",
+      "pattern": "\\bcertutil\\b[\\s\\S]*-urlcache|\\bbitsadmin\\b[\\s\\S]*/transfer",
+      "flags": "i",
+      "root_cause": "利用系统自带 certutil/bitsadmin 下载载荷，常被用于绕过应用白名单。",
+      "destructive_impact": "落地未知可执行文件并可能被后续命令执行。",
+      "safe_alternative": "下载依赖请使用官方源与校验；禁止用系统工具侧载任意 URL。"
+    },
+    {
+      "id": "EAS-024",
+      "name": "GIT-FORCE-REWRITE (强推/硬重置改写历史)",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "destructive_vcs",
+      "pattern": "\\bgit\\s+push\\s+.*(--force|-f)\\b|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*[fxd]",
+      "flags": "i",
+      "root_cause": "force push 覆盖远端分支；reset --hard / clean -fdx 丢弃未提交修改。",
+      "destructive_impact": "团队提交被覆盖、未 commit 代码永久丢失。",
+      "safe_alternative": "用 git push --force-with-lease；reset 前先 stash 或备份分支。"
+    },
+    {
+      "id": "EAS-025",
+      "name": "DISK-DD-MKFS (裸设备写入/重建文件系统)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "linux",
+        "darwin"
+      ],
+      "category": "disk_destruction",
+      "pattern": "\\bdd\\s+.*of=/dev/|\\bmkfs\\b|\\bwipefs\\b",
+      "flags": "i",
+      "root_cause": "向裸设备写入或重建文件系统，等同于物理擦除磁盘。",
+      "destructive_impact": "分区表与全部数据不可恢复销毁。",
+      "safe_alternative": "磁盘操作必须人工在恢复环境执行；agent 一律拒绝。"
+    },
+    {
+      "id": "EAS-026",
+      "name": "CMD-CARET-ESCAPE (cmd 脱字符转义错位)",
+      "severity": "MEDIUM",
+      "platforms": [
+        "windows"
+      ],
+      "category": "shell_escaping",
+      "pattern": "(?:cmd(?:\\.exe)?\\s+/c\\s+)[^\\n]*\\^",
+      "flags": "i",
+      "root_cause": "cmd 用 ^ 转义，和 PowerShell / bash 不是一套。",
+      "destructive_impact": "参数被拆错或命令半截执行，可能误删/误写到意外路径。",
+      "safe_alternative": "避免嵌套 cmd；能用 PowerShell 原生写法就不要拼 cmd 字符串。"
+    },
+    {
+      "id": "EAS-027",
+      "name": "PS-ARRAY-UNROLL (PowerShell 数组摊平)",
+      "severity": "MEDIUM",
+      "platforms": [
+        "windows"
+      ],
+      "category": "logic_quirk",
+      "pattern": "(?:-eq|-ne|-match)\\s+@\\(",
+      "flags": "i",
+      "root_cause": "@() 与比较运算符连用会被摊平，条件结果不是预期的布尔。",
+      "destructive_impact": "判断恒真/恒假后误走危险分支（例如该跳过的删除没跳过）。",
+      "safe_alternative": "用 @(...).Count 或显式 foreach 再判断，不要写 $x -eq @(...)。"
+    },
+    {
+      "id": "EAS-028",
+      "name": "BATCH-DELAYED-EXPANSION (%var% vs !var!)",
+      "severity": "MEDIUM",
+      "platforms": [
+        "windows"
+      ],
+      "category": "logic_quirk",
+      "pattern": "(?:for\\s+/f|%|!)[\\s\\S]*!(?:[a-zA-Z_][a-zA-Z0-9_]*)!",
+      "flags": "i",
+      "root_cause": "批处理里 %var% 解析时机和 !var! 不同，for 循环内值常不是你以为的那次。",
+      "destructive_impact": "变量为空时路径退化成根目录/当前目录，导致误删误写。",
+      "safe_alternative": "脚本优先用 PowerShell；批处理内务必 setlocal EnableDelayedExpansion 并打印变量再操作文件。"
+    },
+    {
+      "id": "EAS-029",
+      "name": "REDIRECT-ENCODING (重定向编码踩坑)",
+      "severity": "LOW",
+      "platforms": [
+        "windows"
+      ],
+      "category": "encoding_quirk",
+      "pattern": "(?:Set-Content|Out-File|>)\\s+[^\\n]*\\.(?:json|yml|yaml|xml|csv)",
+      "flags": "i",
+      "root_cause": "Windows PowerShell 5 的 > / Set-Content 默认可能写出 UTF-16。",
+      "destructive_impact": "配置/数据文件变成 UTF-16，其它工具读成乱码或直接失败。",
+      "safe_alternative": "显式 -Encoding utf8（或 utf8NoBOM），管道给外部工具前确认编码。"
+    },
+    {
+      "id": "EAS-030",
+      "name": "JUNCTION-RECURSE (联接/符号链接递归穿出)",
+      "severity": "HIGH",
+      "platforms": [
+        "windows",
+        "linux",
+        "darwin"
+      ],
+      "category": "filesystem_quirk",
+      "pattern": "\\b(rm|del|Remove-Item|robocopy|xcopy)\\b[\\s\\S]*(?:-Recurse|/s|/e|/mir)\\b",
+      "flags": "i",
+      "root_cause": "递归删除/镜像会跟着 junction、symlink 走到树外。",
+      "destructive_impact": "以为只清缓存，实际删到工程目录甚至用户目录。",
+      "safe_alternative": "先 ls/Get-ChildItem 看是不是链接；删除前 resolve 真实路径，拒绝跟链接递归。"
+    },
+    {
+      "id": "EAS-031",
+      "name": "SHORT-PATH-NAME (8.3 短名不一致)",
+      "severity": "LOW",
+      "platforms": [
+        "windows"
+      ],
+      "category": "path_quirk",
+      "pattern": "\\b[a-zA-Z]:\\\\[^\\s]*PROGRA~[12]|\\b[a-zA-Z]:\\\\[^\\s]*\\w{1,7}~[1-9]",
+      "flags": "i",
+      "root_cause": "短名和长路径指向可能不一致，或因卷关闭 8.3 而失效。",
+      "destructive_impact": "删错同名前缀目录，或路径静默失败后脚本继续跑。",
+      "safe_alternative": "一律用完整长路径；需要拼路径时用 PowerShell 的 Join-Path / .NET Path API。"
+    },
+    {
+      "id": "EAS-032",
+      "name": "PATH-SPACE-UNQUOTED (空格路径未加引号)",
+      "severity": "HIGH",
+      "platforms": [
+        "windows",
+        "linux",
+        "darwin"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "\\b(?:del|rm|Remove-Item|rd|rmdir|move|cp|xcopy|robocopy)\\s+(?:/[a-z]+\\s+)*[a-zA-Z]:\\\\[^\\s\"]*\\s[^\\s\"]*\\*",
+      "flags": "i",
+      "root_cause": "路径含空格又没引号，空格后半截被当成第二个参数/通配符。",
+      "destructive_impact": "当前目录或盘根被通配符误伤，文件成批消失。",
+      "safe_alternative": "路径永远加引号；PowerShell 里写 \"C:\\Program Files\\...\"。"
+    },
+    {
+      "id": "EAS-033",
+      "name": "ERR-ACTION-SILENT (错误被静默吞掉)",
+      "severity": "MEDIUM",
+      "platforms": [
+        "windows"
+      ],
+      "category": "logic_quirk",
+      "pattern": "\\$ErrorActionPreference\\s*=\\s*['\"]SilentlyContinue['\"]|\\?\\s*2>\\s*\\$null|\\?\\s*-ErrorAction\\s+SilentlyContinue",
+      "flags": "i",
+      "root_cause": "把报错改成静默，失败命令看起来像成功。",
+      "destructive_impact": "清理/迁移/备份半途失败却继续下一步，数据不一致。",
+      "safe_alternative": "默认 Stop；catch 里显式记录；删完检查返回码或 Test-Path。"
+    },
+    {
+      "id": "EAS-034",
+      "name": "LOLBAS-RUNDLL32-MSHTA (系统白加黑载荷)",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(rundll32|mshta|regsvr32|wmic|cmstp|installutil)\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS：系统自带二进制可加载脚本/COM/远程内容，常被用来绕过白名单。",
+      "destructive_impact": "在“正常进程”里执行未审计载荷，便于持久化与横向。",
+      "safe_alternative": "禁用 agent 直接调用这类工具；需要 COM/脚本时用显式本地文件并人工确认。"
+    },
+    {
+      "id": "EAS-035",
+      "name": "LOLBAS-CERTUTIL-BITSADMIN (系统下载器)",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(certutil|bitsadmin|expand|makecab|esentutl)\\b[\\s\\S]*(?:-urlcache|/transfer|/download|http)",
+      "flags": "i",
+      "root_cause": "LOLBAS：certutil/bitsadmin 等可当下载器，行为像合法管理工具。",
+      "destructive_impact": "落地未知文件并可能被后续命令执行。",
+      "safe_alternative": "依赖下载用官方源+哈希校验；禁止用系统工具拉任意 URL。"
+    },
+    {
+      "id": "EAS-036",
+      "name": "ENV-SLICE-ESCAPE (环境变量切片逃逸)",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "%[A-Za-z_][A-Za-z0-9_]*:~[-]?[0-9]+,[0-9]+%|%[A-Za-z_][A-Za-z0-9_]*:~",
+      "flags": "i",
+      "root_cause": "注入矩阵：%VAR:~0,1% 等切片可拼出任意字符，绕过关键字过滤。",
+      "destructive_impact": "黑名单形同虚设，拼出 rm/del/下载执行等危险串。",
+      "safe_alternative": "校验前先展开环境变量并规范化空白；禁止未展开就做关键词过滤。"
+    },
+    {
+      "id": "EAS-037",
+      "name": "DELEY-BACKSLASH-QUOTE (反斜杠引号折叠)",
+      "severity": "CRITICAL",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "\"[^\"\\n]*\\\\+\"|\\\\{2,}\"|\"[^\"\\n]*\\\"[^\"\\n]*\"",
+      "flags": "i",
+      "root_cause": "David Deley：Win32 CommandLineToArgvW 中 \\ 与 \" 的组合极易折叠出意外参数。",
+      "destructive_impact": "目标路径被拆成盘根/短名/通配符，删除与拷贝打到错误位置。",
+      "safe_alternative": "用 argv 数组 API 传参，避免手拼命令行；路径加引号并转义内部引号。"
+    },
+    {
+      "id": "EAS-038",
+      "name": "ASYMMETRIC-QUOTE-TOKEN (非对称引号切词)",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "(?:^|\\s)[\"'][^\"']*\\s+[^\"']*\\*|cmd\\s+/c\\s+\"[^\"]*$",
+      "flags": "i",
+      "root_cause": "引号不成对/混用时空格被当成参数分隔，后半截变成独立通配符。",
+      "destructive_impact": "通配符落到当前目录或盘根，文件被批量误删。",
+      "safe_alternative": "生成命令前校验引号成对；路径一律双引号，禁止中文引号。"
+    },
+    {
+      "id": "EAS-039",
+      "name": "LOLBAS-MSHTA-HTA",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bmshta\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：HTA 全权脚本宿主。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-040",
+      "name": "LOLBAS-RUNDLL32-ENTRY",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\brundll32\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：按序号导出函数执行任意 DLL。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-041",
+      "name": "LOLBAS-REGSVR32-COM",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bregsvr32\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：注册恶意 COM/脚本组件。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-042",
+      "name": "LOLBAS-WMIC-PROCESS",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bwmic\\b[\\s\\S]*\\bprocess",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：远程/本地起进程，可当执行器。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-043",
+      "name": "LOLBAS-CSCRIPT-WSCRIPT",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(cscript|wscript)\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：脚本宿主，常躲应用白名单。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-044",
+      "name": "LOLBAS-MSBUILD-TASK",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bmsbuild\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：构建文件里可跑任意 C# 任务。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-045",
+      "name": "LOLBAS-MSIEXEC-REMOTE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bmsiexec\\b[\\s\\S]*(?:/|http)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：可拉远程 MSI 执行。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-046",
+      "name": "LOLBAS-INSTALLUTIL",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\binstallutil\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：安装程序集时执行任意托管代码。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-047",
+      "name": "LOLBAS-REGASM-REGSVCS",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(regasm|regsvcs)\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：注册程序集钩子执行。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-048",
+      "name": "LOLBAS-MAVINJECT",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bmavinject\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：向进程注入 DLL。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-049",
+      "name": "LOLBAS-ODBCCONF",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bodbcconf\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：可加载恶意 DLL。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-050",
+      "name": "LOLBAS-PRESENTATIONHOST",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bpresentationhost\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：可执行 XAML/脚本载荷。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-051",
+      "name": "LOLBAS-CONTROL-EXE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bcontrol\\b[\\s\\S]*\\.cpl",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：CPL 文件实为 DLL。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-052",
+      "name": "LOLBAS-BUNDLERUNNER",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(msdt|pcwrun|sdiagnhost)\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：诊断工具可被拉起执行载荷。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-053",
+      "name": "LOLBAS-ESENTUTL",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\besentutl\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：可作为文件拷贝/下载器。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-054",
+      "name": "LOLBAS-MAKECAB-EXPAND",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(makecab|expand)\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：解包落地载荷。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-055",
+      "name": "LOLBAS-FORFILES",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bforfiles\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：/c 参数拼命令执行。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-056",
+      "name": "LOLBAS-FTP-SCRIPT",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bftp\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：脚本模式可拉取文件。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-057",
+      "name": "LOLBAS-IEEXEC",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bieexec\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：可执行远程 .NET 载荷。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-058",
+      "name": "LOLBAS-IE4UINIT",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bie4uinit\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：可带参数拉起载荷。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-059",
+      "name": "LOLBAS-INFDEFAULTINSTALL",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bInfDefaultInstall\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：inf 文件可写注册表/服务。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-060",
+      "name": "LOLBAS-MSXSL",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bmsxsl\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：XSLT 可执行脚本。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-061",
+      "name": "LOLBAS-PCALUA",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bpcalua\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：程序兼容助手转调任意程序。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-062",
+      "name": "LOLBAS-PCHUNTER-REG",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\breg(?:edit)?\\b[\\s\\S]*(?:add|delete)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：注册表写后门/清日志。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-063",
+      "name": "LOLBAS-SCHTASKS",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bschtasks\\b[\\s\\S]*/create",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：计划任务持久化。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-064",
+      "name": "LOLBAS-SC-SERVICE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bsc\\b[\\s\\S]*(?:create|config|start)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：服务创建/改路径持久化。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-065",
+      "name": "LOLBAS-NETSH-FWD",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bnetsh\\b[\\s\\S]*(?:portproxy|advfirewall)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：端口代理/防火墙开口。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-066",
+      "name": "LOLBAS-TAR-BSD",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\btar\\b[\\s\\S]*--to-command",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：tar 可 --to-command 执行。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-067",
+      "name": "LOLBAS-PYTHON-SUBPROCESS",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bpython\\b[\\s\\S]*subprocess",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：子进程拼接命令。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-068",
+      "name": "LOLBAS-NODE-CHILD-EXEC",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bnode\\b[\\s\\S]*child_process",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：JS 起 shell 执行。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-069",
+      "name": "LOLBAS-START-PROCESS-RUNAS",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bStart-Process\\b[\\s\\S]*-Verb\\s+RunAs",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：触发 UAC 提权弹窗。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-070",
+      "name": "LOLBAS-RUNAS-EXE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\brunas\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：换身份执行。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-071",
+      "name": "LOLBAS-PS-ENC-BASE64",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bpowershell\\b[^\\n]*-e(?:nc\\w*)?\\s+[A-Za-z0-9+/=]{20,}",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：Base64 载荷免杀执行。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-072",
+      "name": "LOLBAS-PS-NOP-HIDDEN",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bpowershell\\b[^\\n]*-(?:nop|noni|w(?:indowstyle)?)[^\\n]*hidden",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：静默隐藏窗口执行。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-073",
+      "name": "LOLBAS-PS-DOWNLOADCRADLE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(iwr|irm|Invoke-WebRequest|Net\\.WebClient)\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：下载摇篮，常接 IEX。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-074",
+      "name": "LOLBAS-CMD-C-CHAINER",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bcmd(?:\\.exe)?\\s+/c\\s+",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：cmd /c 转义规则复杂，易拼出意外命令。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-075",
+      "name": "LOLBAS-WMI-EXEC",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bInvoke-WmiMethod|Get-WmiObject[\\s\\S]*Win32_Process",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：WMI 起进程。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-076",
+      "name": "LOLBAS-CIM-START",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bInvoke-CimMethod\\b[\\s\\S]*Create",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：CIM 起进程。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-077",
+      "name": "LOLBAS-BITS-CREATE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bbitsadmin\\b[\\s\\S]*(?:create|addfile)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：BITS 作业下载。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-078",
+      "name": "LOLBAS-CERTUTIL-DECODE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bcertutil\\b[\\s\\S]*-decode",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：解码落地 PE/脚本。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-079",
+      "name": "LOLBAS-CURL-EXE-WIN",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bcurl(?:\\.exe)?\\b[^\\n]*(?:-o|--output)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：Windows 自带 curl 下载。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-080",
+      "name": "LOLBAS-TAR-EXTRACT-CMD",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\btar\\b[\\s\\S]*(?:-x|--extract)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：解压路径穿越 (../)。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-081",
+      "name": "LOLBAS-TFTP",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\btftp\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：老协议拉文件。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-082",
+      "name": "LOLBAS-MSHTA-JS",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bmshta\\b[\\s\\S]*(?:javascript|vbscript)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：HTA 内嵌脚本引擎。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-083",
+      "name": "LOLBAS-RUNDLL32-URL",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\brundll32\\b[\\s\\S]*(?:javascript:|http)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：URL 传给 rundll32。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-084",
+      "name": "LOLBAS-WMIC-NODE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bwmic\\b[\\s\\S]*/node:",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：横向：远程节点执行。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-085",
+      "name": "LOLBAS-PSEXEC-STYLE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(psexec|paexec|remcom)\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：远程执行工具。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-086",
+      "name": "LOLBAS-SCHTASKS-RUN",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bschtasks\\b[\\s\\S]*/run",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：立刻拉起计划任务。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-087",
+      "name": "LOLBAS-REG-ADD-RUN",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\breg\\s+add\\s+[^\\s]*\\\\Run(?:Once)?\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：自启动持久化。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-088",
+      "name": "LOLBAS-BCDEDIT-BOOTMENU",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bbcdedit\\b[\\s\\S]*(?:bootstatuspolicy|set)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：改启动策略。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-089",
+      "name": "LOLBAS-WEVTUTIL-CLEAR",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bwevtutil\\b[\\s\\S]*(?:clear-log|cl)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：清安全日志。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-090",
+      "name": "LOLBAS-CIPHER-WIPE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bcipher\\b[\\s\\S]*/w:",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：磁盘未用空间擦除，可能被用来掩盖痕迹。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-091",
+      "name": "LOLBAS-VSSADMIN-DELETE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bvssadmin\\b[\\s\\S]*delete\\s+shadows",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：删卷影副本（勒索前置）。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-092",
+      "name": "LOLBAS-WBADMIN-DELETE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bwbadmin\\b[\\s\\S]*delete",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：删备份目录。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-093",
+      "name": "LOLBAS-BCDEDIT-IGNOREALL",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bbcdedit\\b[\\s\\S]*ignoreallfailures",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：忽略启动失败。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-094",
+      "name": "LOLBAS-SC-SD-RESET",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bsc\\b[\\s\\S]*sdset",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：改服务 ACL。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-095",
+      "name": "LOLBAS-NETSH-ADD-HELPER",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bnetsh\\b[\\s\\S]*add\\s+helper",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：添加 netsh 助手 DLL。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-096",
+      "name": "LOLBAS-TIME-SKEW",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(?:date|time)\\s+set|\\bSet-Date\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：改时间破坏日志/证书校验。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-097",
+      "name": "LOLBAS-WMIC-SHADOW",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bwmic\\b[\\s\\S]*shadowcopy",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：操作卷影副本。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-098",
+      "name": "LOLBAS-MSDT-SST",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bmsdt\\b[\\s\\S]*-path",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：MSDT 路径参数可载荷。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-099",
+      "name": "LOLBAS-CONTROL-HARDWARE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bcontrol\\b[\\s\\S]*\\.msc",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：打开管理单元，可被替换。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-100",
+      "name": "LOLBAS-ROBOCOPY-MOVE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\brobocopy\\b[\\s\\S]*/move",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：移动后源消失。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-101",
+      "name": "LOLBAS-CMD-ASSOC-FTYPE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(assoc|ftype)\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：改文件关联劫持。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-102",
+      "name": "LOLBAS-WMIC-TERMINATE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bwmic\\b[\\s\\S]*terminate",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：杀进程，可断监控。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-103",
+      "name": "LOLBAS-TASKKILL-F",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\btaskkill\\b[\\s\\S]*/f",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：强杀进程。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-104",
+      "name": "LOLBAS-NET-STOP",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bnet\\s+stop\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：停服务，可停杀软。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-105",
+      "name": "LOLBAS-SC-STOP",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bsc\\s+stop\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：停服务。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-106",
+      "name": "LOLBAS-TAKEOWN-ICACLS",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(takeown|icacls)\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：夺权后可改系统文件。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-107",
+      "name": "LOLBAS-ATTRIB-H-R-S",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\battrib\\b[\\s\\S]*\\+[hrs]",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：隐藏恶意文件。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-108",
+      "name": "LOLBAS-COMPACT-ENCRYPT",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bcompact\\b[\\s\\S]*/c",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：压缩/加密属性异常。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-109",
+      "name": "LOLBAS-MAKECAB-CAB",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bmakecab\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：打包载荷绕过扩展名检测。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-110",
+      "name": "LOLBAS-EXPAND-EXE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bexpand\\b[\\s\\S]*\\.(?:exe|dll|ps1)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：展开到可执行名。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-111",
+      "name": "LOLBAS-REPLACE-EXE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\breplace\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：可覆盖文件。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-112",
+      "name": "LOLBAS-VERCLSID",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bverclsid\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：COM 相关，可被利用。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-113",
+      "name": "LOLBAS-VSIJITDEBUGGER",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bvsjitdebugger\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：调试器劫持。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-114",
+      "name": "LOLBAS-WORKFOLDERS",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bworkfolders\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：同步可带策略脚本。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-115",
+      "name": "LOLBAS-XCALIBER-HELP",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(xwizard|wabmig)\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：老向导可带参数执行。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-116",
+      "name": "LOLBAS-COMPUTERDEFAULTS",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bcomputerdefaults\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：默认程序 UAC 绕过常见靶。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-117",
+      "name": "LOLBAS-FODHELPER",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bfodhelper\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：UAC 绕过常见靶。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-118",
+      "name": "LOLBAS-EVENTVWR",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\beventvwr\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：劫持 msc 关联可绕过 UAC。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-119",
+      "name": "LOLBAS-SDCLT",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bsdclt\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：UAC 绕过常见靶。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-120",
+      "name": "LOLBAS-SILENCECLEANUP",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bcleanmgr\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：预设任务可被劫持。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-121",
+      "name": "LOLBAS-MOFCOMP",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bmofcomp\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：编译 MOF 可执行。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-122",
+      "name": "LOLBAS-MMC",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bmmc\\b[\\s\\S]*\\.msc",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：打开可篡改的 msc。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-123",
+      "name": "LOLBAS-MSDT-FAKE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bmsdt\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：诊断向导载荷。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-124",
+      "name": "LOLBAS-WPR",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bwpr\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：性能记录器，可指定配置。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-125",
+      "name": "LOLBAS-TSDISCON",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\btsdiscon\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：会话断开干扰。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-126",
+      "name": "LOLBAS-LOGOFF",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\blogoff\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：注销用户。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-127",
+      "name": "LOLBAS-SHUTDOWN-SCARE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\b(shutdown|poweroff)\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：关机/断电。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-128",
+      "name": "LOLBAS-TZUTIL",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\btzutil\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：改时区干扰时间线。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-129",
+      "name": "LOLBAS-WMIC-TERMINATE-2",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bwmic\\b[\\s\\S]*delete\\s+",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：WMI 删除对象。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-130",
+      "name": "LOLBAS-WEVTUTIL-SL",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bwevtutil\\b[\\s\\S]*sl",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：改日志配置。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-131",
+      "name": "LOLBAS-FSUTIL-DIRTY",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bfsutil\\b[\\s\\S]*(?:dirty|behavior)",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：改磁盘行为/脏位。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-132",
+      "name": "LOLBAS-Bcdboot",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bbcdboot\\b",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：重写启动文件。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-133",
+      "name": "LOLBAS-Dism-Online",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "lolbas",
+      "pattern": "\\bdism\\b[\\s\\S]*/online",
+      "flags": "i",
+      "root_cause": "LOLBAS/系统工具能力：改系统组件存储。",
+      "destructive_impact": "可能被用于执行载荷、持久化、清痕迹或破坏数据。",
+      "safe_alternative": "agent 不得直接调用；需要时人工确认并审计完整命令行。"
+    },
+    {
+      "id": "EAS-134",
+      "name": "ESCAPE-CARET-EOL",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\^[\\r\\n]|(?:^|\\s)\\^(&|\\||<|>)",
+      "flags": "i",
+      "root_cause": "逃逸手法：脱字符跨行/组合操作符，易拼出意外命令。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-135",
+      "name": "ESCAPE-CARET-IN-CMD",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bcmd\\b[^\\n]*\\^",
+      "flags": "i",
+      "root_cause": "逃逸手法：cmd 内 ^ 转义，与 bash 规则不同。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-136",
+      "name": "ESCAPE-IFSBASH",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\$\\{?IFS\\}?",
+      "flags": "i",
+      "root_cause": "逃逸手法：bash 用 IFS 改分隔符绕过空格过滤。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-137",
+      "name": "ESCAPE-BACKTICK-SUB",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "`[^`]+`",
+      "flags": "i",
+      "root_cause": "逃逸手法：反引号命令替换。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-138",
+      "name": "ESCAPE-DOLLAR-PAREN",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\$\\([^)]+\\)",
+      "flags": "i",
+      "root_cause": "逃逸手法：命令替换，前缀匹配会失效。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-139",
+      "name": "ESCAPE-PROC-SUB",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "<\\([^)]+\\)|>\\([^)]+\\)",
+      "flags": "i",
+      "root_cause": "逃逸手法：进程替换，静默起子进程。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-140",
+      "name": "ESCAPE-ARITH-EVAL",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\$\\(\\([\\s\\S]+?\\)\\)",
+      "flags": "i",
+      "root_cause": "逃逸手法：算术上下文可执行。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-141",
+      "name": "ESCAPE-BRACE-EXPAND",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\{[^}]+,[^}]+\\}",
+      "flags": "i",
+      "root_cause": "逃逸手法：花括号展开成多参数。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-142",
+      "name": "ESCAPE-NEWLINE-INJECT",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "%0a|%0d|\\\\r|\\\\n",
+      "flags": "i",
+      "root_cause": "逃逸手法：换行注入拼第二条命令。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-143",
+      "name": "ESCAPE-NULL-BYTE",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "%00|\\\\x00",
+      "flags": "i",
+      "root_cause": "逃逸手法：截断过滤用的字符串。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-144",
+      "name": "ESCAPE-SET-SLICE",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "%[A-Za-z_][A-Za-z0-9_]*:\\~",
+      "flags": "i",
+      "root_cause": "逃逸手法：字符串切片拼字符（注入矩阵）。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-145",
+      "name": "ESCAPE-CALL-SUB",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bcall\\s+:",
+      "flags": "i",
+      "root_cause": "逃逸手法：批处理 call 子程序拼接。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-146",
+      "name": "ESCAPE-FOR-VAR",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "%~[a-zA-Z]",
+      "flags": "i",
+      "root_cause": "逃逸手法：for 参数修饰符展开。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-147",
+      "name": "ESCAPE-DOUBLE-PERCENT",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "%%[A-Za-z]",
+      "flags": "i",
+      "root_cause": "逃逸手法：批处理双百分号变量。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-148",
+      "name": "ESCAPE-EXPAND-ON-USE",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "set\\s+[A-Za-z_][A-Za-z0-9_]*=&",
+      "flags": "i",
+      "root_cause": "逃逸手法：拼接 set 赋值再调用。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-149",
+      "name": "ESCAPE-PS-STOP-PARSER",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "--%",
+      "flags": "i",
+      "root_cause": "逃逸手法：PowerShell 停止解析后续为字面量。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-150",
+      "name": "ESCAPE-PS-CALL-OP",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "&\\s*\\{",
+      "flags": "i",
+      "root_cause": "逃逸手法：调用运算符跑脚本块。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-151",
+      "name": "ESCAPE-PS-INVOK-MEMBER",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\.Invoke\\(|Invoke-Expression\\s*\\(",
+      "flags": "i",
+      "root_cause": "逃逸手法：动态调用绕关键字。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-152",
+      "name": "ESCAPE-PS-ADDP-TYPE",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "Add-Type\\s",
+      "flags": "i",
+      "root_cause": "逃逸手法：加载 C# 代码执行。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-153",
+      "name": "ESCAPE-PS-REFLECTION",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\[Reflection\\.Assembly\\]|New-Object\\s+.*Byte",
+      "flags": "i",
+      "root_cause": "逃逸手法：内存加载程序集。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-154",
+      "name": "ESCAPE-VBS-EXEC",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bExecute\\s*\\(|ExecuteGlobal",
+      "flags": "i",
+      "root_cause": "逃逸手法：VBScript 动态执行。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-155",
+      "name": "ESCAPE-JS-FUNC-CTOR",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "new\\s+Function\\s*\\(|eval\\s*\\(",
+      "flags": "i",
+      "root_cause": "逃逸手法：JS 动态构造函数。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-156",
+      "name": "ESCAPE-PERL-EVAL",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bperl\\b[^\\n]*-e\\s*",
+      "flags": "i",
+      "root_cause": "逃逸手法：perl -e 一行木马。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-157",
+      "name": "ESCAPE-RUBY-EVAL",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bruby\\b[^\\n]*-e\\s*",
+      "flags": "i",
+      "root_cause": "逃逸手法：ruby -e 一行木马。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-158",
+      "name": "ESCAPE-PHP-R",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bphp\\b[^\\n]*-r\\s*",
+      "flags": "i",
+      "root_cause": "逃逸手法：php -r 一行木马。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-159",
+      "name": "ESCAPE-AWK-SYSTEM",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bawk\\b[^\\n]*(?:system|cmd)",
+      "flags": "i",
+      "root_cause": "逃逸手法：awk 起 shell。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-160",
+      "name": "ESCAPE-SED-E",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bsed\\b[^\\n]*-e\\s*",
+      "flags": "i",
+      "root_cause": "逃逸手法：sed 表达式可写文件。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-161",
+      "name": "ESCAPE-NC-EXEC",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\b(?:nc|ncat|netcat)\\b[^\\n]*-e\\s*",
+      "flags": "i",
+      "root_cause": "逃逸手法：反弹 shell。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-162",
+      "name": "ESCAPE-SOCAT-EXEC",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bsocat\\b[^\\n]*EXEC",
+      "flags": "i",
+      "root_cause": "逃逸手法：转发并执行。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-163",
+      "name": "ESCAPE-PYTHON-ONE",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bpython\\b[^\\n]*-c\\s+",
+      "flags": "i",
+      "root_cause": "逃逸手法：python -c 一行载荷。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-164",
+      "name": "ESCAPE-NODE-ONE",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bnode\\b[^\\n]*-e\\s+",
+      "flags": "i",
+      "root_cause": "逃逸手法：node -e 一行载荷。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-165",
+      "name": "ESCAPE-CSHARP-CSC",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bcsc(?:\\.exe)?\\b",
+      "flags": "i",
+      "root_cause": "逃逸手法：现场编译 exe。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-166",
+      "name": "ESCAPE-DOTNET-RUN",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bdotnet\\b[^\\n]*(?:exec|msbuild)",
+      "flags": "i",
+      "root_cause": "逃逸手法：托管执行。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-167",
+      "name": "ESCAPE-CURL-PIPE",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\b(curl|wget)\\b[^|\\n]*\\|",
+      "flags": "i",
+      "root_cause": "逃逸手法：下载管道进解释器。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-168",
+      "name": "ESCAPE-BASE64-DECODE-RUN",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bbase64\\b[^\\n]*(?:-d|-D|--decode)",
+      "flags": "i",
+      "root_cause": "逃逸手法：Base64 解码后落地/执行。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-169",
+      "name": "ESCAPE-XXD-REVERT",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bxxd\\b[^\\n]*-r",
+      "flags": "i",
+      "root_cause": "逃逸手法：十六进制还原载荷。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-170",
+      "name": "ESCAPE-OD-PARSE",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bod\\b[^\\n]*-A\\s+x",
+      "flags": "i",
+      "root_cause": "逃逸手法：原始转储拼接。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-171",
+      "name": "ESCAPE-HOMOGLYPH",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "[\\u0400-\\u04FF\\uFF00-\\uFFEF]",
+      "flags": "i",
+      "root_cause": "逃逸手法：西里尔/全角同形字绕过过滤。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-172",
+      "name": "ESCAPE-ZERO-WIDTH",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "[\\u200B-\\u200F\\uFEFF]",
+      "flags": "i",
+      "root_cause": "逃逸手法：零宽字符藏关键字。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-173",
+      "name": "ESCAPE-SPACE-SUBST",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "%20|\\\\x20|\\+",
+      "flags": "i",
+      "root_cause": "逃逸手法：空白等价绕过。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-174",
+      "name": "ESCAPE-TAB-SEP",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\t",
+      "flags": "i",
+      "root_cause": "逃逸手法：Tab 当参数分隔。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-175",
+      "name": "ESCAPE-COMMA-SEP",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": ",",
+      "flags": "i",
+      "root_cause": "逃逸手法：某些解析器把逗号当分隔。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-176",
+      "name": "ESCAPE-SEMICOLON-CHAIN",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": ";",
+      "flags": "i",
+      "root_cause": "逃逸手法：命令串联（类 Unix）。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-177",
+      "name": "ESCAPE-AMP-CHAIN",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "&&|\\|\\|",
+      "flags": "i",
+      "root_cause": "逃逸手法：条件串联，后半截常被忽略审计。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-178",
+      "name": "ESCAPE-PIPE-CHAIN",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\|",
+      "flags": "i",
+      "root_cause": "逃逸手法：管道串接，审计常只看前半。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-179",
+      "name": "ESCAPE-REDIRECT-TRUNC",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "1>nul|2>nul|>nul|/dev/null",
+      "flags": "i",
+      "root_cause": "逃逸手法：吞输出掩盖执行。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-180",
+      "name": "ESCAPE-POWERSHELL-FILE",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bpowershell\\b[^\\n]*-f(?:ile)?\\s+",
+      "flags": "i",
+      "root_cause": "逃逸手法：从文件执行，内容不可见。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-181",
+      "name": "ESCAPE-WSCRIPT-SHELL",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "WScript\\.Shell|wscript\\.shell",
+      "flags": "i",
+      "root_cause": "逃逸手法：COM 起 shell。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-182",
+      "name": "ESCAPE-SHELL-RUN",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\.Run\\s*\\(|\\.Exec\\s*\\(",
+      "flags": "i",
+      "root_cause": "逃逸手法：COM Run/Exec。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-183",
+      "name": "ESCAPE-CSCRIPT-UNICODE",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bcscript\\b[^\\n]*//e:",
+      "flags": "i",
+      "root_cause": "逃逸手法：指定引擎执行。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-184",
+      "name": "ESCAPE-CHCP-CHANGE",
+      "severity": "HIGH",
+      "platforms": [
+        "all"
+      ],
+      "category": "command_injection_escape",
+      "pattern": "\\bchcp\\b",
+      "flags": "i",
+      "root_cause": "逃逸手法：改代码页，后续解析面目全非。",
+      "destructive_impact": "可能绕过命令过滤，拼出任意执行。",
+      "safe_alternative": "统一 argv 数组传参；过滤前展开/规范化；禁止拼接 shell 字符串。"
+    },
+    {
+      "id": "EAS-185",
+      "name": "DELEY-TRAIL-BACKSLASH",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "[\"][^\"\\n]*\\\\+\"",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：引号前奇数/多数反斜杠会吞引号。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-186",
+      "name": "DELEY-EVEN-BSLASH-QUOTE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "\\\\{2,}\"",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：偶数反斜杠 + 引号 = 引号是字面量。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-187",
+      "name": "DELEY-ODD-BSLASH-QUOTE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "\\\\{2,}\\\\+\"",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：奇数反斜杠 + 引号 = 引号转义/折叠。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-188",
+      "name": "DELEY-QUOTE-MID-TOKEN",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "\\S+\"\\S+",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：词中间出现引号，切词规则变地狱。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-189",
+      "name": "DELEY-EMPTY-ARG-QUOTE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "\"\"",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：空参数引号，部分解析器吃掉。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-190",
+      "name": "DELEY-CMD-S-C",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "\\bcmd\\b[^\\n]*/[sc]\\s+[\"]",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：cmd /s /c 引号规则几乎反直觉。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-191",
+      "name": "DELEY-PS-COMMAND-QUOTE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "-Command\\s+\"",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：powershell -Command 引号嵌套极易折叠。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-192",
+      "name": "DELEY-CREATEPROC-NO-SPACE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "=\\S+\\s+\\S+=",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：k=v 相邻无空格，某些解析器粘成一个 token。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-193",
+      "name": "DELEY-SLASH-VS-DASH",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "/[a-z]+\\s",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：DOS 风格 /switch 与 Unix -switch 混用。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-194",
+      "name": "DELEY-RESPFILE-AT",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "@[\"]?[^\"\\s]+",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：响应文件 @file 可插入任意参数。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-195",
+      "name": "DELEY-ARGV0-SPECIAL",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "^[^\\s\"]*\\s+--",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：argv0 后 -- 语义分叉。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-196",
+      "name": "DELEY-WILDCARD-CMDLINE",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "(?:^|\\s)\\*\\.\\S+",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：通配符在 Win32 可被应用自己展开。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-197",
+      "name": "DELEY-LONG-PATH-PREFIX",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "\\\\\\\\\\?\\\\",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：长路径前缀行为与普通路径不一致。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-198",
+      "name": "DELEY-UNC-PATH",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "\\\\\\\\[A-Za-z0-9_.-]+\\\\",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：UNC 路径跨机/跨共享。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    },
+    {
+      "id": "EAS-199",
+      "name": "DELEY-DEVICE-PATH",
+      "severity": "HIGH",
+      "platforms": [
+        "windows"
+      ],
+      "category": "argument_injection_collapse",
+      "pattern": "\\\\\\\\\\.\\\\",
+      "flags": "i",
+      "root_cause": "Deley/Win32 解析：设备路径直达驱动器。",
+      "destructive_impact": "参数被拆错后路径/开关错位，误删误写。",
+      "safe_alternative": "用 List<string>/argv 数组传参；不要手拼 CommandLine。"
+    }
+  ],
+  "_note": " | pack=eas-core; merge via scripts/rules-packs.cjs",
+  "sources": [
+    "LOLBAS (https://lolbas-project.github.io/)",
+    "David Deley: How Command Line Parameters Are Parsed in Windows",
+    "Command Injection escape matrices"
+  ]
+}

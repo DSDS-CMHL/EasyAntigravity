@@ -1,79 +1,183 @@
 {
-  "version": 1,
+  "version": 4,
   "enabled": true,
-  "_comment": "高危命令自动放行熔断规则（类似 VPN rules）。pattern 为正则，默认不区分大小写。enabled=false 停用整组或单条。改完点「重载规则」或重启 EasyAG。",
+  "_comment": "高危 ASK 黑名单（可独立分发）。severity=命中时提示等级；细节处方看 EAS 病毒库。CLI/IDE 亦可直接用本文件。",
   "rules": [
     {
-      "id": "rm-rf",
-      "name": "递归强制删除",
-      "description": "rm 含递归或强制参数（支持 -rf、-fr、拆分参数和长参数）",
-      "pattern": "\\brm(?:\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)){1,4}(?=\\s|$)",
+      "id": "disk-destroy",
+      "name": "磁盘/卷破坏",
+      "severity": "high",
+      "description": "format / Format-Volume / diskpart / mkfs / wipefs / shred / Clear-Disk / 删除分区",
+      "pattern": "\\bformat(?:\\.com)?\\s+[A-Za-z]:|\\bFormat-Volume\\b|\\bdiskpart\\b|\\bmkfs(?:\\.|\\b)|\\bwipefs\\b|\\bshred\\b|\\bClear-Disk\\b|\\bRemove-Partition\\b|\\bInitialize-Disk\\b",
       "flags": "i",
       "enabled": true
     },
     {
-      "id": "windows-del",
-      "name": "Windows 强制删除",
-      "description": "del/rd/rmdir 带 /s /q /f",
-      "pattern": "\\b(del|rd|rmdir)\\s+.*\\/[sqf]",
+      "id": "fs-recursive-delete",
+      "name": "递归/强制删除",
+      "severity": "high",
+      "description": "rm -rf 系 / Remove-Item -Recurse -Force / del|rd /s /q / find -delete",
+      "pattern": "\\brm(?:\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)){1,4}|\\bRemove-Item\\b[\\s\\S]*-(?:Recurse|Force)\\b|\\b(del|rd|rmdir|erase)\\s+[^\\n]*\\/[sqf]|\\bfind\\b[\\s\\S]*(?:-delete|-exec\\s+rm)\\b",
       "flags": "i",
       "enabled": true
     },
     {
-      "id": "disk-wipe",
-      "name": "磁盘破坏",
-      "description": "format 盘符 / format-volume / diskpart / mkfs / wipefs / shred",
-      "pattern": "\\b(?:format\\s+[a-zA-Z]:|format-volume|diskpart|mkfs|wipefs|shred)(?=\\s|$|\\b)",
+      "id": "fs-bulk-wildcard",
+      "name": "通配符/镜像批量抹除",
+      "severity": "high",
+      "description": "del *、robocopy /MIR、xcopy 覆盖、truncate 清空",
+      "pattern": "\\b(del|erase|rm)\\b[^\\n]*\\*\\w*|\\brobocopy\\b[\\s\\S]*/mir\\b|\\bxcopy\\b[^\\n]*/[yi]\\b|\\btruncate\\b",
       "flags": "i",
       "enabled": true
     },
     {
-      "id": "sql-drop",
-      "name": "数据库删除",
-      "description": "DROP DATABASE / TABLE",
-      "pattern": "\\bdrop\\s+(database|table)\\b",
+      "id": "raw-device-write",
+      "name": "裸设备/引导写入",
+      "severity": "high",
+      "description": "dd of=/dev、bcdedit、bcdboot、fixmbr",
+      "pattern": "\\bdd\\s+[^\\n]*of=/dev/|\\bbcdedit\\b|\\bbcdboot\\b|\\bfixmbr\\b|\\\\Device\\\\Harddisk",
       "flags": "i",
       "enabled": true
     },
     {
-      "id": "git-force-push",
-      "name": "Git 强制推送",
-      "description": "git push --force / -f",
-      "pattern": "\\bgit\\s+push\\s+.*(-f|--force)\\b",
+      "id": "cred-destroy-or-dump",
+      "name": "凭据破坏或转储",
+      "severity": "high",
+      "description": "删 .ssh/密钥/云凭据；mimikatz/procdump lsass",
+      "pattern": "\\b(rm|del|Remove-Item)\\b[\\s\\S]*(\\.ssh|id_rsa|id_ed25519|credentials|\\.aws|\\.netrc|\\.npmrc)|\\b(mimikatz|sekurlsa|procdump\\b[^\\n]*lsass)\\b",
+      "flags": "i",
+      "enabled": true
+    },
+    {
+      "id": "priv-escalation",
+      "name": "提权/后门账号",
+      "severity": "high",
+      "description": "sudo 括号、sudoers、net user、加管理员、SUID、Run 键",
+      "pattern": "\\bsudo\\s+(?:-i|-s|su|.*\\brm\\b|.*\\b(?:bash|sh|zsh)\\b)|>>?\\s*/etc/sudoers|\\bnet\\s+(?:user|localgroup)\\s+|\\bAdd-LocalGroupMember\\b|\\bchmod\\s+[^\\n]*[+]s\\b|\\breg\\s+add\\s+[^\\s]*\\\\Run",
+      "flags": "i",
+      "enabled": true
+    },
+    {
+      "id": "system-tamper",
+      "name": "系统完整性破坏",
+      "severity": "high",
+      "description": "bcdedit/reg HKLM/sc 服务/netsh 防火墙/sshd/hosts/selinux",
+      "pattern": "\\breg\\s+(?:add|delete)\\s+HKLM\\\\|\\bsc\\b[\\s\\S]*(?:create|config|delete|sdset)|\\bnetsh\\b[\\s\\S]*(?:portproxy|advfirewall)|sshd_config|/etc/hosts|\\bsetenforce\\s+0\\b|\\b(taskkill|Stop-Process)\\b[^\\n]*(?:/f|-Force)",
+      "flags": "i",
+      "enabled": true
+    },
+    {
+      "id": "remote-exec",
+      "name": "下载执行/反弹/白加黑",
+      "severity": "high",
+      "description": "curl|bash、IEX、certutil/bits、nc -e、mshta/rundll32、ps -enc",
+      "pattern": "\\b(curl|wget|iwr|irm)\\b[^|\\n]*\\||\\b(iex|Invoke-Expression)\\b|\\b(certutil|bitsadmin)\\b[\\s\\S]*(?:urlcache|transfer|http)|\\b(nc|ncat|socat)\\b[^\\n]*(?:-e|exec)|\\b(mshta|rundll32|regsvr32|cmstp|installutil)\\b|\\bpowershell\\b[^\\n]*-e(?:nc\\w*)?\\s+[A-Za-z0-9+/=]{16,}",
+      "flags": "i",
+      "enabled": true
+    },
+    {
+      "id": "log-tamper",
+      "name": "清日志/改时间",
+      "severity": "medium",
+      "description": "wevtutil clear、Remove-Item *.log、Set-Date、tzutil",
+      "pattern": "\\bwevtutil\\b[^\\n]*clear|\\bRemove-Item\\b[\\s\\S]*\\.log\\b|\\bSet-Date\\b|\\btzutil\\b|\\bclear-eventlog\\b",
+      "flags": "i",
+      "enabled": true
+    },
+    {
+      "id": "persistence",
+      "name": "持久化",
+      "severity": "high",
+      "description": "schtasks、crontab、服务安装、netsh helper",
+      "pattern": "\\bschtasks\\b|\\bRegister-ScheduledTask\\b|\\bcrontab\\b|\\bNew-Service\\b|\\bSet-Service\\b|\\bnetsh\\b[\\s\\S]*add\\s+helper",
+      "flags": "i",
+      "enabled": true
+    },
+    {
+      "id": "backup-wipe",
+      "name": "备份/卷影抹除",
+      "severity": "high",
+      "description": "vssadmin delete、wbadmin delete、docker prune -a --volumes",
+      "pattern": "\\bvssadmin\\b[^\\n]*delete|\\bwbadmin\\b[^\\n]*delete|\\bdocker\\b[^\\n]*system\\s+prune[^\\n]*(?:-a|--volumes)|\\bdocker\\b[^\\n]*volume\\s+rm",
+      "flags": "i",
+      "enabled": true
+    },
+    {
+      "id": "db-destroy",
+      "name": "数据库破坏",
+      "severity": "high",
+      "description": "DROP / TRUNCATE / 无 WHERE DELETE",
+      "pattern": "\\bdrop\\s+(?:database|table|schema)\\b|\\btruncate\\s+table\\b",
+      "flags": "i",
+      "enabled": true
+    },
+    {
+      "id": "git-destructive",
+      "name": "Git 破坏性",
+      "severity": "medium",
+      "description": "force push、reset --hard、clean -fdx、filter-branch",
+      "pattern": "\\bgit\\s+push\\s+[^\\n]*(?:--force|-f)\\b|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*[fxd]|\\bgit\\s+filter-branch\\b",
       "flags": "i",
       "enabled": true
     },
     {
       "id": "shutdown",
-      "name": "关机/停止计算机",
-      "description": "shutdown / stop-computer",
-      "pattern": "\\b(shutdown|stop-computer)\\b",
+      "name": "关机/重启/注销",
+      "severity": "medium",
+      "description": "shutdown / stop-computer / restart / logoff",
+      "pattern": "\\b(?:shutdown|stop-computer|restart-computer|logoff|poweroff|swapoff)\\b",
       "flags": "i",
       "enabled": true
     },
     {
-      "id": "sudo-rm",
-      "name": "sudo 删除",
-      "description": "sudo rm ...",
-      "pattern": "\\bsudo\\s+.*\\brm\\s+",
+      "id": "chmod-dangerous",
+      "name": "危险 chmod/chown",
+      "severity": "medium",
+      "description": "777、chown -R /",
+      "pattern": "\\bchmod\\s+(?:-R\\s+)?(?:777|0777|a\\+rwx)|\\bchown\\s+-R\\s+\\S+\\s+/$",
       "flags": "i",
       "enabled": true
     },
     {
-      "id": "dd-disk",
-      "name": "dd 写裸盘",
-      "description": "dd of=/dev/sdX",
-      "pattern": "\\bdd\\s+.*of=/dev/",
+      "id": "dynamic-eval",
+      "name": "动态执行 eval 类",
+      "severity": "medium",
+      "description": "eval、python -c/os.system、node -e/child_process、php system",
+      "pattern": "\\beval\\s+[\\(\\$`]|\\bpython[23]?\\b[^\\n]*(?:-c\\s|os\\.system|subprocess)|\\bnode\\b[^\\n]*(?:-e\\s|child_process)|\\bphp\\b[^\\n]*(?:system\\(|shell_exec)",
       "flags": "i",
       "enabled": true
     },
     {
-      "id": "chmod-777-root",
-      "name": "根目录 777",
-      "description": "chmod 777 /",
-      "pattern": "\\bchmod\\s+(-R\\s+)?777\\s+/",
+      "id": "exfil-tools",
+      "name": "外传/打包",
+      "severity": "medium",
+      "description": "rclone、7z -p、base64 decode 落地",
+      "pattern": "\\brclone\\b|\\b(7z|zip)\\b[^\\n]*(?:-p\\s|password)|\\bbase64\\b[^\\n]*(?:-d|-D|--decode)|\\bFromBase64String\\b",
+      "flags": "i",
+      "enabled": true
+    },
+    {
+      "id": "kernel-module",
+      "name": "内核模块/危险 sysctl",
+      "severity": "medium",
+      "description": "modprobe/insmod、LD_PRELOAD、sysctl=",
+      "pattern": "\\b(?:modprobe|insmod|rmmod)\\b|LD_PRELOAD=|\\bsysctl\\b[^\\n]*=",
+      "flags": "i",
+      "enabled": true
+    },
+    {
+      "id": "fork-bomb",
+      "name": "Fork 炸弹",
+      "severity": "high",
+      "description": ":(){ :|:& };:",
+      "pattern": ":\\(\\)\\s*\\{\\s*:\\s*\\|\\s*:\\s*&\\s*\\}\\s*;\\s*:",
       "flags": "i",
       "enabled": true
     }
+  ],
+  "severity_levels": [
+    "low",
+    "medium",
+    "high"
   ]
 }

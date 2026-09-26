@@ -1,17 +1,16 @@
 {
     "name":  "easyantigravity",
     "version":  "2.3.0",
-    "description":  "Antigravity launcher: native no-TUN proxy, I18N, auto-accept",
+    "description":  "Antigravity copilot: no-TUN proxy, I18N, ASK + risk knowledge base",
     "main":  "server.js",
     "bin":  "server.js",
     "scripts":  {
                     "start":  "node server.js",
-                    "test":  "node test/standard-workflow.test.js && node test/hud-capsule-resident.test.js && node test/permission-and-task-status.test.js",
+                    "test":  "node test/danger-rules.test.js && node test/rule-compile.test.js && node test/danger-sync.test.js && node test/i18n-revert.test.js && node test/foundation.test.cjs",
                     "test:danger-rules":  "node test/danger-rules.test.js",
-                    "test:approval-lifecycle":  "node test/approval-lifecycle.test.js",
+                    "test:rule-compile":  "node test/rule-compile.test.js",
+                    "test:danger-sync":  "node test/danger-sync.test.js",
                     "test:i18n-revert":  "node test/i18n-revert.test.js",
-                    "test:standard-workflow":  "node test/standard-workflow.test.js",
-                    "test:hud-capsule":  "node test/hud-capsule-resident.test.js",
                     "test:tauri-lifecycle":  "node test/tauri-lifecycle.test.cjs",
                     "tauri":  "tauri"
                 },

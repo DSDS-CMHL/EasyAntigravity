@@ -21,7 +21,9 @@ node_modules/
 upstream-antigravity-proxy/
 EasyAntigravity-dist/
 EasyAntigravity-v*-win-x64/
-Agentguard-dev/
+Agentguard-dev/*
+!Agentguard-dev/src/
+!Agentguard-dev/src/**
 
 # OS files
 Thumbs.db
@@ -34,3 +36,12 @@ src-tauri/backend/
 src-tauri/binaries/easyag-node-*
 easyag.log*
 settings.json
+
+# EasyAG runtime artifacts
+ask-injected.flag
+gui-port.txt
+injected-ask.json
+easyag-pretool-hook.cjs
+easyag-stop-hook.cjs
+.playwright-cli/
+rules/feeds/*.local.json

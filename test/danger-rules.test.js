@@ -23,21 +23,21 @@ function match(command, input = config) {
 }
 
 const blockedCases = [
-  ['rm-rf', 'rm -rf /tmp/demo'],
-  ['rm-rf', 'rm -fr ./build'],
-  ['rm-rf', 'rm -r -f ./build'],
-  ['rm-rf', 'rm --recursive --force ./build'],
-  ['windows-del', 'rmdir /s /q C:\\temp\\demo'],
-  ['disk-wipe', 'format D: /q'],
-  ['disk-wipe', 'Format-Volume -DriveLetter D'],
-  ['disk-wipe', 'wipefs -a /dev/sdb'],
-  ['disk-wipe', 'mkfs.ext4 /dev/sdb'],
-  ['sql-drop', 'DROP TABLE audit_log;'],
-  ['git-force-push', 'git push origin main --force'],
+  ['fs-recursive-delete', 'rm -rf /tmp/demo'],
+  ['fs-recursive-delete', 'rm -fr ./build'],
+  ['fs-recursive-delete', 'rm -r -f ./build'],
+  ['fs-recursive-delete', 'rm --recursive --force ./build'],
+  ['fs-recursive-delete', 'rmdir /s /q C:\\temp\\demo'],
+  ['disk-destroy', 'format D: /q'],
+  ['disk-destroy', 'Format-Volume -DriveLetter D'],
+  ['disk-destroy', 'wipefs -a /dev/sdb'],
+  ['disk-destroy', 'mkfs.ext4 /dev/sdb'],
+  ['db-destroy', 'DROP TABLE audit_log;'],
+  ['git-destructive', 'git push origin main --force'],
   ['shutdown', 'shutdown /s /t 0'],
-  ['sudo-rm', 'sudo rm ./temporary-file'],
-  ['dd-disk', 'dd if=image.iso of=/dev/sdb bs=4M'],
-  ['chmod-777-root', 'chmod -R 777 /']
+  ['priv-escalation', 'sudo rm ./temporary-file'],
+  ['raw-device-write', 'dd if=image.iso of=/dev/sdb bs=4M'],
+  ['chmod-dangerous', 'chmod -R 777 /']
 ];
 
 const allowedCases = [

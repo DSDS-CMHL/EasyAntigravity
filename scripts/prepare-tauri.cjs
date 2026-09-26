@@ -12,7 +12,7 @@ const targets = {
 assert.deepEqual([process.platform, process.arch], targets[triple], 'Build Node on the matching target runner');
 const backend = path.join(root, 'src-tauri', 'backend');
 fs.mkdirSync(backend, { recursive: true });
-for (const name of ['server.js', 'index.html', 'danger-rules.json', 'dicts', 'assets']) {
+for (const name of ['server.js', 'index.html', 'danger-rules.json', 'dicts', 'assets', 'scripts']) {
   const src = path.join(root, name);
   if (fs.existsSync(src)) {
     fs.cpSync(src, path.join(backend, name), { recursive: true });
