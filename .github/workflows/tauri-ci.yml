@@ -44,10 +44,10 @@ jobs:
           npm ci
           node --check server.js
           node test/danger-rules.test.js
-          node test/approval-lifecycle.test.js
+          node test/rule-compile.test.js
+          node test/danger-sync.test.js
           node test/i18n-revert.test.js
-          node test/standard-workflow.test.js
-          node test/hud-capsule-resident.test.js
+          node test/foundation.test.cjs
       - name: Prepare self-contained runtime
         run: node scripts/prepare-tauri.cjs ${{ matrix.target }}
       - name: Include runtime license
