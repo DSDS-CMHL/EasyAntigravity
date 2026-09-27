@@ -394,9 +394,10 @@
     .launch-btn.busy .launch-icon { animation: spin 900ms linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .advanced {      flex: 1 1 auto;
-      min-height: 42px;
-      max-height: 380px;
+    /* 日志卡片：常显，不折叠 */
+    .advanced {
+      flex: 1 1 auto;
+      min-height: 280px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -404,8 +405,7 @@
       border-radius: 12px;
       background: rgba(15, 17, 21, 0.72);
     }
-    .advanced[open] { min-height: 150px; }
-    .advanced summary {
+    .advanced-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -414,11 +414,7 @@
       color: var(--text-muted);
       font-size: 11.5px;
       font-weight: 650;
-      cursor: pointer;
-      list-style: none;
     }
-    .advanced summary::-webkit-details-marker { display: none; }
-    .advanced summary::after { content: none; }
     .advanced-meta { margin-left: auto; color: var(--text-dark); font-size: 10px; font-weight: 500; }
     .advanced-body {
       flex: 1 1 auto;
@@ -457,16 +453,17 @@
     .clean-btn:hover { color: var(--text-main); }
     .console {
       flex: 1 1 auto;
+      height: 240px;
+      min-height: 180px;
       background: #090a0d;
       border: 1px solid var(--card-border);
       border-radius: 10px;
       padding: 10px 12px;
       font-family: ui-monospace, SFMono-Regular, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
       font-size: 11px;
-      overflow-y: auto;
+      overflow-y: scroll;
       overflow-x: hidden;
       display: block;
-      min-height: 0;
     }
     .log-line {
       line-height: 1.45;
@@ -621,11 +618,12 @@
     <span id="launchText">启动 Antigravity</span>
   </button>
 
-  <details class="advanced" id="advancedPanel" open>
-    <summary>
-      <span>高级工具与运行日志</span>
+  <!-- 运行日志：常显卡片，不折叠 -->
+  <div class="advanced" id="advancedPanel">
+    <div class="advanced-head">
+      <span>运行日志</span>
       <span class="advanced-meta"><span id="approveCountBadge">风险 0</span> · <span id="rulesCountBadge">--</span> · <span id="kbCountBadge">KB --</span></span>
-    </summary>
+    </div>
     <div class="advanced-body">
       <div class="advanced-tools">
         <div class="port-cluster">
@@ -644,7 +642,7 @@
         </div>
       </div>
     </div>
-  </details>
+  </div>
 
   <script>
     const consoleBox = document.getElementById('consoleBox');

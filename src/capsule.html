@@ -157,11 +157,24 @@
 
     // 前往审查：把 Antigravity 带到前台
     document.getElementById('reviewBtn').addEventListener('click', function () {
+      var bases = [];
+      try { if (location.origin && location.origin.indexOf('http') === 0) bases.push(location.origin); } catch (e) {}
+      // 覆盖 app:// 嵌入页：直连本地后端
       try {
-        fetch('/api/focus-ag', { method: 'POST' }).then(function () { hideWindow(); }).catch(function () {
-          hideWindow();
-        });
-      } catch (e) { hideWindow(); }
+        var port = (location.port && location.port !== '0') ? location.port : '';
+        if (!port) {
+          // Tauri 嵌入页拿不到端口时，用当前已知默认；后端会忽略错端口请求
+          bases.push('http://127.0.0.1:' + (window.__ea_port || ''));
+        }
+      } catch (e) {}
+      function done() { hideWindow(); }
+      function tryFetch(i) {
+        if (i >= bases.length) { done(); return; }
+        var url = bases[i] + '/api/focus-ag';
+        fetch(url, { method: 'POST', mode: 'no-cors', keepalive: true })
+          .then(done).catch(function () { tryFetch(i + 1); });
+      }
+      tryFetch(0);
     });
 
     window.__ea_capsule = function (type, title, impact) {
