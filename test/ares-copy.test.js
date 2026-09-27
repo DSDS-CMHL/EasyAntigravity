@@ -32,8 +32,9 @@ for (const r of feed.rules) {
   for (const bad of vague) {
     assert.ok(!impact.includes(bad), `${r.id} 可能后果含空话「${bad}」: ${impact}`);
   }
-  assert.ok(String(r.safe_alternative || '').length >= 10, `${r.id} 缺少可执行的替代方案`);
   assert.ok(String(r.root_cause || '').length >= 10, `${r.id} 缺少成因说明`);
+  // 不展示替代方案：危害描述必须自洽、具体
+  assert.ok(!/安全替代|建议方案/.test(impact), `${r.id} 可能后果不应包含替代方案话术`);
   // 同步到 signatures.json 的条目文案必须一致
   const inSig = sig.rules.find((x) => x.id === r.id);
   assert.ok(inSig, `${r.id} 未合入 signatures.json`);
@@ -46,6 +47,5 @@ const gitPush = feed.rules.find((r) => r.id === 'ARES-223');
 assert.ok(gitPush);
 assert.match(gitPush.destructive_impact, /远端|覆盖|丢弃/);
 assert.match(gitPush.destructive_impact, /提交|历史/);
-assert.match(gitPush.safe_alternative, /force-with-lease/);
 
 console.log(`PASS: ARES copy quality (${checked} rules)`);

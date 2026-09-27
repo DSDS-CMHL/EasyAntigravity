@@ -1009,15 +1009,13 @@ async function startCDPLoop() {
                       logToGUI('RISK', '规则: ' + risk.danger.map(x => x.id + '(' + x.severity + ')').join(', '), 'tag-warn');
                     }
                     const prim = risk.primary || {};
-                    if (prim.root_cause) logToGUI('RISK', '病理: ' + String(prim.root_cause).slice(0, 140), 'tag-warn');
-                    if (prim.destructive_impact) logToGUI('RISK', '后果: ' + String(prim.destructive_impact).slice(0, 140), 'tag-warn');
-                    if (prim.safe_alternative) logToGUI('RISK', '替代: ' + String(prim.safe_alternative).slice(0, 140), 'tag-proxy');
+                    if (prim.root_cause) logToGUI('RISK', '成因: ' + String(prim.root_cause).slice(0, 140), 'tag-warn');
+                    if (prim.destructive_impact) logToGUI('RISK', '可能后果: ' + String(prim.destructive_impact).slice(0, 160), 'tag-warn');
                     sendResident({
                       cmd: 'show_capsule',
                       type: 'risk_' + risk.level,
                       title: prim.name || '命令需要人工确认',
-                      detail: String(prim.destructive_impact || prim.root_cause || '该命令可能改变当前环境，请确认作用范围。').slice(0, 180),
-                      solution: String(prim.safe_alternative || '确认目标、路径和参数后再决定是否执行。').slice(0, 180)
+                      detail: String(prim.destructive_impact || prim.root_cause || '该命令可能改变当前环境，请确认作用范围。').slice(0, 180)
                     });
                   } else {
                     logToGUI('ASK', '待审: ' + cmd.slice(0, 120), 'tag-warn');
@@ -1553,17 +1551,15 @@ const server = http.createServer((req, res) => {
                 logToGUI('RISK', '规则: ' + risk.danger.map(x => x.id + '(' + x.severity + ')').join(', '), 'tag-warn');
               }
               const p = risk.primary || {};
-              if (p.root_cause) logToGUI('RISK', '病理: ' + String(p.root_cause).slice(0, 160), 'tag-warn');
-              if (p.destructive_impact) logToGUI('RISK', '后果: ' + String(p.destructive_impact).slice(0, 160), 'tag-warn');
-              if (p.safe_alternative) logToGUI('RISK', '替代: ' + String(p.safe_alternative).slice(0, 160), 'tag-proxy');
+              if (p.root_cause) logToGUI('RISK', '成因: ' + String(p.root_cause).slice(0, 160), 'tag-warn');
+              if (p.destructive_impact) logToGUI('RISK', '可能后果: ' + String(p.destructive_impact).slice(0, 160), 'tag-warn');
               state.riskHits += 1;
               pushCounters();
               sendResident({
                 cmd: 'show_capsule',
                 type: 'risk_' + risk.level,
                 title: p.name || '命令需要人工确认',
-                detail: String(p.destructive_impact || p.root_cause || '该命令可能改变当前环境，请确认作用范围。').slice(0, 180),
-                solution: String(p.safe_alternative || '确认目标、路径和参数后再决定是否执行。').slice(0, 180)
+                detail: String(p.destructive_impact || p.root_cause || '该命令可能改变当前环境，请确认作用范围。').slice(0, 180)
               });
             }
           }
