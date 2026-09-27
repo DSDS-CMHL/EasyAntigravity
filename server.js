@@ -648,15 +648,15 @@ function handleResidentEvent(ev) {
 
 /** 把 Antigravity 原生窗口拉到前台（CDP bringToFront 抬不起 OS 窗口） */
 function focusAntigravityWindow() {
-  // CDP 仅作补充
   for (const [, entry] of cdpSockets) {
     if (entry.ws.readyState === WebSocket.OPEN) {
       try { cdpSend(entry.ws, 'Page.bringToFront', {}); } catch (e) {}
     }
   }
   if (IS_WIN) {
+    // ALT 虚晃一下，避免 SetForegroundWindow 被前台锁拒绝
     const ps = `
-$ErrorActionPreference='Stop'
+$ErrorActionPreference='SilentlyContinue'
 Add-Type -Namespace W32 -Name U -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
 [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -665,20 +665,27 @@ Add-Type -Namespace W32 -Name U -MemberDefinition @'
 [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
 [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
 [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
+[DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
 '@
-$procs = Get-Process -Name 'Antigravity' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
-if (-not $procs) { Write-Output 'none'; exit 0 }
+$procs = @(Get-Process -Name 'Antigravity' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
+if ($procs.Count -eq 0) { Write-Output 'none'; exit 0 }
 $hwnd = $procs[0].MainWindowHandle
 if ([W32.U]::IsIconic($hwnd)) { [void][W32.U]::ShowWindow($hwnd, 9) }
+[void][W32.U]::ShowWindow($hwnd, 9)
+[W32.U]::keybd_event(0x12, 0, 0, 0)
+[W32.U]::keybd_event(0x12, 0, 2, 0)
 $fg = [W32.U]::GetForegroundWindow()
 $dummy = [uint32]0
 $fgThread = [W32.U]::GetWindowThreadProcessId($fg, [ref]$dummy)
 $curThread = [W32.U]::GetCurrentThreadId()
 if ($fgThread -ne 0 -and $fgThread -ne $curThread) {
   [void][W32.U]::AttachThreadInput($curThread, $fgThread, $true)
+  [void][W32.U]::BringWindowToTop($hwnd)
   [void][W32.U]::SetForegroundWindow($hwnd)
   [void][W32.U]::AttachThreadInput($curThread, $fgThread, $false)
 } else {
+  [void][W32.U]::BringWindowToTop($hwnd)
   [void][W32.U]::SetForegroundWindow($hwnd)
 }
 Write-Output ('ok:' + $hwnd)
@@ -686,11 +693,7 @@ Write-Output ('ok:' + $hwnd)
     try {
       const encoded = Buffer.from(ps, 'utf16le').toString('base64');
       exec('powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ' + encoded, { windowsHide: true, timeout: 5000 }, (err, stdout) => {
-        if (err) {
-          logToGUI('SYSTEM', '拉起 AG 窗口失败: ' + (err.message || err), 'tag-warn');
-        } else {
-          logToGUI('SYSTEM', '已请求 Antigravity 窗口前置', 'tag-proxy');
-        }
+        logToGUI('SYSTEM', err ? ('拉起 AG 窗口失败: ' + (err.message || err)) : ('已请求 Antigravity 窗口前置 ' + String(stdout || '').trim()), err ? 'tag-warn' : 'tag-proxy');
       });
     } catch (e) {
       logToGUI('SYSTEM', '拉起 AG 窗口异常: ' + (e.message || e), 'tag-warn');

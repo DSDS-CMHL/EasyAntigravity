@@ -155,26 +155,29 @@
     document.querySelector('.close').addEventListener('click', hideWindow);
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideWindow(); });
 
-    // 前往审查：把 Antigravity 带到前台
+    // 前往审查：唤起 Antigravity（多通道投递，避免 app:// 跨源被拦）
     document.getElementById('reviewBtn').addEventListener('click', function () {
-      var bases = [];
-      try { if (location.origin && location.origin.indexOf('http') === 0) bases.push(location.origin); } catch (e) {}
-      // 覆盖 app:// 嵌入页：直连本地后端
+      var urls = [];
       try {
-        var port = (location.port && location.port !== '0') ? location.port : '';
-        if (!port) {
-          // Tauri 嵌入页拿不到端口时，用当前已知默认；后端会忽略错端口请求
-          bases.push('http://127.0.0.1:' + (window.__ea_port || ''));
+        if (location.protocol === 'http:' || location.protocol === 'https:') {
+          urls.push(location.origin + '/api/focus-ag');
         }
       } catch (e) {}
-      function done() { hideWindow(); }
-      function tryFetch(i) {
-        if (i >= bases.length) { done(); return; }
-        var url = bases[i] + '/api/focus-ag';
-        fetch(url, { method: 'POST', mode: 'no-cors', keepalive: true })
-          .then(done).catch(function () { tryFetch(i + 1); });
-      }
-      tryFetch(0);
+      var port = window.__ea_port;
+      if (port && port !== '0') urls.push('http://127.0.0.1:' + port + '/api/focus-ag');
+      urls.push('http://127.0.0.1:19823/api/focus-ag');
+      urls.push('/api/focus-ag');
+
+      var sent = false;
+      urls.forEach(function (u) {
+        try {
+          if (navigator.sendBeacon && navigator.sendBeacon(u)) sent = true;
+        } catch (e) {}
+        try {
+          fetch(u, { method: 'POST', mode: 'no-cors', keepalive: true }).then(function () { sent = true; }).catch(function () {});
+        } catch (e) {}
+      });
+      setTimeout(function () { hideWindow(); }, 80);
     });
 
     window.__ea_capsule = function (type, title, impact) {

@@ -394,6 +394,14 @@
     .launch-btn.busy .launch-icon { animation: spin 900ms linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* 页面滚动条也收细，避免系统大灰条 */
+    html, body { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,0.28) transparent; }
+    html::-webkit-scrollbar, body::-webkit-scrollbar, .advanced-body::-webkit-scrollbar { width: 6px; height: 6px; }
+    html::-webkit-scrollbar-track, body::-webkit-scrollbar-track, .advanced-body::-webkit-scrollbar-track { background: transparent; }
+    html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb, .advanced-body::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.28); border-radius: 999px;
+    }
+
     /* 日志卡片：常显，不折叠 */
     .advanced {
       flex: 1 1 auto;
@@ -461,10 +469,19 @@
       padding: 10px 12px;
       font-family: ui-monospace, SFMono-Regular, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
       font-size: 11px;
-      overflow-y: scroll;
+      overflow-y: auto;
       overflow-x: hidden;
       display: block;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
     }
+    .console::-webkit-scrollbar { width: 6px; height: 6px; }
+    .console::-webkit-scrollbar-track { background: transparent; }
+    .console::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.28);
+      border-radius: 999px;
+    }
+    .console::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.45); }
     .log-line {
       line-height: 1.45;
       word-break: break-all;
