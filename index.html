@@ -394,9 +394,11 @@
     .launch-btn.busy .launch-icon { animation: spin 900ms linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .advanced {
-      flex: 1 1 auto;
+    .advanced {      flex: 1 1 auto;
       min-height: 42px;
+      max-height: 380px;
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
       border: 1px solid var(--card-border);
       border-radius: 12px;
@@ -416,16 +418,16 @@
       list-style: none;
     }
     .advanced summary::-webkit-details-marker { display: none; }
-    .advanced summary::after { content: '⌄'; color: var(--text-dark); transition: transform 180ms cubic-bezier(.2,.8,.2,1); }
-    .advanced[open] summary::after { transform: rotate(180deg); }
+    .advanced summary::after { content: none; }
     .advanced-meta { margin-left: auto; color: var(--text-dark); font-size: 10px; font-weight: 500; }
     .advanced-body {
-      height: calc(100% - 40px);
+      flex: 1 1 auto;
       min-height: 0;
       padding: 0 11px 11px;
       display: flex;
       flex-direction: column;
       gap: 8px;
+      overflow: hidden;
     }
     .advanced-tools { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
 
@@ -435,8 +437,8 @@
       flex-direction: column;
       gap: 6px;
       flex: 1 1 auto;
-      min-height: 120px;
-      max-height: none;
+      min-height: 0;
+      overflow: hidden;
     }
     .console-bar {
       display: flex;
@@ -462,15 +464,15 @@
       font-family: ui-monospace, SFMono-Regular, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
       font-size: 11px;
       overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
+      overflow-x: hidden;
+      display: block;
       min-height: 0;
     }
     .log-line {
       line-height: 1.45;
       word-break: break-all;
       color: var(--text-muted);
+      margin: 0 0 5px;
     }
     .tag-proxy { color: var(--green); }
     .tag-aa { color: var(--primary); }

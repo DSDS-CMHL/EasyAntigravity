@@ -92,10 +92,10 @@ async function start() {
     assert.ok(syncBody.verifiedFiles.includes(app.agConfig));
     const applied = JSON.parse(fs.readFileSync(app.agConfig, 'utf8'));
     assert.equal(applied.userSettings.autoExecutionPolicy, 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER');
-    assert.equal(applied.userSettings.fileAccessPolicy, 'AGENT_SETTING_POLICY_ASK',
-      '工作区文件访问策略必须保留给用户决定');
-    assert.equal(applied.userSettings.nonWorkspaceFileAccessPolicy, 'AGENT_SETTING_POLICY_ASK',
-      '工作区外文件访问策略必须保留给用户决定');
+    assert.equal(applied.userSettings.fileAccessPolicy, 'AGENT_SETTING_POLICY_ALLOW',
+      'Turbo 预设必须写入文件访问 ALLOW，AG 才会切到 Turbo 而不是 Custom');
+    assert.equal(applied.userSettings.nonWorkspaceFileAccessPolicy, 'AGENT_SETTING_POLICY_ALLOW');
+    assert.equal(applied.userSettings.sandboxMode, false);
     assert.equal(applied.userSettings.globalPermissionGrants.ask.length, syncBody.count);
     const owned = await (await fetch(app.url + '/api/injected')).json();
     assert.equal(owned.count, syncBody.count - 1,

@@ -545,14 +545,11 @@ let capsuleHideTimer = null;
 
 function scheduleCapsuleHide(type) {
   if (capsuleHideTimer) clearTimeout(capsuleHideTimer);
-  // 与 capsule.html 倒计时一致；JS 侧 hide 失败时由壳兜底收起
-  const ms = type === 'ready' ? 6000
-    : type === 'risk_high' || type === 'danger' ? 15000
-    : type === 'risk_medium' || type === 'interaction' ? 12000
-    : 9000;
+  // 纯失效保护：页面倒计时+悬停暂停是主路径，这里只防「关不掉」
   capsuleHideTimer = setTimeout(() => {
     sendResident({ cmd: 'hide_capsule' });
-  }, ms + 400);
+    capsuleHideTimer = null;
+  }, 75000);
 }
 
 function sendResident(cmd) {
@@ -1169,14 +1166,26 @@ function syncDangerRulesToAntigravity(listName = 'ask', scope = 'global') {
   const manifest = readInjectedManifest();
 
   // 必须在改动前保存策略，否则退出时只能“恢复”到已经开启的 Turbo。
+  // Turbo 预设三旋钮都要写，AG UI 才会切到 Turbo 而不是停在 Custom。
+  const TURBO_PRESET = {
+    autoExecutionPolicy: 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER',
+    fileAccessPolicy: 'AGENT_SETTING_POLICY_ALLOW',
+    nonWorkspaceFileAccessPolicy: 'AGENT_SETTING_POLICY_ALLOW',
+    sandboxMode: false,
+    enableTerminalSandbox: false
+  };
+  const POLICY_KEYS = Object.keys(TURBO_PRESET);
   if (!manifest.savedGlobal) {
     try {
       const cfg = JSON.parse(fs.readFileSync(globalFile, 'utf-8'));
       const us = cfg.userSettings || {};
-      manifest.savedGlobal = {
-        values: { autoExecutionPolicy: us.autoExecutionPolicy },
-        present: { autoExecutionPolicy: Object.prototype.hasOwnProperty.call(us, 'autoExecutionPolicy') }
-      };
+      const values = {};
+      const present = {};
+      for (const key of POLICY_KEYS) {
+        present[key] = Object.prototype.hasOwnProperty.call(us, key);
+        if (present[key]) values[key] = us[key];
+      }
+      manifest.savedGlobal = { values, present };
     } catch (e) {
       return { ok: false, error: '读取 Antigravity 全局配置失败: ' + String(e.message || e) };
     }
@@ -1210,8 +1219,10 @@ function syncDangerRulesToAntigravity(listName = 'ask', scope = 'global') {
       let policyChanged = false;
       if (isGlobal) {
         const us = obj.userSettings;
-        policyChanged = us.autoExecutionPolicy !== 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER';
-        us.autoExecutionPolicy = 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER';
+        for (const key of POLICY_KEYS) {
+          if (us[key] !== TURBO_PRESET[key]) policyChanged = true;
+          us[key] = TURBO_PRESET[key];
+        }
       }
       if (rulesChanged || policyChanged) {
         fs.writeFileSync(file, JSON.stringify(obj, null, 2));
@@ -1229,7 +1240,8 @@ function syncDangerRulesToAntigravity(listName = 'ask', scope = 'global') {
       const rulesOk = host && Array.isArray(host[listName])
         && resources.every(resource => host[listName].includes(resource));
       const turboOk = !isGlobal || (
-        check.userSettings.autoExecutionPolicy === 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER'
+        check.userSettings
+        && POLICY_KEYS.every(key => check.userSettings[key] === TURBO_PRESET[key])
       );
       if (!rulesOk || !turboOk) {
         if (wroteFile) fs.writeFileSync(file, originalRaw, 'utf-8');
@@ -1330,9 +1342,15 @@ function cleanupInjectedAsk() {
       const obj = JSON.parse(fs.readFileSync(globalFile, 'utf-8'));
       obj.userSettings = obj.userSettings || {};
       if (manifest.savedGlobal.values && manifest.savedGlobal.present) {
-        const key = 'autoExecutionPolicy';
-        if (manifest.savedGlobal.present[key]) obj.userSettings[key] = manifest.savedGlobal.values[key];
-        else delete obj.userSettings[key];
+        for (const key of Object.keys(manifest.savedGlobal.present)) {
+          if (manifest.savedGlobal.present[key]) {
+            if (manifest.savedGlobal.values[key] !== undefined) {
+              obj.userSettings[key] = manifest.savedGlobal.values[key];
+            }
+          } else {
+            delete obj.userSettings[key];
+          }
+        }
       } else {
         // 兼容旧版快照。
         for (const k of ['autoExecutionPolicy', 'nonWorkspaceFileAccessPolicy', 'fileAccessPolicy', 'enableTerminalSandbox']) {
@@ -1360,6 +1378,20 @@ const server = http.createServer((req, res) => {
       'Pragma': 'no-cache'
     });
     return res.end(fs.readFileSync(HTML_FILE));
+  }
+  if (req.url === '/capsule.html') {
+    const capsulePath = path.join(ROOT_DIR, 'src', 'capsule.html');
+    const fallback = path.join(ROOT_DIR, 'capsule.html');
+    const p = fs.existsSync(capsulePath) ? capsulePath : fallback;
+    if (!fs.existsSync(p)) {
+      res.writeHead(404);
+      return res.end('capsule missing');
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate'
+    });
+    return res.end(fs.readFileSync(p));
   }
   if (req.url && req.url.startsWith('/assets/')) {
     const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/assets\//, '');
@@ -1777,6 +1809,22 @@ const server = http.createServer((req, res) => {
   if (req.url === '/api/hide' && req.method === 'POST') {
     sendResident({ cmd: 'hide_easyag' });
     res.end('ok');
+    return;
+  }
+  // 胶囊「前往审查」：唤起 Antigravity 并带到前台
+  if (req.url === '/api/focus-ag' && req.method === 'POST') {
+    for (const [, entry] of cdpSockets) {
+      if (entry.ws.readyState === WebSocket.OPEN) {
+        try { cdpSend(entry.ws, 'Page.bringToFront', {}); } catch (e) {}
+      }
+    }
+    sendResident({ cmd: 'hide_capsule' });
+    if (capsuleHideTimer) {
+      clearTimeout(capsuleHideTimer);
+      capsuleHideTimer = null;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
     return;
   }
 

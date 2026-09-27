@@ -84,13 +84,22 @@ fn ensure_capsule(app: &tauri::AppHandle) {
     if app.get_webview_window("capsule").is_some() {
         return;
     }
-    let _ = WebviewWindowBuilder::new(app, "capsule", WebviewUrl::App("capsule.html".into()))
+    // 从本地 backend 加载，便于热更新胶囊页（不嵌入 exe）
+    let port = app.state::<Backend>().port.lock().ok().and_then(|p| *p);
+    let url = match port {
+        Some(p) => match format!("http://127.0.0.1:{p}/capsule.html").parse() {
+            Ok(u) => WebviewUrl::External(u),
+            Err(_) => WebviewUrl::App("capsule.html".into()),
+        },
+        None => WebviewUrl::App("capsule.html".into()),
+    };
+    let _ = WebviewWindowBuilder::new(app, "capsule", url)
         .title("EasyAG Capsule")
         .decorations(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
-        .inner_size(400.0, 218.0)
+        .inner_size(400.0, 200.0)
         .focused(false)
         .visible(false)
         .build();
@@ -110,7 +119,7 @@ fn show_capsule(app: &tauri::AppHandle, kind: &str, title: &str, detail: &str, s
         let work = m.work_area();
         let scale = m.scale_factor();
         let w = 400.0 * scale;
-        let h = 218.0 * scale;
+        let h = 200.0 * scale;
         let margin = 18.0 * scale;
         let x = work.position.x as f64 + work.size.width as f64 - w - margin;
         let y = work.position.y as f64 + work.size.height as f64 - h - margin;

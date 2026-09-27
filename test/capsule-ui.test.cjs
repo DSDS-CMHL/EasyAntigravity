@@ -15,13 +15,15 @@ assert.match(html, /win\.hide\(\)|getCurrentWindow\(\)\.hide\(\)/, '关闭按钮
 assert.match(html, /setTimeout\(hideWindow/, '胶囊必须自动消失');
 assert.match(html, /mouseenter/, '悬停必须暂停自动消失');
 assert.match(html, /可能后果/);
-assert.match(html, /建议方案/);
+assert.match(html, /前往审查/, '必须提供前往审查按钮');
+assert.doesNotMatch(html, /建议方案/, '风险卡片不再展示建议方案');
 assert.match(html, /高风险命令/);
 assert.match(html, /中风险命令/);
 assert.match(html, /低风险提醒/);
 assert.match(rust, /work_area\(\)/, '定位必须使用显示器工作区，避开任务栏');
 assert.match(rust, /get_webview_window\("main"\)/, '定位应优先跟随主窗口所在显示器');
 assert.match(rust, /solution: &str/, '风险建议必须传入胶囊');
+assert.match(rust, /capsule\.html/, '胶囊页可从本地服务加载以便热更新');
 assert.match(resident, /RestartAutoHide/, '旧便携 Resident 胶囊也必须自动消失');
 assert.match(resident, /Screen\.FromHandle\(agHwnd\)/, 'Resident 胶囊应跟随 AG 所在显示器');
 assert.equal(config.app.withGlobalTauri, true);

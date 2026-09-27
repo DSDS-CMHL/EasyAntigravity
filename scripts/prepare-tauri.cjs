@@ -18,6 +18,11 @@ for (const name of ['server.js', 'index.html', 'danger-rules.json', 'dicts', 'as
     fs.cpSync(src, path.join(backend, name), { recursive: true });
   }
 }
+// 胶囊页放在 backend 根下，便于 /capsule.html 热更新
+const capsuleSrc = path.join(root, 'src', 'capsule.html');
+if (fs.existsSync(capsuleSrc)) {
+  fs.copyFileSync(capsuleSrc, path.join(backend, 'capsule.html'));
+}
 fs.cpSync(path.dirname(require.resolve('ws/package.json')), path.join(backend, 'node_modules', 'ws'), { recursive: true });
 fs.mkdirSync(path.join(root, 'src-tauri', 'binaries'), { recursive: true });
 const runtime = path.join(root, 'src-tauri', 'binaries', 'easyag-node-' + triple + (process.platform === 'win32' ? '.exe' : ''));

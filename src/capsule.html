@@ -10,7 +10,7 @@
       --accent: #fb7185;
       --accent-soft: rgba(251, 113, 133, 0.13);
       --accent-line: rgba(251, 113, 133, 0.55);
-      --surface: rgba(18, 20, 28, 0.97);
+      --surface: #12141c;
       --text: #f8fafc;
       --muted: #a8b2c2;
       --subtle: #697586;
@@ -18,49 +18,64 @@
     * { box-sizing: border-box; }
     html, body {
       width: 100%; height: 100%; margin: 0; overflow: hidden;
-      background: #12141c; color: var(--text);
+      background: var(--surface); color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       -webkit-font-smoothing: antialiased;
     }
-    body { padding: 10px; }
+    /* 卡片铺满窗口，去掉外圈留白 */
     .notice {
-      position: relative; height: 100%; padding: 15px 16px 13px; overflow: hidden;
-      border: 1px solid var(--accent-line); border-radius: 16px; background: var(--surface);
-      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42), 0 0 28px var(--accent-soft);
-      animation: enter 220ms cubic-bezier(.2,.8,.2,1) both;
+      position: relative; width: 100%; height: 100%; padding: 14px 16px 12px;
+      background: var(--surface);
+      animation: enter 200ms cubic-bezier(.2,.8,.2,1) both;
     }
-    .notice.leaving { animation: leave 160ms ease-in both; }
+    .notice.leaving { animation: leave 140ms ease-in both; }
     .notice.medium { --accent:#f59e0b; --accent-soft:rgba(245,158,11,.12); --accent-line:rgba(245,158,11,.5); }
     .notice.low { --accent:#38bdf8; --accent-soft:rgba(56,189,248,.12); --accent-line:rgba(56,189,248,.45); }
     .notice.ready { --accent:#34d399; --accent-soft:rgba(52,211,153,.12); --accent-line:rgba(52,211,153,.45); }
-    .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+
+    /* 内部一条彩色顶边 + 底边进度，视觉上像圆角卡片但不出窗 */
+    .notice::before {
+      content: ""; position: absolute; left: 10px; right: 10px; top: 8px; height: 2px;
+      border-radius: 2px; background: var(--accent); opacity: .9;
+    }
+    .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin: 6px 0 10px; }
     .risk-label { display:inline-flex; align-items:center; gap:7px; color:var(--accent); font-size:11px; font-weight:750; letter-spacing:.05em; }
     .risk-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
     .close {
-      width:28px; height:28px; margin:-5px -6px -5px 0; border:0; border-radius:8px;
+      width:28px; height:28px; border:0; border-radius:8px;
       background:transparent; color:var(--muted); cursor:pointer; font-size:17px; line-height:1;
-      transition:color 140ms ease, background 140ms ease;
     }
     .close:hover { color:var(--text); background:rgba(255,255,255,.08); }
     .title {
-      margin:0 34px 10px 0; overflow:hidden; color:var(--text); font-size:14px; font-weight:700;
+      margin:0 28px 12px 0; overflow:hidden; color:var(--text); font-size:14px; font-weight:700;
       line-height:1.35; text-overflow:ellipsis; white-space:nowrap;
     }
-    .section { display:grid; grid-template-columns:58px 1fr; gap:9px; margin-top:8px; font-size:11.5px; line-height:1.45; }
-    .section-label { color:var(--subtle); font-weight:650; }
+    .section { margin-top: 8px; font-size: 11.5px; line-height: 1.5; }
+    .section-label { color: var(--subtle); font-weight: 650; display: block; margin-bottom: 4px; }
     .section-value {
-      display:-webkit-box; overflow:hidden; color:var(--muted); -webkit-box-orient:vertical;
-      -webkit-line-clamp:2; word-break:break-word;
+      display:-webkit-box; overflow:hidden; color:var(--muted);
+      -webkit-box-orient:vertical; -webkit-line-clamp:3; word-break:break-word;
     }
-    .section.solution .section-value { color:#d7e2ef; }
-    .footer { position:absolute; right:16px; bottom:12px; color:var(--subtle); font-size:9.5px; }
+    .footer {
+      position:absolute; right:14px; bottom:12px; left:14px;
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+    }
+    .hint { color: var(--subtle); font-size: 9.5px; white-space: nowrap; }
+    .review {
+      appearance:none; border:0; border-radius:9px; cursor:pointer;
+      padding:8px 12px; font-size:11.5px; font-weight:700;
+      background: var(--accent); color: #1a0b10;
+    }
+    .review:hover { filter: brightness(1.08); }
     .timer { position:absolute; right:0; bottom:0; left:0; height:3px; background:rgba(255,255,255,.05); }
     .timer::after {
-      display:block; width:100%; height:100%; content:""; background:var(--accent); transform-origin:left;
-      animation:countdown var(--duration, 12s) linear forwards; animation-play-state:var(--timer-state, running);
+      display:block; width:100%; height:100%; content:""; background:var(--accent);
+      transform-origin:left;
+      animation:countdown var(--duration, 12s) linear forwards;
+      animation-play-state:var(--timer-state, running);
     }
-    @keyframes enter { from { opacity:0; transform:translateY(14px) scale(.985); } }
-    @keyframes leave { to { opacity:0; transform:translateY(8px) scale(.99); } }
+    @keyframes enter { from { opacity:0; transform:translateY(10px); } }
+    @keyframes leave { to { opacity:0; transform:translateY(6px); } }
     @keyframes countdown { to { transform:scaleX(0); } }
     @media (prefers-reduced-motion: reduce) { .notice, .notice.leaving { animation-duration:1ms; } }
   </style>
@@ -72,9 +87,14 @@
       <button class="close" type="button" aria-label="关闭提示" title="关闭">×</button>
     </header>
     <h1 class="title" id="title">命令需要人工确认</h1>
-    <div class="section"><span class="section-label">可能后果</span><span class="section-value" id="impact">可能对当前环境造成不可逆修改。</span></div>
-    <div class="section solution" id="solutionRow"><span class="section-label">建议方案</span><span class="section-value" id="solution">检查命令作用范围，确认后再继续。</span></div>
-    <span class="footer">EasyAG ARES · 悬停暂停</span>
+    <div class="section">
+      <span class="section-label">可能后果</span>
+      <span class="section-value" id="impact">可能对当前环境造成不可逆修改。</span>
+    </div>
+    <div class="footer">
+      <span class="hint">EasyAG ARES · 悬停暂停</span>
+      <button class="review" type="button" id="reviewBtn">前往审查 ↵</button>
+    </div>
     <div class="timer"></div>
   </article>
   <script>
@@ -82,25 +102,26 @@
     let hideTimer = 0;
     let remaining = 12000;
     let startedAt = 0;
+    let hovering = false;
 
-    async function hideWindow() {
+    function hideWindow() {
       clearTimeout(hideTimer);
+      hideTimer = 0;
       notice.classList.add('leaving');
-      await new Promise(resolve => setTimeout(resolve, 150));
-      try {
-        const t = window.__TAURI__;
-        const win = t && (
-          (t.window && t.window.getCurrentWindow && t.window.getCurrentWindow()) ||
-          (t.webview && t.webview.getCurrentWebviewWindow && t.webview.getCurrentWebviewWindow()) ||
-          (t.webviewWindow && t.webviewWindow.getCurrentWebviewWindow && t.webviewWindow.getCurrentWebviewWindow())
-        );
-        if (win && typeof win.hide === 'function') {
-          await win.hide();
-          return;
-        }
-      } catch (_) {}
-      try { window.close(); } catch (_) {}
+      setTimeout(function () {
+        try {
+          var t = window.__TAURI__;
+          var win = t && (
+            (t.window && t.window.getCurrentWindow && t.window.getCurrentWindow()) ||
+            (t.webview && t.webview.getCurrentWebviewWindow && t.webview.getCurrentWebviewWindow()) ||
+            (t.webviewWindow && t.webviewWindow.getCurrentWebviewWindow && t.webviewWindow.getCurrentWebviewWindow())
+          );
+          if (win && typeof win.hide === 'function') { win.hide(); return; }
+        } catch (e) {}
+        try { window.close(); } catch (e) {}
+      }, 140);
     }
+
     function armTimer(ms) {
       clearTimeout(hideTimer);
       remaining = ms;
@@ -109,29 +130,55 @@
       notice.style.setProperty('--timer-state', 'running');
       hideTimer = setTimeout(hideWindow, ms);
     }
-    notice.addEventListener('mouseenter', () => {
-      remaining = Math.max(800, remaining - (Date.now() - startedAt));
-      clearTimeout(hideTimer);
-      notice.style.setProperty('--timer-state', 'paused');
-    });
-    notice.addEventListener('mouseleave', () => armTimer(remaining));
-    document.querySelector('.close').addEventListener('click', hideWindow);
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') hideWindow(); });
 
-    window.__ea_capsule = function (type, title, impact, solution) {
+    function pauseTimer() {
+      if (!hideTimer) return;
+      remaining = Math.max(1200, remaining - (Date.now() - startedAt));
       clearTimeout(hideTimer);
+      hideTimer = 0;
+      notice.style.setProperty('--timer-state', 'paused');
+    }
+
+    function resumeTimer() {
+      if (hideTimer) return;
+      armTimer(remaining);
+    }
+
+    notice.addEventListener('mouseenter', function () {
+      hovering = true;
+      pauseTimer();
+    });
+    notice.addEventListener('mouseleave', function () {
+      hovering = false;
+      resumeTimer();
+    });
+    document.querySelector('.close').addEventListener('click', hideWindow);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideWindow(); });
+
+    // 前往审查：把 Antigravity 带到前台
+    document.getElementById('reviewBtn').addEventListener('click', function () {
+      try {
+        fetch('/api/focus-ag', { method: 'POST' }).then(function () { hideWindow(); }).catch(function () {
+          hideWindow();
+        });
+      } catch (e) { hideWindow(); }
+    });
+
+    window.__ea_capsule = function (type, title, impact) {
+      clearTimeout(hideTimer);
+      hideTimer = 0;
+      hovering = false;
       notice.className = 'notice';
-      const isReady = type === 'ready';
-      const level = type === 'risk_low' ? 'low' : type === 'risk_medium' || type === 'interaction' ? 'medium' : isReady ? 'ready' : 'high';
+      var isReady = type === 'ready';
+      var level = type === 'risk_low' ? 'low' : type === 'risk_medium' || type === 'interaction' ? 'medium' : isReady ? 'ready' : 'high';
       notice.classList.add(level);
-      const labels = { high:'高风险命令', medium:'中风险命令', low:'低风险提醒', ready:'任务已完成' };
+      var labels = { high:'高风险命令', medium:'中风险命令', low:'低风险提醒', ready:'任务已完成' };
       document.getElementById('level').textContent = labels[level];
       document.getElementById('title').textContent = title || (isReady ? '本轮任务已完成' : '命令需要人工确认');
       document.getElementById('impact').textContent = impact || (isReady ? 'Agent 已空闲，可以检查结果。' : '该命令可能改变当前环境，请确认作用范围。');
-      document.getElementById('solution').textContent = solution || (isReady ? '返回 Antigravity 查看结果。' : '确认目标、路径和参数后再决定是否执行。');
-      document.querySelector('.footer').textContent = isReady ? 'EasyAG · 悬停暂停' : 'EasyAG ARES · 悬停暂停';
-      const duration = isReady ? 6000 : level === 'high' ? 15000 : level === 'medium' ? 12000 : 9000;
-      const timer = document.querySelector('.timer');
+      document.getElementById('reviewBtn').textContent = isReady ? '前往查看 ↵' : '前往审查 ↵';
+      var duration = isReady ? 8000 : level === 'high' ? 18000 : level === 'medium' ? 15000 : 12000;
+      var timer = document.querySelector('.timer');
       timer.replaceWith(timer.cloneNode(true));
       armTimer(duration);
     };
