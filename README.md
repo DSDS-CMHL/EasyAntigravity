@@ -112,6 +112,15 @@ npm test
 - 高危规则为**基础防呆**，无法穷尽所有变种；请自行增补，重要环境请备份  
 - Antigravity 为 Google 产品，本项目与其官方无关。请遵守当地法律与软件许可协议。
 
+## 致谢
+
+| 来源 | 说明 |
+|------|------|
+| [nicktan @ linux.do](https://linux.do/t/topic/2896116) | 界面汉化词典主要来源 |
+| [@wjzhu @ linux.do](https://linux.do/u/wjzhu/summary) | macOS (Apple Silicon M4) 兼容性测试、JIT 权限诊断与 App 打包反馈 |
+| ~~[antigravity-2.0-no-tun-login-proxy](https://github.com/2531565073zzc-ux/antigravity-2.0-no-tun-login-proxy)~~ | 已弃用：其 `version.dll` 注入方案与 AG 2.15.0 冲突；新版改用 Chromium 启动参数与语言服务代理环境变量实现免 TUN。 |
+| [AntiGravity-AutoAccept](https://github.com/yazanbaker94/AntiGravity-AutoAccept) | 自动审批交互思想参考 |
+
 ## License
 
 [MIT](./LICENSE)
