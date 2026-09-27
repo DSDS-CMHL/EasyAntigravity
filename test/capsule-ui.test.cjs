@@ -10,7 +10,8 @@ const capability = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri', 'capa
 const config = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri', 'tauri.conf.json'), 'utf8'));
 
 assert.match(html, /class="close"/, '胶囊必须有可见关闭按钮');
-assert.match(html, /getCurrentWindow\(\)\.hide\(\)/, '关闭按钮必须隐藏 Tauri 胶囊窗口');
+assert.match(html, /getCurrentWindow|getCurrentWebviewWindow/, '关闭按钮必须走 Tauri 窗口 API');
+assert.match(html, /win\.hide\(\)|getCurrentWindow\(\)\.hide\(\)/, '关闭按钮必须隐藏 Tauri 胶囊窗口');
 assert.match(html, /setTimeout\(hideWindow/, '胶囊必须自动消失');
 assert.match(html, /mouseenter/, '悬停必须暂停自动消失');
 assert.match(html, /可能后果/);

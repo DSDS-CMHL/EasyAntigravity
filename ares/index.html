@@ -1,0 +1,614 @@
+<!-- AI生成 -->
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ARES · Agent Risk Execution Signatures</title>
+  <meta name="description" content="ARES 权威规则库参考：LOLBAS / LOOBins / GTFOBins / Atomic Red Team / Sigma / Git Flight Rules / OWASP Cloud Guardrails" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<p data-aigc-mark="1" style="margin:0 0 8px;font-size:10px;line-height:1.3;color:#6b6560;font-weight:400;">AI生成</p>
+
+  <header class="hero">
+    <div class="wrap">
+      <div class="eyebrow"><i></i> Agent Risk Execution Signatures</div>
+      <h1 class="wordmark">ARES</h1>
+      <p class="fullname">Agent Risk Execution Signatures <span>· 高危执行特征权威参考库</span></p>
+      <p class="lede">
+        面向 Agent 工具调用与终端命令闸门的危险执行特征库。按平台与战术场景对标
+        LOLBAS / LOOBins / GTFOBins / Atomic Red Team / Sigma / Git Flight Rules / OWASP，
+        统一提炼可匹配命令、正则防逃逸与安全替代处方。
+      </p>
+      <div class="hero-stats">
+        <div class="stat"><b>7</b><span>权威来源</span></div>
+        <div class="stat"><b>30+</b><span>核心危险特征</span></div>
+        <div class="stat"><b>3</b><span>平台原生滥用</span></div>
+        <div class="stat"><b>3</b><span>实施方法</span></div>
+      </div>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="wrap toolbar-inner">
+      <div class="chips" id="chips" role="toolbar" aria-label="按来源筛选">
+        <button class="chip" type="button" data-filter="all" aria-pressed="true">全部</button>
+        <button class="chip" type="button" data-filter="win" aria-pressed="false">Windows</button>
+        <button class="chip" type="button" data-filter="mac" aria-pressed="false">macOS</button>
+        <button class="chip" type="button" data-filter="linux" aria-pressed="false">Linux</button>
+        <button class="chip" type="button" data-filter="atomic" aria-pressed="false">Atomic</button>
+        <button class="chip" type="button" data-filter="sigma" aria-pressed="false">Sigma</button>
+        <button class="chip" type="button" data-filter="git" aria-pressed="false">Git</button>
+        <button class="chip" type="button" data-filter="cloud" aria-pressed="false">云原生</button>
+      </div>
+      <div class="search">
+        <input id="q" type="search" placeholder="搜索命令 / 特征…" autocomplete="off" />
+      </div>
+    </div>
+  </div>
+
+  <main class="wrap" id="main">
+    <!-- LOLBAS -->
+    <section class="section" id="lolbas" data-cat="win">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">Windows 原生工具滥用
+            <small>Living Off The Land Binaries And Scripts — 系统自带工具二次利用</small>
+          </h2>
+          <div class="rule-meta" style="margin-top:12px">
+            <span class="badge win">Windows</span>
+            <span class="badge">LOLBAS</span>
+          </div>
+        </div>
+        <div class="sources">
+          <a class="source" href="https://lolbas-project.github.io" target="_blank" rel="noreferrer">
+            lolbas-project.github.io <code>官网</code>
+          </a>
+          <a class="source" href="https://github.com/LOLBAS-Project/LOLBAS" target="_blank" rel="noreferrer">
+            LOLBAS-Project/LOLBAS <code>GitHub</code>
+          </a>
+        </div>
+      </div>
+      <div class="rules">
+        <article class="rule" data-tags="win lolbas vssadmin backup">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">vssadmin</span> delete shadows</pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">删卷影备份</span>
+              <span class="tag">T1490</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：勒索软件前置动作，抹掉系统还原点后再加密。处方：保留卷影，仅删除指定旧快照并要求书面备份确认。</p>
+        </article>
+        <article class="rule" data-tags="win lolbas wbadmin backup">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">wbadmin</span> delete catalog</pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">删备份编目</span>
+              <span class="tag">T1490</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：销毁 Windows Server Backup 编目，使恢复不可用。处方：只做校验/列表，恢复需人工在控制台完成。</p>
+        </article>
+        <article class="rule" data-tags="win lolbas takeown icacls acl">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">takeown</span> /f <span class="dimmed">&lt;path&gt;</span> /r /d y &amp;&amp; <span class="kw">icacls</span> <span class="dimmed">&lt;path&gt;</span> <span class="flag">/grant</span> Everyone:F <span class="flag">/t</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">全局夺权 / ACL 打乱</span>
+              <span class="tag">T1222</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：接管系统目录权限并放通 Everyone，掩盖后续篡改。处方：最小权限，仅对项目工作区改 ACL，禁止 <code>/t</code> 递归到盘根。</p>
+        </article>
+        <article class="rule" data-tags="win lolbas diskpart format">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">diskpart</span> /s <span class="dimmed">&lt;script&gt;</span> <span class="dimmed">// clean / format / delete partition</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">CRITICAL</span>
+              <span class="tag">静默清盘</span>
+              <span class="tag">T1485</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：脚本化 wipe 整盘或分区。处方：Agent 一律拒绝；磁盘操作只在恢复环境人工执行。</p>
+        </article>
+        <article class="rule" data-tags="win lolbas reg delete">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">reg</span> delete <span class="dimmed">&lt;key&gt;</span> <span class="flag">/f</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">注册表强制抹除</span>
+              <span class="tag">T1112</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：删除 Run/服务/防火墙键，破坏持久化与防护。处方：导出 <code>.reg</code> 备份后再改，禁止批量 <code>/f</code> 删除 HKLM。</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- LOOBins -->
+    <section class="section" id="loobins" data-cat="mac">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">macOS 原生工具滥用
+            <small>Living Off The OS X Binaries — 苹果生态自带二进制武器化</small>
+          </h2>
+          <div class="rule-meta" style="margin-top:12px">
+            <span class="badge mac">macOS</span>
+            <span class="badge">LOOBins</span>
+          </div>
+        </div>
+        <div class="sources">
+          <a class="source" href="https://loobins.io" target="_blank" rel="noreferrer">
+            loobins.io <code>官网</code>
+          </a>
+          <a class="source" href="https://github.com/mdecrevoisier/LOOBins" target="_blank" rel="noreferrer">
+            mdecrevoisier/LOOBins <code>GitHub</code>
+          </a>
+        </div>
+      </div>
+      <div class="rules">
+        <article class="rule" data-tags="mac loobins tmutil backup">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">tmutil</span> deletelocalsnapshots</pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">清空时光机快照</span>
+              <span class="tag">T1490</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：抹掉本地 APFS 快照，阻断时间机器回滚。处方：只读 <code>tmutil listlocalsnapshots</code>，删除需用户在「系统设置」确认。</p>
+        </article>
+        <article class="rule" data-tags="mac loobins keychain credential">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">security</span> dump-keychain <span class="dimmed">[-d]</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">CRITICAL</span>
+              <span class="tag">导出钥匙串凭据</span>
+              <span class="tag">T1555</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：拖取登录钥匙串明文/哈希。处方：Agent 禁止 dump-keychain；取密须走钥匙串访问 UI 授权。</p>
+        </article>
+        <article class="rule" data-tags="mac loobins defaults">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">defaults</span> delete -g <span class="dimmed">&lt;key&gt;</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-med">MEDIUM</span>
+              <span class="tag">抹除全局系统首选项</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：破坏 Dock/安全/网络全局偏好。处方：写前备份 <code>defaults export</code>，限定域不使用 <code>-g</code>。</p>
+        </article>
+        <article class="rule" data-tags="mac loobins quarantine gatekeeper">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">xattr</span> -d com.apple.quarantine <span class="dimmed">&lt;file&gt;</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">绕过门禁 Gatekeeper</span>
+              <span class="tag">T1553</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：去掉下载隔离属性，让未签名载荷直接执行。处方：保留 quarantine，改用已签名构建产物。</p>
+        </article>
+        <article class="rule" data-tags="mac loobins launchctl persistence">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">launchctl</span> unload <span class="dimmed">|- remove</span> <span class="dimmed">&lt;plist&gt;</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-med">MEDIUM</span>
+              <span class="tag">终止系统守护进程</span>
+              <span class="tag">T1543</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：停掉 EDR/备份/安全相关 LaunchDaemon。处方：仅允许 unload 用户域服务，系统域需人工确认。</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- GTFOBins -->
+    <section class="section" id="gtfobins" data-cat="linux">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">Linux / Unix 原生逃逸与滥用
+            <small>GTFOBins — 常规二进制的文件读写与代码执行旁路</small>
+          </h2>
+          <div class="rule-meta" style="margin-top:12px">
+            <span class="badge linux">Linux</span>
+            <span class="badge">Unix</span>
+            <span class="badge">GTFOBins</span>
+          </div>
+        </div>
+        <div class="sources">
+          <a class="source" href="https://gtfobins.github.io" target="_blank" rel="noreferrer">
+            gtfobins.github.io <code>官网</code>
+          </a>
+          <a class="source" href="https://github.com/GTFOBins/GTFOBins.github.io" target="_blank" rel="noreferrer">
+            GTFOBins/GTFOBins.github.io <code>GitHub</code>
+          </a>
+        </div>
+      </div>
+      <div class="rules">
+        <article class="rule" data-tags="linux gtfobins find delete">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">find</span> . <span class="flag">-exec</span> … <span class="flag">-delete</span>  <span class="dimmed">// 或 find … -exec rm</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">间接通配删除</span>
+              <span class="tag">T1485</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：利用 find 递归删树，路径跳空格/链接出界。处方：先 <code>find … -print</code> 预览，再限定深度删除，解析真实路径防 symlink。</p>
+        </article>
+        <article class="rule" data-tags="linux gtfobins dd disk">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">dd</span> if=/dev/zero of=/dev/<span class="dimmed">sdX</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">CRITICAL</span>
+              <span class="tag">磁盘覆盖</span>
+              <span class="tag">T1485</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：零填充裸设备，销毁分区表与数据。处方：拒绝 <code>of=/dev/*</code>；只允许写入项目内镜像文件。</p>
+        </article>
+        <article class="rule" data-tags="linux gtfobins mkfs format">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">mkfs.</span><span class="dimmed">*</span> <span class="dimmed">&lt;device&gt;</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">CRITICAL</span>
+              <span class="tag">格式化</span>
+              <span class="tag">T1485</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：重建文件系统即数据全灭。处方：Agent 一律拒绝 mkfs；挂载调试用 loop 文件。</p>
+        </article>
+        <article class="rule" data-tags="linux gtfobins tar exec">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">tar</span> <span class="flag">--checkpoint-action=exec=</span><span class="dimmed">&lt;cmd&gt;</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">间接命令执行</span>
+              <span class="tag">T1059</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：打包过程偷跑任意命令。处方：禁用 <code>--checkpoint-action</code>；用 <code>--to-command</code> 时走参数数组。</p>
+        </article>
+        <article class="rule" data-tags="linux gtfobins python node inline">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">python</span> -c <span class="dimmed">'…'</span>  ·  <span class="kw">node</span> -e <span class="dimmed">'…'</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-med">MEDIUM</span>
+              <span class="tag">内联脚本绕过检测</span>
+              <span class="tag">T1059</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>场景</b>：一行解释器执行，规避「命令黑名单」。处方：要求落盘 <code>.py/.mjs</code> 再跑，禁止 <code>-c/-e</code> 与 eval。</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Atomic -->
+    <section class="section" id="atomic" data-cat="atomic">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">原子级破坏样本集
+            <small>Atomic Red Team — ATT&amp;CK 战术级可执行测试命令</small>
+          </h2>
+          <div class="rule-meta" style="margin-top:12px">
+            <span class="badge atomic">Atomic</span>
+            <span class="badge">ATT&amp;CK</span>
+            <span class="badge">正向样本源</span>
+          </div>
+        </div>
+        <div class="sources">
+          <a class="source" href="https://atomicredteam.io" target="_blank" rel="noreferrer">
+            atomicredteam.io <code>官网</code>
+          </a>
+          <a class="source" href="https://github.com/redcanaryco/atomic-red-team" target="_blank" rel="noreferrer">
+            redcanaryco/atomic-red-team <code>GitHub</code>
+          </a>
+        </div>
+      </div>
+      <div class="rules">
+        <article class="rule" data-tags="atomic t1485 data-destruction">
+          <div class="rule-main">
+            <pre class="cmd"><span class="dimmed">T1485</span>  数据销毁 / 碎纸指令 <span class="dimmed">（shred · cipher · sdelete · rm -rf）</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">全平台数据销毁</span>
+              <span class="tag">test_cases.positive</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>提取</b>：从 <code>atomics/T1485/*.yaml</code> 抓 executor.command 作为正样本。</p>
+        </article>
+        <article class="rule" data-tags="atomic t1490 inhibit-recovery">
+          <div class="rule-main">
+            <pre class="cmd"><span class="dimmed">T1490</span>  破坏系统还原点与备份 <span class="dimmed">（vssadmin · bcdedit · wevtutil）</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">抑制恢复</span>
+              <span class="tag">test_cases.positive</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>提取</b>：T1490 YAML 的多平台 executor，覆盖 Win/mac/Linux 回滚阻断命令。</p>
+        </article>
+        <article class="rule" data-tags="atomic t1070 log-tamper">
+          <div class="rule-main">
+            <pre class="cmd"><span class="dimmed">T1070</span>  系统事件日志抹除 <span class="dimmed">（wevtutil cl · Clear-EventLog · shred *.log）</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">日志清除</span>
+              <span class="tag">t1070</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>提取</b>：以原子样本为正样本，Sigma 清日志规则为检测对齐。</p>
+        </article>
+        <article class="rule" data-tags="atomic t1222 permissions">
+          <div class="rule-main">
+            <pre class="cmd"><span class="dimmed">T1222</span>  文件与目录权限无差别放通 <span class="dimmed">（chmod · icacls · takeown）</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-med">MEDIUM</span>
+              <span class="tag">权限破坏</span>
+              <span class="tag">t1222</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>提取</b>：T1222.001/.002 分平台命令，对齐最小权限替代方案。</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Sigma -->
+    <section class="section" id="sigma" data-cat="sigma">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">工业级检测规则与正则
+            <small>Sigma — 跨 SIEM 的进程创建与混淆对抗特征</small>
+          </h2>
+          <div class="rule-meta" style="margin-top:12px">
+            <span class="badge sigma">Sigma</span>
+            <span class="badge">检测正则</span>
+            <span class="badge">防逃逸</span>
+          </div>
+        </div>
+        <div class="sources">
+          <a class="source" href="https://sigmahq.io" target="_blank" rel="noreferrer">
+            sigmahq.io <code>官网</code>
+          </a>
+          <a class="source" href="https://github.com/SigmaHQ/sigma" target="_blank" rel="noreferrer">
+            SigmaHQ/sigma <code>GitHub</code>
+          </a>
+        </div>
+      </div>
+      <div class="rules">
+        <article class="rule" data-tags="sigma process-creation">
+          <div class="rule-main">
+            <pre class="cmd">process_creation <span class="dimmed">— Windows / macOS / Linux 字段化命令行特征</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-med">MEDIUM</span>
+              <span class="tag">多平台进程创建</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>用法</b>：对齐 <code>rules/*/process_creation/</code> 的 selection/filter 结构，映射到 ARES 匹配器。</p>
+        </article>
+        <article class="rule" data-tags="sigma evasion normalization">
+          <div class="rule-main">
+            <pre class="cmd"><span class="flag">-r -f</span> ≡ <span class="flag">-rf</span>  ·  <span class="flag">/s /q</span> ≡ <span class="flag">/q /s</span>  ·  <span class="dimmed">反引号 / 引号 / 大小写变形</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-med">MEDIUM</span>
+              <span class="tag">参数归一化</span>
+              <span class="tag">防逃逸</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>用法</b>：正则前先把短参合并、顺序无关化、剥引号，再跑危险特征。</p>
+        </article>
+        <article class="rule" data-tags="sigma powershell base64">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">powershell</span> <span class="flag">-enc</span> <span class="dimmed">&lt;Base64&gt;</span>  <span class="dimmed">// -EncodedCommand</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">Base64 混淆执行</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>用法</b>：命中即要求明文脚本；可解码后再过一遍危险特征。</p>
+        </article>
+        <article class="rule" data-tags="sigma curl bash pipe">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">curl</span> <span class="dimmed">&lt;url&gt;</span> | <span class="kw">bash</span>  ·  <span class="kw">wget</span> … | <span class="kw">sh</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">远程脚本管道执行</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>用法</b>：先落盘 + 校验哈希再执行；处方给出「下载→审阅→运行」三步。</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Git -->
+    <section class="section" id="git" data-cat="git">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">Git 代码库灾难操作
+            <small>Git Flight Rules — 不可逆版本库破坏与恢复思路</small>
+          </h2>
+          <div class="rule-meta" style="margin-top:12px">
+            <span class="badge git">Git</span>
+            <span class="badge">VCS</span>
+            <span class="badge">处方来源</span>
+          </div>
+        </div>
+        <div class="sources">
+          <a class="source" href="https://github.com/k88hudson/git-flight-rules" target="_blank" rel="noreferrer">
+            k88hudson/git-flight-rules <code>GitHub</code>
+          </a>
+          <a class="source" href="https://github.com" target="_blank" rel="noreferrer">
+            github.com <code>官网</code>
+          </a>
+        </div>
+      </div>
+      <div class="rules">
+        <article class="rule" data-tags="git force-push">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">git</span> push <span class="flag">-f</span> | <span class="flag">--force</span> | <span class="flag">-force</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">强制覆盖主干分支</span>
+              <span class="tag">处方：--force-with-lease</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>处方</b>：改用 <code>git push --force-with-lease</code>；push 前 <code>git fetch</code> 并确认远程无新提交。</p>
+        </article>
+        <article class="rule" data-tags="git reset-hard">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">git</span> reset <span class="flag">--hard</span> HEAD~N</pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">丢弃未提交及历史</span>
+              <span class="tag">处方：stash / 检出新分支</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>处方</b>：先 <code>git stash push -m "ares-backup"</code> 或建 <code>backup/…</code> 分支，再 reset。</p>
+        </article>
+        <article class="rule" data-tags="git clean">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">git</span> clean <span class="flag">-fdx</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">递归抹除非追踪与构建文件</span>
+              <span class="tag">处方：clean -nd 预览</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>处方</b>：先 <code>git clean -nd</code> 列出将删文件，人工确认后再 <code>-fd</code>；慎用 <code>-x</code> 连缓存一起清。</p>
+        </article>
+        <article class="rule" data-tags="git branch-delete">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">git</span> branch <span class="flag">-D</span> <span class="dimmed">&lt;branch&gt;</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-med">MEDIUM</span>
+              <span class="tag">强制删除未合并分支</span>
+              <span class="tag">处方：-d / 记录 SHA</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>处方</b>：优先 <code>git branch -d</code>；确需 <code>-D</code> 时先打印分支头 SHA 以便恢复。</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Cloud -->
+    <section class="section" id="cloud" data-cat="cloud">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">容器与云原生基础设施销毁
+            <small>OWASP &amp; Cloud Guardrails — 编排层批量删除与销毁</small>
+          </h2>
+          <div class="rule-meta" style="margin-top:12px">
+            <span class="badge cloud">云原生</span>
+            <span class="badge">OWASP</span>
+            <span class="badge">容器</span>
+          </div>
+        </div>
+        <div class="sources">
+          <a class="source" href="https://cheatsheetseries.owasp.org" target="_blank" rel="noreferrer">
+            cheatsheetseries.owasp.org <code>官网</code>
+          </a>
+          <a class="source" href="https://github.com/OWASP/CheatSheetSeries" target="_blank" rel="noreferrer">
+            OWASP/CheatSheetSeries <code>GitHub</code>
+          </a>
+        </div>
+      </div>
+      <div class="rules">
+        <article class="rule" data-tags="cloud docker prune">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">docker</span> system prune <span class="flag">-a --volumes -f</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">HIGH</span>
+              <span class="tag">清空镜像/容器/卷</span>
+              <span class="tag">处方：docker system df</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>处方</b>：先 <code>docker system df</code> / <code>docker ps -a</code> 评估，限定 label/时间窗清理，保留数据卷。</p>
+        </article>
+        <article class="rule" data-tags="cloud docker volume">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">docker</span> volume rm $(<span class="kw">docker</span> volume ls -q)</pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">CRITICAL</span>
+              <span class="tag">批量删卷</span>
+              <span class="tag">T1485</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>处方</b>：禁止全量 volume rm；按名称白名单逐个删，并先导出卷备份。</p>
+        </article>
+        <article class="rule" data-tags="cloud kubectl">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">kubectl</span> delete namespace/all <span class="flag">--all</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">CRITICAL</span>
+              <span class="tag">集群批量拆除</span>
+              <span class="tag">T1485</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>处方</b>：限定 namespace + label；生产删除走变更单，Agent 只允许 dry-run。</p>
+        </article>
+        <article class="rule" data-tags="cloud terraform">
+          <div class="rule-main">
+            <pre class="cmd"><span class="kw">terraform</span> destroy <span class="flag">-auto-approve</span></pre>
+            <div class="rule-meta">
+              <span class="tag sev-high">CRITICAL</span>
+              <span class="tag">基础设施一键销毁</span>
+              <span class="tag">处方：plan 后人工 approve</span>
+            </div>
+          </div>
+          <button class="copy" type="button">复制</button>
+          <p class="rule-note"><b>处方</b>：去掉 <code>-auto-approve</code>，强制 <code>terraform plan -destroy</code> 会签后再应用。</p>
+        </article>
+      </div>
+    </section>
+
+    <div class="empty" id="empty">没有匹配的特征，试试其它关键词或筛选条件。</div>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <div>
+        <strong>ARES</strong> · Agent Risk Execution Signatures · 规则库构建参考
+      </div>
+      <div>来源：LOLBAS · LOOBins · GTFOBins · Atomic Red Team · Sigma · Git Flight Rules · OWASP</div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

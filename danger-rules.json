@@ -1,7 +1,7 @@
 {
   "version": 4,
   "enabled": true,
-  "_comment": "高危 ASK 黑名单（可独立分发）。severity=命中时提示等级；细节处方看 EAS 病毒库。CLI/IDE 亦可直接用本文件。",
+  "_comment": "高危 ASK 黑名单（可独立分发）。severity=命中时提示等级；细节处方看 ARES（Agent Risk Execution Signatures）。CLI/IDE 亦可直接用本文件。",
   "rules": [
     {
       "id": "disk-destroy",
@@ -116,7 +116,7 @@
       "name": "Git 破坏性",
       "severity": "medium",
       "description": "force push、reset --hard、clean -fdx、filter-branch",
-      "pattern": "\\bgit\\s+push\\s+[^\\n]*(?:--force|-f)\\b|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*[fxd]|\\bgit\\s+filter-branch\\b",
+      "pattern": "\\bgit\\s+push\\s+[^\\n]*(?:--?force\\b|-f\\b)|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*[fxd]|\\bgit\\s+filter-branch\\b",
       "flags": "i",
       "enabled": true
     },

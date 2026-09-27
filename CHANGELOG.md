@@ -1,5 +1,26 @@
 # EasyAntigravity 更新日志
 
+## v3.0.0 (2026-09-27)
+
+### 🛡️ ARES 风险特征库（Agent Risk Execution Signatures）
+- **命名定稿**：原「病毒库 / EAS」对外统一为 **ARES（Agent Risk Execution Signatures）**；界面开关为「ARES 风险提示」，胶囊页脚 `EasyAG ARES`。
+- **权威源落库**：从 Atomic Red Team（T1485/T1490/T1070）、LOLBAS、GTFOBins、Sigma、Git Flight Rules、OWASP 收集提炼 **31 条** ARES 特征（`rules/feeds/ares-signatures.json`），并入 `signatures.json`（合计 **230** 条）。
+- **正负样本自检**：115 个 `test_cases` 全通过；覆盖卷影/备份销毁、ACL 夺权、diskpart 清盘、日志抹除、钥匙串、Gatekeeper 绕过、dd/mkfs、tar 检查点、内联解释器、Base64/管道执行、Git 灾难操作、Docker/K8s/Terraform/云存储销毁。
+- **防逃逸**：`git push -force`、`git clean -fdx` 不误伤 `-nd`、`git branch -D` 不误伤 `-d`、`mkfs -n` 干跑不报警。
+
+### 🔧 Pilot 注入与规则加载
+- 数据目录旧 9 条规则不再盖住内置 19 条；版本落后时自动升级。
+- `injectedCount` 改读 `injections` 清单；补发 `backend/knowledge/` 特征库。
+
+### 🧩 托盘与胶囊
+- 托盘对齐 Clash Party 风格：短标签、退出独立分组、`Ctrl+Q`。
+- 胶囊服务端定时 `hide_capsule` 兜底；Tauri 清理残留 Resident，避免双胶囊叠层。
+- `hide_easyag` 改发明文 `hide`，启动后面板可收起至托盘。
+
+### 🖥️ 控制台
+- SSE 立即打拍 + 启动回填 `/api/logs`，日志与风险计数一致。
+- 高级工具与运行日志默认展开。
+
 ## v2.3.0 (2026-09-25)
 
 ### 🚀 灵动胶囊通知系统 (HUD Capsule)

@@ -248,7 +248,8 @@ namespace EasyAGResident {
                 trayMenu.Renderer = new ModernMenuRenderer();
                 trayMenu.Padding = new Padding(2);
 
-                var itemOpen = trayMenu.Items.Add("打开控制面板");
+                // 风格对齐 Clash Party：短标签、动作一组、退出单独一组并带 Ctrl+Q
+                var itemOpen = trayMenu.Items.Add("显示窗口");
                 itemOpen.Font = new System.Drawing.Font("Segoe UI", 9.5f, System.Drawing.FontStyle.Bold);
                 itemOpen.Padding = new Padding(14, 6, 14, 6);
                 itemOpen.Click += (s, e) => {
@@ -269,8 +270,9 @@ namespace EasyAGResident {
                 sep.Margin = new Padding(4, 2, 4, 2);
                 trayMenu.Items.Add(sep);
 
-                var itemExit = trayMenu.Items.Add("退出 EasyAntigravity");
+                var itemExit = trayMenu.Items.Add("退出应用");
                 itemExit.Padding = new Padding(14, 6, 14, 6);
+                itemExit.ShortcutKeyDisplayString = "Ctrl+Q";
                 itemExit.Click += (s, e) => {
                     LogEvent("{\"event\":\"tray_exit\"}");
                     ShutdownResident();

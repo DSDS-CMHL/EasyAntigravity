@@ -67,7 +67,7 @@ async function start() {
     assert.equal(status.enableI18n, true);
     assert.ok(status.dictEntries > 100, '词典应已加载');
     assert.ok(status.dangerRulesTotal >= 10, 'danger-rules 应 >=10');
-    assert.ok(status.kbRules >= 20, '病毒库应 >=20');
+    assert.ok(status.kbRules >= 20, 'ARES 应 >=20');
 
     const kb = await (await fetch(app.url + '/api/kb')).json();
     assert.ok(kb.count >= 20);

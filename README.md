@@ -12,7 +12,7 @@
 |------|------|
 | **免 TUN 代理** | 启动 Antigravity 时注入 Chromium 本地 HTTP 代理，不改系统代理、不用 TUN/DLL |
 | **界面汉化** | CDP 只读词典，替换 UI 文案（不点击、不碰审批） |
-| **高危旁路** | 官方 **Hooks** 在命令执行前匹配 `danger-rules` + EAS 病毒库，输出 **低/中/高** 风险与处方；命中则 `force_ask` |
+| **高危旁路** | 官方 **Hooks** 在命令执行前匹配 `danger-rules` + ARES（Agent Risk Execution Signatures），输出 **低/中/高** 风险与处方；命中则 `force_ask` |
 
 自动放行交给官方 **Turbo Mode**；EasyAG **不做 CDP 自动审批**。
 
@@ -51,7 +51,7 @@ EasyAG 不修改工作区内外的文件访问策略；是否允许访问工作�
 
 | 启动模式 | 行为 |
 |------|------|
-| **Turbo Pilot** | 自动审批 + 高危命令 ASK；退出后恢复原执行策略，并可选择是否显示病毒库后果提示 |
+| **Turbo Pilot** | 自动审批 + 高危命令 ASK；退出后恢复原执行策略，并可选择是否显示 ARES 风险提示 |
 | **兼容模式** | 沿用用户原有审批与权限设置，仅使用代理和汉化 |
 
 首次运行会安装官方 Hooks（`~/.gemini/config/hooks.json` 中 `easyag-task-done` / `easyag-danger-gate`，可卸载）。
@@ -66,14 +66,14 @@ EasyAG 不修改工作区内外的文件访问策略；是否允许访问工作�
 
 ---
 
-## 规则与病毒库（可独立使用）
+## 规则与 ARES（可独立使用）
 
 不装 EasyAG 也能用，适合 CLI / IDE 的 auto-accept 插件：
 
 | 文件 | 规模 | 用途 |
 |------|------|------|
 | `danger-rules.json` | 19 条合并规则（带 severity） | 高危 ASK/Deny 黑名单 |
-| `Agentguard-dev/src/rules/signatures.json` | 199 条 EAS | 病理 / 后果 / 安全替代 |
+| `Agentguard-dev/src/rules/signatures.json` | 199 条 ARES | 病理 / 后果 / 安全替代 |
 
 - 官方规则只填 **target**（如 `regex:rm -rf .*`），不要写 `command(…)` 外壳  
 - 编译语义见 `docs/RULES.md`（单 token 整行 `^…$`，需 `.*(?:pat).*` 包裹）  

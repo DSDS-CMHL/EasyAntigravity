@@ -74,7 +74,7 @@
     <h1 class="title" id="title">命令需要人工确认</h1>
     <div class="section"><span class="section-label">可能后果</span><span class="section-value" id="impact">可能对当前环境造成不可逆修改。</span></div>
     <div class="section solution" id="solutionRow"><span class="section-label">建议方案</span><span class="section-value" id="solution">检查命令作用范围，确认后再继续。</span></div>
-    <span class="footer">EasyAG 病毒库 · 悬停暂停</span>
+    <span class="footer">EasyAG ARES · 悬停暂停</span>
     <div class="timer"></div>
   </article>
   <script>
@@ -87,8 +87,19 @@
       clearTimeout(hideTimer);
       notice.classList.add('leaving');
       await new Promise(resolve => setTimeout(resolve, 150));
-      try { await window.__TAURI__.window.getCurrentWindow().hide(); }
-      catch (_) { window.close(); }
+      try {
+        const t = window.__TAURI__;
+        const win = t && (
+          (t.window && t.window.getCurrentWindow && t.window.getCurrentWindow()) ||
+          (t.webview && t.webview.getCurrentWebviewWindow && t.webview.getCurrentWebviewWindow()) ||
+          (t.webviewWindow && t.webviewWindow.getCurrentWebviewWindow && t.webviewWindow.getCurrentWebviewWindow())
+        );
+        if (win && typeof win.hide === 'function') {
+          await win.hide();
+          return;
+        }
+      } catch (_) {}
+      try { window.close(); } catch (_) {}
     }
     function armTimer(ms) {
       clearTimeout(hideTimer);
@@ -118,7 +129,7 @@
       document.getElementById('title').textContent = title || (isReady ? '本轮任务已完成' : '命令需要人工确认');
       document.getElementById('impact').textContent = impact || (isReady ? 'Agent 已空闲，可以检查结果。' : '该命令可能改变当前环境，请确认作用范围。');
       document.getElementById('solution').textContent = solution || (isReady ? '返回 Antigravity 查看结果。' : '确认目标、路径和参数后再决定是否执行。');
-      document.querySelector('.footer').textContent = isReady ? 'EasyAG · 悬停暂停' : 'EasyAG 病毒库 · 悬停暂停';
+      document.querySelector('.footer').textContent = isReady ? 'EasyAG · 悬停暂停' : 'EasyAG ARES · 悬停暂停';
       const duration = isReady ? 6000 : level === 'high' ? 15000 : level === 'medium' ? 12000 : 9000;
       const timer = document.querySelector('.timer');
       timer.replaceWith(timer.cloneNode(true));

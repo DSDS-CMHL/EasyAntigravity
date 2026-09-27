@@ -1,6 +1,6 @@
 [package]
 name = "easyantigravity"
-version = "2.3.0"
+version = "3.0.0"
 edition = "2021"
 description = "EasyAntigravity - Antigravity copilot: no-TUN proxy, i18n, ASK risk gate"
 

@@ -603,8 +603,8 @@
     </div>
     <div class="row advisor-row" id="advisorRow">
       <span>
-        <strong style="font-weight: 500;">病毒库后果提示</strong><br>
-        <small style="color: var(--text-dark);">拦截时提示可能后果与安全替代</small>
+        <strong style="font-weight: 500;">ARES 风险提示</strong><br>
+        <small style="color: var(--text-dark);">拦截时提示可能后果与安全替代（Agent Risk Execution Signatures）</small>
       </span>
       <label class="switch">
         <input type="checkbox" id="riskAdvisorToggle" checked>
@@ -619,7 +619,7 @@
     <span id="launchText">启动 Antigravity</span>
   </button>
 
-  <details class="advanced" id="advancedPanel">
+  <details class="advanced" id="advancedPanel" open>
     <summary>
       <span>高级工具与运行日志</span>
       <span class="advanced-meta"><span id="approveCountBadge">风险 0</span> · <span id="rulesCountBadge">--</span> · <span id="kbCountBadge">KB --</span></span>
@@ -718,6 +718,20 @@
           appendLog(item.category, item.message, item.cls);
         }
       };
+
+      // SSE 在 WebView 里可能晚连/丢帧：启动时用 HTTP 把历史日志补进控制台
+      try {
+        const hist = await (await fetch('/api/logs?limit=200')).json();
+        if (Array.isArray(hist) && hist.length) {
+          const seen = new Set();
+          for (const item of hist) {
+            const key = (item.at || '') + '|' + (item.category || '') + '|' + (item.message || '');
+            if (seen.has(key)) continue;
+            seen.add(key);
+            appendLog(item.category, item.message, item.cls);
+          }
+        }
+      } catch (e) {}
 
       setInterval(async () => {
         try {
@@ -935,6 +949,8 @@
           appendLog('SECURITY', '启动前校验通过：Turbo + 高危 ASK ' + (d.pilot.count || 0) + ' 条', 'tag-proxy');
         }
         if (d.alreadyRunning) setUiState('running');
+        // 启动成功后收起面板（托盘静默）；后端也会发 hide，这里再兜一次
+        setTimeout(() => { hideToTray(); }, 400);
       } catch (e) {
         appendLog('SYSTEM', '启动失败: ' + (e && e.message ? e.message : e), 'tag-alert');
         setUiState('error');

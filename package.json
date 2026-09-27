@@ -1,7 +1,7 @@
 {
     "name":  "easyantigravity",
-    "version":  "2.3.0",
-    "description":  "Antigravity copilot: no-TUN proxy, I18N, ASK + risk knowledge base",
+    "version":  "3.0.0",
+    "description":  "Antigravity copilot: no-TUN proxy, I18N, ASK + ARES (Agent Risk Execution Signatures)",
     "main":  "server.js",
     "bin":  "server.js",
     "scripts":  {

@@ -127,6 +127,12 @@ fn show_capsule(app: &tauri::AppHandle, kind: &str, title: &str, detail: &str, s
     let _ = window.eval(&script);
     let _ = window.show();
     let _ = window.set_always_on_top(true);
+    // 纯失效保护：页面倒计时/悬停暂停是主路径，这里只防“彻底关不掉”
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(45_000));
+        hide_capsule(&app2);
+    });
 }
 
 fn hide_capsule(app: &tauri::AppHandle) {
@@ -136,12 +142,13 @@ fn hide_capsule(app: &tauri::AppHandle) {
 }
 
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "打开控制面板", true, None::<&str>)?;
+    // 风格对齐 Clash Party：短标签、动作一组、退出单独一组并带 Ctrl+Q
+    let show = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
     let web = MenuItem::with_id(app, "web", "浏览器控制台", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出 EasyAntigravity", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出应用", true, Some("Ctrl+Q"))?;
     let menu = Menu::with_items(
         app,
-        &[&show, &PredefinedMenuItem::separator(app)?, &web, &PredefinedMenuItem::separator(app)?, &quit],
+        &[&show, &web, &PredefinedMenuItem::separator(app)?, &quit],
     )?;
 
     let mut builder = TrayIconBuilder::with_id("easyag-tray")
@@ -248,6 +255,7 @@ fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Erro
                                     v["solution"].as_str().unwrap_or(""),
                                 ),
                                 "hide_capsule" => hide_capsule(&handle),
+                                "hide_easyag" | "hide" => hide_main_window(&handle),
                                 "exit" | "quit" => {
                                     stop_backend(&handle.state::<Backend>());
                                     handle.exit(0);
@@ -259,7 +267,7 @@ fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Erro
                     }
                     match trimmed {
                         "popup" | "focus" => show_main_window(&handle),
-                        "hide" => hide_main_window(&handle),
+                        "hide" | "hide_easyag" => hide_main_window(&handle),
                         "hide_capsule" => hide_capsule(&handle),
                         "quit" | "exit" => {
                             stop_backend(&handle.state::<Backend>());

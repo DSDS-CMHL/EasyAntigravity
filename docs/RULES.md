@@ -1,4 +1,4 @@
-# 规则库 / 病毒库 可持续更新
+# 规则库 / ARES 可持续更新
 
 两个「定义库」是产品核心资产：**用户可改、社区可推、可回滚**。  
 **规则文件可独立分发**——不装 EasyAG 也能用，CLI / IDE 的 auto-accept 插件（autoaccept、autoagy 等）同样能吃。
@@ -14,7 +14,7 @@
 | 库 | 文件 | 角色 |
 |----|------|------|
 | **高危规则** | `danger-rules.json` | EasyAG 编译 → 官方 ASK |
-| **EAS 病毒库** | `Agentguard-dev/src/rules/signatures.json` | Ask 旁路：病理 / 后果 / 安全替代 |
+| **ARES**（Agent Risk Execution Signatures） | `Agentguard-dev/src/rules/signatures.json` | Ask 旁路：病理 / 后果 / 安全替代 |
 
 ---
 
@@ -76,7 +76,7 @@ node scripts/rules-packs.cjs snapshot
 
 1. **只加检测正则**，不写利用载荷。  
 2. 稳定 `id` + 无害触发样例（如 `echo shutdown`）。  
-3. EAS 必填 `root_cause` / `destructive_impact` / `safe_alternative`。  
+3. ARES 必填 `root_cause` / `destructive_impact` / `safe_alternative`。  
 4. 合并前 `validate` + `npm test`。
 
 ---
@@ -96,5 +96,5 @@ node scripts/rules-packs.cjs snapshot
 ## 6. 当前规模
 
 - danger-rules：**102**（删除 / 磁盘 / 账号 / 服务 / 下载执行 / Git / DB / 引导 / 容器 / 转储…）  
-- EAS signatures：**199**（LOLBAS / Deley / 注入逃逸 / Windows 怪癖）  
+- ARES signatures：**199**（LOLBAS / Deley / 注入逃逸 / Windows 怪癖）  
 - 发布物：`rules/feeds/easyag-danger-core.json` · `rules/feeds/antigravity-cli-ask.json`

@@ -1,6 +1,6 @@
 # EasyAntigravity 架构说明
 
-**Turbo Mode 的副驾**：免 TUN 登录 · 汉化界面 · 高危 ASK + 病毒库风险旁路。
+**Turbo Mode 的副驾**：免 TUN 登录 · 汉化界面 · 高危 ASK + ARES 风险旁路。
 
 ---
 
@@ -10,11 +10,11 @@
 |------|--------|------|
 | 自动放行 | **官方 Turbo Mode** | EasyAG 不再模拟点击 |
 | 高危询问 | **官方 ASK**（点击启动 AG 前注入并校验） | 高危正则「永远询问」 |
-| 风险处方 | **EasyAG + EAS 病毒库** | Ask 弹窗时旁路匹配，给出病理/后果/安全替代 |
+| 风险处方 | **EasyAG + ARES**（Agent Risk Execution Signatures） | Ask 弹窗时旁路匹配，给出病理/后果/安全替代 |
 | 免 TUN 登录 | **EasyAG** | 官方无代理配置 |
 | 界面汉化 | **EasyAG** | 官方无 i18n |
 
-愿景：EAS 病毒库（AgentGuard）可独立成为 **Agent 时代的「命令病毒库」**；EasyAG 是 Antigravity 侧的第一落地壳。
+愿景：**ARES**（Agent Risk Execution Signatures）可独立成为 Agent 时代的命令风险特征库；EasyAG 是 Antigravity 侧的第一落地壳。
 
 ---
 
@@ -28,7 +28,7 @@ flowchart TB
     I18N[汉化注入器]
     Rules[danger-rules.json]
     Sync[ASK 注入器]
-    KB[EAS 病毒库<br/>AgentGuard]
+    KB[ARES<br/>Agent Risk Execution Signatures]
     Advisor[风险处方旁路]
   end
 
@@ -57,7 +57,7 @@ flowchart TB
 
 ## 3. 三大模块
 
-启动器提供两种模式：**Turbo Pilot** 临时叠加终端 Turbo 与高危 ASK，**兼容模式**沿用用户原有审批设置，仅启用代理和汉化。病毒库后果提示是 Pilot 下的可选能力，关闭提示不会关闭高危 ASK。Pilot 结束后只移除本次实际新增的规则，并恢复启动前的命令执行策略。
+启动器提供两种模式：**Turbo Pilot** 临时叠加终端 Turbo 与高危 ASK，**兼容模式**沿用用户原有审批设置，仅启用代理和汉化。ARES 风险提示是 Pilot 下的可选能力，关闭提示不会关闭高危 ASK。Pilot 结束后只移除本次实际新增的规则，并恢复启动前的命令执行策略。
 
 ### 3.1 免 TUN 登录代理
 
@@ -73,13 +73,13 @@ flowchart TB
 - **边界**：**只读 UI 文案**，不点击、不改业务逻辑、不碰权限流。
 - **数据面**：`dicts/` 下的词典 JSON。
 
-### 3.3 Turbo 副驾（ASK + 病毒库旁路）
+### 3.3 Turbo 副驾（ASK + ARES 旁路）
 
 - **问题**：Turbo 静默放行未命中项；纯 Deny 过狠且缺上下文。
 - **做法**：
   1. `danger-rules.json` 高危正则，**点击启动 AG 前注入并回读校验官方 ASK**（`command(regex:…)`）；
   2. Ask 弹窗出现时，CDP **只读**抽取待审命令；
-  3. 匹配 **EAS 病毒库**（`Agentguard-dev/.../signatures.json`）；
+  3. 匹配 **ARES**（Agent Risk Execution Signatures，`Agentguard-dev/.../signatures.json`）；
   4. 输出「病理 / 破坏后果 / 安全替代」处方，**不代替用户点允许**。
 - **边界**：观察与提示；放行决策留给用户。熔断由官方 ASK 保证「一定会停」。
 - **防坑**：规则只填 target；同步时清理 `command(command(…))` 双重包裹。

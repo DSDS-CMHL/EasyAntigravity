@@ -308,24 +308,31 @@ let dangerRules = { version: 1, enabled: true, rules: DEFAULT_DANGER_RULES };
 
 function loadDangerRules() {
   const fallbackRules = path.join(ROOT_DIR, 'danger-rules.json');
-  const tryPaths = [RULES_FILE, fallbackRules];
-  for (const p of tryPaths) {
-    if (!fs.existsSync(p)) continue;
+  const readRuleFile = (p) => {
     try {
       const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
-      if (Array.isArray(data.rules)) {
-        dangerRules = {
-          version: data.version || 1,
-          enabled: data.enabled !== false,
-          rules: data.rules.filter(r => r && r.pattern)
-        };
-        // 自愈：主文件缺失时从预置资源写回
-        if (p === fallbackRules && !fs.existsSync(RULES_FILE)) {
-          try { fs.copyFileSync(fallbackRules, RULES_FILE); } catch (e) {}
-        }
-        break;
-      }
-    } catch (e) {}
+      if (!Array.isArray(data.rules)) return null;
+      return {
+        version: data.version || 1,
+        enabled: data.enabled !== false,
+        rules: data.rules.filter(r => r && r.pattern)
+      };
+    } catch (e) {
+      return null;
+    }
+  };
+  const fromData = readRuleFile(RULES_FILE);
+  const fromSource = readRuleFile(fallbackRules);
+  // 数据目录是用户可改的，但旧版 9 条默认文件会挡住内置 19 条：版本更旧时用内置覆盖
+  if (fromSource && fromData && (fromData.version || 1) < (fromSource.version || 1)) {
+    dangerRules = fromSource;
+    try { fs.copyFileSync(fallbackRules, RULES_FILE); } catch (e) {}
+  } else {
+    dangerRules = fromData || fromSource || dangerRules;
+  }
+  if (fromSource && !fromData) {
+    dangerRules = fromSource;
+    try { fs.copyFileSync(fallbackRules, RULES_FILE); } catch (e) {}
   }
   if (!dangerRules.rules || !dangerRules.rules.length) {
     dangerRules = { version: 1, enabled: true, rules: DEFAULT_DANGER_RULES };
@@ -343,7 +350,7 @@ function getActiveDangerPatterns() {
     .map(r => ({ id: r.id || 'rule', name: r.name || r.id || 'rule', pattern: r.pattern, flags: r.flags || 'i' }));
 }
 
-// ── AgentGuard 病毒库（EAS 特征）：命中 Ask 时旁路给风险处方 ──
+// ── ARES（Agent Risk Execution Signatures）：命中 Ask 时旁路给风险处方 ──
 let agentGuardRules = [];
 function loadAgentGuardSignatures() {
   agentGuardRules = [];
@@ -351,7 +358,9 @@ function loadAgentGuardSignatures() {
     // 源文件优先（dist 可能是旧编译产物）
     path.join(ROOT_DIR, 'Agentguard-dev', 'src', 'rules', 'signatures.json'),
     path.join(ROOT_DIR, 'knowledge', 'signatures.json'),
-    path.join(ROOT_DIR, 'Agentguard-dev', 'dist', 'rules', 'signatures.json')
+    path.join(ROOT_DIR, 'Agentguard-dev', 'dist', 'rules', 'signatures.json'),
+    path.join(DATA_DIR, 'knowledge', 'signatures.json'),
+    path.join(ROOT_DIR, 'signatures.json')
   ];
   for (const p of candidates) {
     if (!fs.existsSync(p)) continue;
@@ -381,7 +390,7 @@ function matchDangerRules(cmd) {
     .filter(r => r && r.pattern && r.enabled !== false)
     .map(r => {
       try {
-        if (new RegExp(r.pattern, r.flags || 'i').test(cmd)) {
+        if (new RegExp(r.pattern, r.flags === undefined ? 'i' : r.flags).test(cmd)) {
           return {
             id: r.id,
             name: r.name,
@@ -401,7 +410,7 @@ function matchKnowledgeBase(cmd) {
   const hits = [];
   for (const r of agentGuardRules) {
     try {
-      const re = new RegExp(r.pattern, r.flags || 'i');
+      const re = new RegExp(r.pattern, r.flags === undefined ? 'i' : r.flags);
       if (re.test(cmd)) {
         hits.push({
           id: r.id,
@@ -419,7 +428,7 @@ function matchKnowledgeBase(cmd) {
   return hits;
 }
 
-/** 合并 danger-rules + EAS，给出最高风险等级与最佳处方 */
+/** 合并 danger-rules + ARES，给出最高风险等级与最佳处方 */
 function assessCommandRisk(cmd) {
   const dHits = matchDangerRules(cmd);
   const kHits = matchKnowledgeBase(cmd);
@@ -532,12 +541,36 @@ function popupGuiWindow() {
 }
 
 let residentProcess = null;
+let capsuleHideTimer = null;
+
+function scheduleCapsuleHide(type) {
+  if (capsuleHideTimer) clearTimeout(capsuleHideTimer);
+  // 与 capsule.html 倒计时一致；JS 侧 hide 失败时由壳兜底收起
+  const ms = type === 'ready' ? 6000
+    : type === 'risk_high' || type === 'danger' ? 15000
+    : type === 'risk_medium' || type === 'interaction' ? 12000
+    : 9000;
+  capsuleHideTimer = setTimeout(() => {
+    sendResident({ cmd: 'hide_capsule' });
+  }, ms + 400);
+}
 
 function sendResident(cmd) {
   // Tauri 壳：走 stdout JSON 协议（托盘/胶囊由 Tauri 实现）
   if (TAURI_MODE) {
     try {
+      const name = cmd && cmd.cmd;
+      // 旧壳只认明文 hide / hide_capsule；JSON hide_easyag 会被忽略导致面板不收起
+      if (name === 'hide_easyag') {
+        process.stdout.write('hide\n');
+        return;
+      }
+      if (name === 'hide_capsule') {
+        process.stdout.write('hide_capsule\n');
+        return;
+      }
       process.stdout.write(JSON.stringify(cmd) + '\n');
+      if (name === 'show_capsule') scheduleCapsuleHide(cmd.type || 'interaction');
     } catch (e) {}
     return;
   }
@@ -547,13 +580,23 @@ function sendResident(cmd) {
   if (residentProcess && residentProcess.stdin && !residentProcess.stdin.destroyed) {
     try {
       residentProcess.stdin.write(JSON.stringify(cmd) + '\n');
+      if (cmd && cmd.cmd === 'show_capsule') scheduleCapsuleHide(cmd.type || 'interaction');
     } catch (e) {}
   }
 }
 
 function initResidentHelper() {
   // Tauri 一体壳不再拉起 C# Resident（托盘+胶囊均由 Tauri 负责）
-  if (TAURI_MODE || TEST_MODE || !IS_WIN) return;
+  if (TAURI_MODE) {
+    // 清掉便携版残留的 Resident，避免 Tauri 胶囊与 C# 胶囊叠层
+    if (!TEST_MODE && IS_WIN) {
+      try {
+        exec('taskkill /F /IM EasyAG-Resident.exe /T', { windowsHide: true }, () => {});
+      } catch (e) {}
+    }
+    return;
+  }
+  if (TEST_MODE || !IS_WIN) return;
   const candidatePaths = [
     path.join(__dirname, 'assets', 'EasyAG-Resident.exe'),
     path.join(__dirname, 'scripts', 'resident', 'EasyAG-Resident.exe'),
@@ -1544,7 +1587,13 @@ const server = http.createServer((req, res) => {
     }
     return res.end(JSON.stringify(Object.assign({}, state, {
       kbRules: agentGuardRules.length,
-      injectedCount: (readInjectedManifest().resources || []).length
+      injectedCount: (() => {
+        const m = readInjectedManifest();
+        if (Array.isArray(m.injections) && m.injections.length) {
+          return m.injections.reduce((n, item) => n + ((item.resources || []).length), 0);
+        }
+        return (m.resources || []).length;
+      })()
     })));
   }
   if (req.url && req.url.startsWith('/api/logs') && req.method === 'GET') {
@@ -1561,7 +1610,9 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (req.url === '/api/events') {
-    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
+    // 立刻打一拍，避免 WebView 把流缓冲住导致控制台一直空白
+    try { res.write(':ok\n\n'); } catch (e) {}
     sseClients.push(res);
     flushLogBuffer();
     req.on('close', () => {
@@ -1610,7 +1661,7 @@ const server = http.createServer((req, res) => {
           logToGUI('SYSTEM', state.launchMode === 'pilot' ? '启动模式：Turbo Pilot' : '启动模式：兼容模式', 'tag-proxy');
         }
         if (state.riskAdvisor !== prevRiskAdvisor) {
-          logToGUI('SECURITY', state.riskAdvisor ? '病毒库后果提示已开启' : '病毒库后果提示已关闭', 'tag-proxy');
+          logToGUI('SECURITY', state.riskAdvisor ? 'ARES 风险提示已开启' : 'ARES 风险提示已关闭', 'tag-proxy');
         }
         if (typeof data.enableI18n === 'boolean' && data.enableI18n !== prevI18n) {
           logToGUI('I18N', state.enableI18n ? '汉化引擎已启用' : '汉化引擎已停用，已还原原生英文界面', 'tag-i18n');
