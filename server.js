@@ -640,13 +640,67 @@ function handleResidentEvent(ev) {
   if (ev.event === 'tray_open' || ev.event === 'request_popup') {
     popupGuiWindow();
   } else if (ev.event === 'capsule_action') {
-    for (const [, entry] of cdpSockets) {
-      if (entry.ws.readyState === WebSocket.OPEN) {
-        cdpSend(entry.ws, 'Page.bringToFront', {});
-      }
-    }
+    focusAntigravityWindow();
   } else if (ev.event === 'tray_exit') {
     quitApp('系统托盘选择退出');
+  }
+}
+
+/** 把 Antigravity 原生窗口拉到前台（CDP bringToFront 抬不起 OS 窗口） */
+function focusAntigravityWindow() {
+  // CDP 仅作补充
+  for (const [, entry] of cdpSockets) {
+    if (entry.ws.readyState === WebSocket.OPEN) {
+      try { cdpSend(entry.ws, 'Page.bringToFront', {}); } catch (e) {}
+    }
+  }
+  if (IS_WIN) {
+    const ps = `
+$ErrorActionPreference='Stop'
+Add-Type -Namespace W32 -Name U -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+[DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+[DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+'@
+$procs = Get-Process -Name 'Antigravity' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
+if (-not $procs) { Write-Output 'none'; exit 0 }
+$hwnd = $procs[0].MainWindowHandle
+if ([W32.U]::IsIconic($hwnd)) { [void][W32.U]::ShowWindow($hwnd, 9) }
+$fg = [W32.U]::GetForegroundWindow()
+$dummy = [uint32]0
+$fgThread = [W32.U]::GetWindowThreadProcessId($fg, [ref]$dummy)
+$curThread = [W32.U]::GetCurrentThreadId()
+if ($fgThread -ne 0 -and $fgThread -ne $curThread) {
+  [void][W32.U]::AttachThreadInput($curThread, $fgThread, $true)
+  [void][W32.U]::SetForegroundWindow($hwnd)
+  [void][W32.U]::AttachThreadInput($curThread, $fgThread, $false)
+} else {
+  [void][W32.U]::SetForegroundWindow($hwnd)
+}
+Write-Output ('ok:' + $hwnd)
+`;
+    try {
+      const encoded = Buffer.from(ps, 'utf16le').toString('base64');
+      exec('powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ' + encoded, { windowsHide: true, timeout: 5000 }, (err, stdout) => {
+        if (err) {
+          logToGUI('SYSTEM', '拉起 AG 窗口失败: ' + (err.message || err), 'tag-warn');
+        } else {
+          logToGUI('SYSTEM', '已请求 Antigravity 窗口前置', 'tag-proxy');
+        }
+      });
+    } catch (e) {
+      logToGUI('SYSTEM', '拉起 AG 窗口异常: ' + (e.message || e), 'tag-warn');
+    }
+    return;
+  }
+  if (IS_MAC) {
+    try {
+      exec('osascript -e \'tell application "Antigravity" to activate\'', { timeout: 3000 }, () => {});
+    } catch (e) {}
   }
 }
 
@@ -1825,11 +1879,7 @@ const server = http.createServer((req, res) => {
   }
   // 胶囊「前往审查」：唤起 Antigravity 并带到前台
   if (req.url === '/api/focus-ag' && req.method === 'POST') {
-    for (const [, entry] of cdpSockets) {
-      if (entry.ws.readyState === WebSocket.OPEN) {
-        try { cdpSend(entry.ws, 'Page.bringToFront', {}); } catch (e) {}
-      }
-    }
+    focusAntigravityWindow();
     sendResident({ cmd: 'hide_capsule' });
     if (capsuleHideTimer) {
       clearTimeout(capsuleHideTimer);
