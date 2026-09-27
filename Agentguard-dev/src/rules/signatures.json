@@ -1,7 +1,7 @@
 {
   "$schema": "https://agentguard.dev/schema/eas-v1.json",
   "version": "2.2.0",
-  "updated_at": "2026-09-27T10:56:28.208Z",
+  "updated_at": "2026-09-27T11:02:26.813Z",
   "rules": [
     {
       "id": "EAS-001",
@@ -2812,7 +2812,7 @@
       "pattern": "\\bvssadmin\\b[\\s\\S]*\\bdelete\\s+shadows\\b",
       "flags": "i",
       "root_cause": "vssadmin delete shadows 删除系统还原点与卷影副本，是勒索软件在加密前的标准「断后路」步骤（T1490）。",
-      "destructive_impact": "所有系统还原与文件历史版本不可恢复，加密后无法回滚到干净状态。",
+      "destructive_impact": "卷影副本被删：系统还原点、以前版本、依赖 VSS 的备份还原点一并丢失；勒索场景下无法从本机回滚到加密前状态（离线/异地备份仍可能救回）。",
       "safe_alternative": "禁止 Agent 执行 delete shadows。需要回收旧快照时，只用 vssadmin list shadows 确认后，由管理员在恢复环境按卷影 ID 逐个删除，并保留最近 1 份备份。",
       "test_cases": {
         "positive": [
@@ -2840,7 +2840,7 @@
       "pattern": "\\bwbadmin\\b[\\s\\S]*\\bdelete\\s+(?:catalog|systemstatebackup)\\b|\\bwbadmin\\b[\\s\\S]*\\bdelete\\s+backup\\b",
       "flags": "i",
       "root_cause": "wbadmin delete catalog / delete systemstatebackup 删除 Windows Server Backup 编目与系统状态备份，使 wbadmin recovery 无法定位还原点。",
-      "destructive_impact": "整机裸机恢复与系统状态回滚失效，勒索场景下只能重装。",
+      "destructive_impact": "Windows Server Backup 无法再枚举、定位并恢复既有备份集，裸机恢复与系统状态回滚会失败，往往只能重装或依赖未写入该编目的离线备份。",
       "safe_alternative": "Agent 只允许 wbadmin get status / list items。删除备份须走备份控制台变更流程，并先验证目标备份集不被 SLA 依赖。",
       "test_cases": {
         "positive": [
@@ -2867,7 +2867,7 @@
       "pattern": "\\b(?:takeown|icacls)\\b[\\s\\S]*(?:/r\\s|/t\\s|\\*|/reset\\s)|\\bicacls\\b[^\\n]*\\/(?:grant|deny)\\s+[^\\n]*\\s*:\\(?(?:OI|CI|F|M)",
       "flags": "i",
       "root_cause": "takeown /r + icacls /grant Everyone:F /t 递归夺取并放通任意目录权限（T1222），常用于掩盖后续篡改或打乱安全基线。",
-      "destructive_impact": "系统目录、用户配置、备份目录可被任意改写；原 ACL 不可自动还原。",
+      "destructive_impact": "目录所有权与 ACL 被改掉后，任意账户都可读写或改写其中文件；未先 icacls /save 的 DACL 无法自动还原，安全基线与备份目录一并暴露。",
       "safe_alternative": "仅对项目工作区内明确路径改 ACL，禁止 /t 递归到盘根或系统目录；优先 icacls /save 导出 DACL 备份后再改。",
       "test_cases": {
         "positive": [
@@ -2895,7 +2895,7 @@
       "pattern": "\\bdiskpart\\b[\\s\\S]*(?:\\bclean\\b|\\bdelete\\s+partition\\b|\\bformat\\b)|\\bdiskpart\\b[^\\n]*/s\\s+\\S*(?:wipe|clean|format|destroy|kill)",
       "flags": "i",
       "root_cause": "diskpart /s <script> 可静默 clean/delete partition/format，一条脚本抹掉整盘分区表（T1485）。",
-      "destructive_impact": "分区表与数据瞬时丢失，低格后几乎不可恢复。",
+      "destructive_impact": "分区表被清掉或分区被删/格式化，原分区与数据对系统不可见；继续写盘会覆盖数据区，误操作后通常只能指望专业恢复。",
       "safe_alternative": "Agent 一律拒绝 diskpart 写操作。磁盘分区/格式化只允许在装机或恢复环境由管理员执行，并截图确认目标磁盘编号。",
       "test_cases": {
         "positive": [
@@ -2923,7 +2923,7 @@
       "pattern": "\\breg\\s+delete\\s+[^\\s]+\\s*/f\\b|\\breg\\s+delete\\s+HKLM\\\\",
       "flags": "i",
       "root_cause": "reg delete /f 无确认删除注册表键，可移除 Run、服务、防火墙、LSA 等关键配置（T1112/T1547）。",
-      "destructive_impact": "安全软件失联、开机启动项被清、系统无法启动或留后门。",
+      "destructive_impact": "启动项、服务或安全组件相关键被删除后，防护失效、开机项丢失，严重时系统无法启动。",
       "safe_alternative": "先 reg export <key> backup.reg 再改；禁止批量 /f 删除 HKLM 与安全策略键。",
       "test_cases": {
         "positive": [
@@ -2951,7 +2951,7 @@
       "pattern": "\\bcipher(?:\\.exe)?\\b[\\s\\S]*/w:",
       "flags": "i",
       "root_cause": "cipher /w: 遍历磁盘空闲空间覆写已删除文件残片，RansomEXX 等勒索在加密前用来阻断取证恢复（T1485）。",
-      "destructive_impact": "回收站与已删文件的可恢复副本被彻底粉碎，取证回滚失效。",
+      "destructive_impact": "磁盘空闲区里已删除文件的残片被覆写，无法再用取证或还原工具找回误删、被清掉的文件。",
       "safe_alternative": "禁止 Agent 运行 cipher /w。清理磁盘请用系统「存储感知」或专用安全擦除工具，并限定目录。",
       "test_cases": {
         "positive": [
@@ -2979,7 +2979,7 @@
       "pattern": "\\bsdelete(?:\\.exe)?\\b[\\s\\S]*(?:-accepteula|-[a-z]*p?[a-z]*\\s+)",
       "flags": "i",
       "root_cause": "Sysinternals SDelete 安全覆盖删除文件与空闲空间，常被对抗样本用于销毁证据（T1485）。",
-      "destructive_impact": "目标文件与已删残片不可恢复，可配合勒索或反取证。",
+      "destructive_impact": "指定文件被安全覆盖删除，空闲区残片一并擦除，目标数据无法恢复。",
       "safe_alternative": "Agent 不使用安全擦除类工具；业务删除用 Remove-Item 并保留回收站/快照。",
       "test_cases": {
         "positive": [
@@ -3111,7 +3111,7 @@
       "pattern": "\\bdefaults\\s+delete\\s+(?:-g\\b|\\S+)",
       "flags": "i",
       "root_cause": "defaults delete -g 破坏全局 Dock/安全/网络偏好，可配合恶意配置加载。",
-      "destructive_impact": "系统行为被改写且用户无感知，安全基线失效。",
+      "destructive_impact": "被删 domain 的系统偏好异常（Dock、安全、网络等），可能为后续恶意配置清障，且用户不易察觉。",
       "safe_alternative": "写前 defaults export 备份；限定 domain，禁止 -g 全局删除。",
       "test_cases": {
         "positive": [
@@ -3223,7 +3223,7 @@
       "pattern": "\\bdd\\b[\\s\\S]*\\bof=/dev/(?:sd|nvme|hd|vd|xvd|mapper|disk)",
       "flags": "i",
       "root_cause": "dd if=/dev/zero|urandom of=/dev/sdX 覆写裸设备，销毁分区表与数据（T1485/GTFOBins）。",
-      "destructive_impact": "整盘数据瞬时不可恢复，含系统盘时整机崩溃。",
+      "destructive_impact": "整块磁盘被覆写后数据无法恢复；若写的是系统盘，系统会立刻损坏并可能无法引导。",
       "safe_alternative": "禁止 of=/dev/*；只允许写入项目内镜像文件（of=./disk.img）。",
       "test_cases": {
         "positive": [
@@ -3336,7 +3336,7 @@
       "pattern": "\\b(?:python[23]?|node|perl|ruby|php)\\b[^\\n]*(?:\\s-(?:c|e|r)\\s)",
       "flags": "i",
       "root_cause": "解释器 -c/-e/-r 内联执行可绕过「命令名黑名单」，是 GTFOBins/注入逃逸的常用旁路。",
-      "destructive_impact": "任意代码以当前用户运行，静态命令扫描完全失效。",
+      "destructive_impact": "任意代码以当前用户权限立即执行，仅靠命令名或进程黑名单拦不住。",
       "safe_alternative": "逻辑落盘为 .py/.mjs 等脚本再执行；禁止 -c/-e 与 eval/exec。",
       "test_cases": {
         "positive": [
@@ -3365,7 +3365,7 @@
       "pattern": "\\bpowershell(?:\\.exe)?\\b[^\\n]*-(?:e|en|enc|enco|encodedcommand)\\s+[A-Za-z0-9+/=]{16,}",
       "flags": "i",
       "root_cause": "powershell -enc <Base64> 传输混淆脚本，绕过关键字检测（Sigma process_creation）。",
-      "destructive_impact": "恶意载荷内存解码执行，EDR 字符串检测失效。",
+      "destructive_impact": "脚本以 Base64 传入并在内存解码执行，依赖明文命令关键字的检测容易漏报。",
       "safe_alternative": "要求明文 .ps1 文件；或解码 Base64 后再过 ARES 危险特征扫描。",
       "test_cases": {
         "positive": [
@@ -3535,7 +3535,7 @@
       "pattern": "\\bdocker\\s+system\\s+prune\\b[\\s\\S]*(?:-a|--all)[\\s\\S]*(?:--volumes|-f)|\\bdocker\\s+volume\\s+rm\\s+\\$\\(",
       "flags": "i",
       "root_cause": "docker system prune -a --volumes -f 或 volume rm $(volume ls -q) 批量销毁镜像/卷（OWASP/Cloud Guardrails）。",
-      "destructive_impact": "数据卷（数据库、缓存）不可恢复丢失。",
+      "destructive_impact": "本地镜像、容器与数据卷被清空；数据库等持久化卷若未备份，将无法找回。",
       "safe_alternative": "先 docker system df / docker volume ls；按 label/时间窗清理；卷删除走白名单并先导出。",
       "test_cases": {
         "positive": [
@@ -3563,7 +3563,7 @@
       "pattern": "\\bkubectl\\s+delete\\s+(?:namespace|ns|all|nodes?)\\b[\\s\\S]*--all\\b|\\bkubectl\\s+delete\\s+ns\\s+--all\\b",
       "flags": "i",
       "root_cause": "kubectl delete namespace/all --all 在集群范围批量删除工作负载（OWASP Cloud）。",
-      "destructive_impact": "生产服务全灭，含 PVC 时数据卷一并销毁。",
+      "destructive_impact": "命名空间内工作负载被批量删除；若 PVC 随 namespace 一并删除，持久化数据会一起丢失。",
       "safe_alternative": "限定 namespace + label；生产删除走变更单；Agent 只允许 --dry-run=client。",
       "test_cases": {
         "positive": [
@@ -3590,7 +3590,7 @@
       "pattern": "\\bterraform\\s+destroy\\b[\\s\\S]*-auto-approve\\b",
       "flags": "i",
       "root_cause": "terraform destroy -auto-approve 无人工确认销毁整套 IaC 管理的云资源。",
-      "destructive_impact": "网络/数据库/存储/集群被拆光，且可能不可回滚。",
+      "destructive_impact": "状态文件管理的云资源（网络、数据库、存储、集群等）被批量销毁，通常无法撤销。",
       "safe_alternative": "去掉 -auto-approve；强制 terraform plan -destroy 会签后再 apply；生产用工作区隔离。",
       "test_cases": {
         "positive": [
