@@ -87,36 +87,42 @@ fn ensure_capsule(app: &tauri::AppHandle) {
     let _ = WebviewWindowBuilder::new(app, "capsule", WebviewUrl::App("capsule.html".into()))
         .title("EasyAG Capsule")
         .decorations(false)
+        .transparent(true)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
-        .inner_size(340.0, 148.0)
+        .inner_size(400.0, 218.0)
         .focused(false)
         .visible(false)
         .build();
 }
 
-fn show_capsule(app: &tauri::AppHandle, kind: &str, title: &str, detail: &str) {
+fn show_capsule(app: &tauri::AppHandle, kind: &str, title: &str, detail: &str, solution: &str) {
     ensure_capsule(app);
     let Some(window) = app.get_webview_window("capsule") else {
         return;
     };
-    if let Ok(monitor) = window.primary_monitor().or_else(|_| window.current_monitor()) {
-        if let Some(m) = monitor {
-            let size = m.size();
-            let scale = m.scale_factor();
-            let w = 340.0 * scale;
-            let h = 148.0 * scale;
-            let x = (size.width as f64) - w - 18.0;
-            let y = (size.height as f64) - h - 16.0;
-            let _ = window.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
-        }
+    let monitor = app
+        .get_webview_window("main")
+        .and_then(|main| main.current_monitor().ok().flatten())
+        .or_else(|| window.current_monitor().ok().flatten())
+        .or_else(|| window.primary_monitor().ok().flatten());
+    if let Some(m) = monitor {
+        let work = m.work_area();
+        let scale = m.scale_factor();
+        let w = 400.0 * scale;
+        let h = 218.0 * scale;
+        let margin = 18.0 * scale;
+        let x = work.position.x as f64 + work.size.width as f64 - w - margin;
+        let y = work.position.y as f64 + work.size.height as f64 - h - margin;
+        let _ = window.set_position(tauri::PhysicalPosition::new(x.round() as i32, y.round() as i32));
     }
     let script = format!(
-        "(function(){{ var t={}; var a={}; var d={}; function go(){{ if(window.__ea_capsule) window.__ea_capsule(t,a,d); }}; if(document.readyState==='complete') go(); else window.addEventListener('load',go); setTimeout(go,50); setTimeout(go,200); }})();",
+        "(function(){{ var t={}; var a={}; var d={}; var s={}; function go(){{ if(window.__ea_capsule) window.__ea_capsule(t,a,d,s); }}; if(document.readyState==='complete') go(); else window.addEventListener('load',go); setTimeout(go,50); setTimeout(go,200); }})();",
         serde_json::to_string(kind).unwrap_or_else(|_| "\"danger\"".into()),
         serde_json::to_string(title).unwrap_or_default(),
-        serde_json::to_string(detail).unwrap_or_default()
+        serde_json::to_string(detail).unwrap_or_default(),
+        serde_json::to_string(solution).unwrap_or_default()
     );
     let _ = window.eval(&script);
     let _ = window.show();
@@ -239,6 +245,7 @@ fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Erro
                                     v["type"].as_str().unwrap_or("danger"),
                                     v["title"].as_str().unwrap_or(""),
                                     v["detail"].as_str().unwrap_or(""),
+                                    v["solution"].as_str().unwrap_or(""),
                                 ),
                                 "hide_capsule" => hide_capsule(&handle),
                                 "exit" | "quit" => {

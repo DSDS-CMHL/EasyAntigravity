@@ -228,6 +228,8 @@ const debugMode = process.argv.includes('--debug') || fs.existsSync(path.join(__
 
 let state = {
   port: 7890,
+  launchMode: 'pilot',
+  riskAdvisor: true,
   blockDangerous: true,
   enableI18n: true,
   dictEntries: 0,
@@ -248,14 +250,22 @@ let state = {
 
 try {
   const saved = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
-  for (const key of ['blockDangerous', 'enableI18n']) {
+  for (const key of ['riskAdvisor', 'enableI18n']) {
     if (typeof saved[key] === 'boolean') state[key] = saved[key];
   }
+  if (saved.launchMode === 'pilot' || saved.launchMode === 'compatibility') {
+    state.launchMode = saved.launchMode;
+  } else if (typeof saved.blockDangerous === 'boolean') {
+    // 兼容旧设置：原“高危监控”开关迁移为两种启动模式。
+    state.launchMode = saved.blockDangerous ? 'pilot' : 'compatibility';
+  }
+  state.blockDangerous = state.launchMode === 'pilot';
   if (Number.isInteger(saved.port) && saved.port > 0 && saved.port < 65536) state.port = saved.port;
 } catch (_) {}
 
 let quitting = false;
 let launchedClient = null;
+let activeLaunchMode = null;
 
 function quitApp(reason) {
   if (quitting) return;
@@ -645,7 +655,8 @@ function generateMasterInjectScript() {
   const dictJSON = JSON.stringify(translationDict);
   return `(() => {
     window.__ea_config = Object.assign(window.__ea_config || {}, {
-      enableI18n: ${state.enableI18n}
+      enableI18n: ${state.enableI18n},
+      riskAdvisor: ${state.riskAdvisor && state.launchMode === 'pilot'}
     });
     window.__ea_dict = ${dictJSON};
 
@@ -699,6 +710,7 @@ function generateMasterInjectScript() {
 
     // 只读扫描审批/Ask 卡，上报命令供主进程做风险分级（不点按钮）
     function scanRiskCards() {
+      if (!window.__ea_config || !window.__ea_config.riskAdvisor) return;
       const seen = window.__ea_risk_seen || (window.__ea_risk_seen = new WeakSet());
       const roots = document.querySelectorAll('[data-testid="run-command-step"], [role="radiogroup"], [role="dialog"], [data-testid*="interaction"], [data-testid*="approval"], [data-testid*="permission"]');
       for (const root of roots) {
@@ -789,7 +801,8 @@ function broadcastConfig() {
   const script = `(() => {
     window.__ea_config = Object.assign(window.__ea_config || {}, {
       blockDangerous: ${state.blockDangerous},
-      enableI18n: ${state.enableI18n}
+      enableI18n: ${state.enableI18n},
+      riskAdvisor: ${state.riskAdvisor && state.launchMode === 'pilot'}
     });
   })();`;
   for (const [, entry] of cdpSockets) {
@@ -890,7 +903,7 @@ async function startCDPLoop() {
               }
               if (msg.method === 'Runtime.consoleAPICalled') {
                 const text = msg.params.args.map(a => a.value || '').join(' ');
-                if (text.includes('[EA_RISK_CMD]')) {
+                if (state.riskAdvisor && state.launchMode === 'pilot' && text.includes('[EA_RISK_CMD]')) {
                   const cmd = text.replace('[EA_RISK_CMD]', '').trim().slice(0, 240);
                   const risk = assessCommandRisk(cmd);
                   if (risk) {
@@ -907,9 +920,10 @@ async function startCDPLoop() {
                     if (prim.safe_alternative) logToGUI('RISK', '替代: ' + String(prim.safe_alternative).slice(0, 140), 'tag-proxy');
                     sendResident({
                       cmd: 'show_capsule',
-                      type: risk.level === 'high' ? 'danger' : 'interaction',
-                      title: risk.levelLabel + ' · ' + (prim.name || '命令待审'),
-                      detail: String(prim.destructive_impact || prim.root_cause || '请人工确认').slice(0, 120)
+                      type: 'risk_' + risk.level,
+                      title: prim.name || '命令需要人工确认',
+                      detail: String(prim.destructive_impact || prim.root_cause || '该命令可能改变当前环境，请确认作用范围。').slice(0, 180),
+                      solution: String(prim.safe_alternative || '确认目标、路径和参数后再决定是否执行。').slice(0, 180)
                     });
                   } else {
                     logToGUI('ASK', '待审: ' + cmd.slice(0, 120), 'tag-warn');
@@ -1012,6 +1026,9 @@ function findAntigravityPermissionFiles() {
 }
 
 function getGlobalConfigPath() {
+  if (TEST_MODE && process.env.EASYAG_TEST_AG_CONFIG) {
+    return normalizePath(process.env.EASYAG_TEST_AG_CONFIG);
+  }
   return path.join(os.homedir(), '.gemini', 'config', 'config.json');
 }
 
@@ -1093,105 +1110,203 @@ function syncDangerRulesToAntigravity(listName = 'ask', scope = 'global') {
     return 'command(' + cleaned + ')';
   });
 
+  const globalFile = getGlobalConfigPath();
+  if (!fs.existsSync(globalFile)) {
+    return { ok: false, error: '未找到 Antigravity 全局配置: ' + globalFile };
+  }
+
   const files = scope === 'all'
     ? findAntigravityPermissionFiles()
-    : [getGlobalConfigPath()].filter(p => fs.existsSync(p));
+    : [globalFile];
 
   const updated = [];
-  for (const file of files) {
-    try {
-      const raw = fs.readFileSync(file, 'utf-8');
-      const obj = JSON.parse(raw);
-      if (injectRulesIntoConfig(obj, targets, listName)) {
-        fs.writeFileSync(file, JSON.stringify(obj, null, 2));
-        updated.push(file);
-      }
-    } catch (e) {}
-  }
-
-  // 登记清单（合并历史，去重）
+  const verified = [];
+  const failures = [];
+  const addedInjections = [];
   const manifest = readInjectedManifest();
-  manifest.list = listName;
-  manifest.scope = scope;
-  manifest.resources = Array.from(new Set([...(manifest.resources || []), ...resources]));
-  manifest.at = new Date().toISOString();
+
+  // 必须在改动前保存策略，否则退出时只能“恢复”到已经开启的 Turbo。
   if (!manifest.savedGlobal) {
     try {
-      const cfg = JSON.parse(fs.readFileSync(getGlobalConfigPath(), 'utf-8'));
+      const cfg = JSON.parse(fs.readFileSync(globalFile, 'utf-8'));
       const us = cfg.userSettings || {};
       manifest.savedGlobal = {
-        autoExecutionPolicy: us.autoExecutionPolicy,
-        nonWorkspaceFileAccessPolicy: us.nonWorkspaceFileAccessPolicy,
-        fileAccessPolicy: us.fileAccessPolicy,
-        enableTerminalSandbox: us.enableTerminalSandbox
+        values: { autoExecutionPolicy: us.autoExecutionPolicy },
+        present: { autoExecutionPolicy: Object.prototype.hasOwnProperty.call(us, 'autoExecutionPolicy') }
       };
-    } catch (e) {}
+    } catch (e) {
+      return { ok: false, error: '读取 Antigravity 全局配置失败: ' + String(e.message || e) };
+    }
   }
 
-  // 副驾组合：Turbo（自动放行）+ ASK（高危必停）
-  try {
-    const file = getGlobalConfigPath();
-    const cfg = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    cfg.userSettings = cfg.userSettings || {};
-    cfg.userSettings.autoExecutionPolicy = 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER';
-    cfg.userSettings.nonWorkspaceFileAccessPolicy = 'AGENT_SETTING_POLICY_ALLOW';
-    cfg.userSettings.fileAccessPolicy = 'AGENT_SETTING_POLICY_ALLOW';
-    fs.writeFileSync(file, JSON.stringify(cfg, null, 2), 'utf-8');
-    manifest.turboApplied = true;
-  } catch (e) {}
+  for (const file of files) {
+    let originalRaw = null;
+    let wroteFile = false;
+    try {
+      originalRaw = fs.readFileSync(file, 'utf-8');
+      const obj = JSON.parse(originalRaw);
+      const isGlobal = path.resolve(file) === path.resolve(globalFile);
+      if (isGlobal) {
+        obj.userSettings = obj.userSettings || {};
+        if (!obj.userSettings.globalPermissionGrants
+          || typeof obj.userSettings.globalPermissionGrants !== 'object'
+          || Array.isArray(obj.userSettings.globalPermissionGrants)) {
+          obj.userSettings.globalPermissionGrants = { allow: [], ask: [], deny: [] };
+        }
+      }
+      const permissionHost = obj.userSettings && obj.userSettings.globalPermissionGrants
+        ? obj.userSettings.globalPermissionGrants
+        : obj.permissionGrants
+          ? (obj.permissionGrants.permissionGrants || obj.permissionGrants)
+          : null;
+      const beforeResources = permissionHost && Array.isArray(permissionHost[listName])
+        ? new Set(permissionHost[listName].map(stripDoubleWrap))
+        : new Set();
+      const rulesChanged = injectRulesIntoConfig(obj, targets, listName);
+      const addedResources = resources.filter(resource => !beforeResources.has(resource));
+      let policyChanged = false;
+      if (isGlobal) {
+        const us = obj.userSettings;
+        policyChanged = us.autoExecutionPolicy !== 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER';
+        us.autoExecutionPolicy = 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER';
+      }
+      if (rulesChanged || policyChanged) {
+        fs.writeFileSync(file, JSON.stringify(obj, null, 2));
+        wroteFile = true;
+        updated.push(file);
+      }
+      // 写后回读验证。只有规则与 Turbo 都真实落盘，才允许继续启动。
+      const check = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      let host = null;
+      if (check.userSettings && check.userSettings.globalPermissionGrants) {
+        host = check.userSettings.globalPermissionGrants;
+      } else if (check.permissionGrants) {
+        host = check.permissionGrants.permissionGrants || check.permissionGrants;
+      }
+      const rulesOk = host && Array.isArray(host[listName])
+        && resources.every(resource => host[listName].includes(resource));
+      const turboOk = !isGlobal || (
+        check.userSettings.autoExecutionPolicy === 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER'
+      );
+      if (!rulesOk || !turboOk) {
+        if (wroteFile) fs.writeFileSync(file, originalRaw, 'utf-8');
+        failures.push({ file, error: !rulesOk ? 'ASK 规则写后校验失败' : 'Turbo 策略写后校验失败' });
+      } else {
+        verified.push(file);
+        if (addedResources.length) {
+          addedInjections.push({ file, list: listName, resources: addedResources });
+        }
+      }
+    } catch (e) {
+      if (wroteFile && originalRaw !== null) {
+        try { fs.writeFileSync(file, originalRaw, 'utf-8'); } catch (_) {}
+      }
+      failures.push({ file, error: String(e.message || e) });
+    }
+  }
 
+  if (failures.length || !verified.some(file => path.resolve(file) === path.resolve(globalFile))) {
+    return {
+      ok: false,
+      error: failures.length ? failures.map(x => `${x.file}: ${x.error}`).join('; ') : '全局配置未通过写后校验',
+      files: updated,
+      verifiedFiles: verified,
+      failures
+    };
+  }
+
+  // 全部验证成功后才登记清单，供退出时精确清理。
+  manifest.list = listName;
+  manifest.scope = scope;
+  manifest.injections = Array.isArray(manifest.injections) ? manifest.injections : [];
+  for (const addition of addedInjections) {
+    const existing = manifest.injections.find(item => item.file === addition.file && item.list === addition.list);
+    if (existing) {
+      existing.resources = Array.from(new Set([...(existing.resources || []), ...addition.resources]));
+    } else {
+      manifest.injections.push(addition);
+    }
+  }
+  // 新版只记录本次真正新增的规则；保留旧字段仅用于兼容旧会话清理。
+  if (!Array.isArray(manifest.resources)) manifest.resources = [];
+  manifest.at = new Date().toISOString();
+  manifest.turboApplied = true;
   writeInjectedManifest(manifest);
 
   return {
     ok: true,
     count: resources.length,
     files: updated,
+    verifiedFiles: verified,
     sample: resources.slice(0, 3),
     list: listName,
     scope,
-    turbo: manifest.turboApplied !== false
+    turbo: true
   };
 }
 
 /** 退出清理：只移除 EasyAG 写入的 ASK，并恢复注入前的全局策略 */
 function cleanupInjectedAsk() {
   const manifest = readInjectedManifest();
-  const resources = manifest.resources || [];
-  if (!resources.length) {
+  const globalFile = getGlobalConfigPath();
+  let injections = Array.isArray(manifest.injections) ? manifest.injections : [];
+  if (!injections.length && Array.isArray(manifest.resources) && manifest.resources.length) {
+    injections = [{ file: globalFile, list: manifest.list || 'ask', resources: manifest.resources }];
+  }
+  if (!injections.length && !manifest.savedGlobal) {
     try { fs.unlinkSync(INJECTED_FILE()); } catch (e) {}
     return { ok: true, removed: 0, restored: false };
   }
   let removed = 0;
-  try {
-    const file = getGlobalConfigPath();
-    const obj = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    const host = obj.userSettings && obj.userSettings.globalPermissionGrants;
-    if (host && Array.isArray(host.ask)) {
-      const before = host.ask.length;
-      host.ask = host.ask.filter(x => !resources.includes(x));
-      removed = before - host.ask.length;
-      // 顺带清历史双重包裹
-      host.ask = host.ask.map(stripDoubleWrap);
-      fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf-8');
+  const failures = [];
+  for (const injection of injections) {
+    try {
+      const file = injection.file || globalFile;
+      const obj = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      const host = obj.userSettings && obj.userSettings.globalPermissionGrants
+        ? obj.userSettings.globalPermissionGrants
+        : obj.permissionGrants
+          ? (obj.permissionGrants.permissionGrants || obj.permissionGrants)
+          : null;
+      const listName = injection.list || 'ask';
+      if (host && Array.isArray(host[listName])) {
+        const owned = new Set(injection.resources || []);
+        const before = host[listName].length;
+        host[listName] = host[listName].filter(x => !owned.has(x)).map(stripDoubleWrap);
+        removed += before - host[listName].length;
+        fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf-8');
+      }
+    } catch (e) {
+      failures.push(String(e.message || e));
     }
-  } catch (e) {}
+  }
 
   let restored = false;
   if (manifest.savedGlobal) {
     try {
-      const file = getGlobalConfigPath();
-      const obj = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      const obj = JSON.parse(fs.readFileSync(globalFile, 'utf-8'));
       obj.userSettings = obj.userSettings || {};
-      for (const k of ['autoExecutionPolicy', 'nonWorkspaceFileAccessPolicy', 'fileAccessPolicy', 'enableTerminalSandbox']) {
-        if (manifest.savedGlobal[k] !== undefined) obj.userSettings[k] = manifest.savedGlobal[k];
+      if (manifest.savedGlobal.values && manifest.savedGlobal.present) {
+        const key = 'autoExecutionPolicy';
+        if (manifest.savedGlobal.present[key]) obj.userSettings[key] = manifest.savedGlobal.values[key];
+        else delete obj.userSettings[key];
+      } else {
+        // 兼容旧版快照。
+        for (const k of ['autoExecutionPolicy', 'nonWorkspaceFileAccessPolicy', 'fileAccessPolicy', 'enableTerminalSandbox']) {
+          if (manifest.savedGlobal[k] !== undefined) obj.userSettings[k] = manifest.savedGlobal[k];
+        }
       }
-      fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf-8');
+      fs.writeFileSync(globalFile, JSON.stringify(obj, null, 2), 'utf-8');
       restored = true;
-    } catch (e) {}
+    } catch (e) {
+      failures.push(String(e.message || e));
+    }
   }
 
-  try { fs.unlinkSync(INJECTED_FILE()); } catch (e) {}
-  return { ok: true, removed, restored };
+  if (!failures.length) {
+    try { fs.unlinkSync(INJECTED_FILE()); } catch (e) {}
+  }
+  return { ok: failures.length === 0, removed, restored, error: failures.join('; ') };
 }
 
 const server = http.createServer((req, res) => {
@@ -1240,12 +1355,15 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/api/injected' && req.method === 'GET') {
     const m = readInjectedManifest();
+    const ownedResources = Array.isArray(m.injections)
+      ? m.injections.flatMap(item => item.resources || [])
+      : (m.resources || []);
     return res.end(JSON.stringify({
-      count: (m.resources || []).length,
+      count: ownedResources.length,
       list: m.list || 'ask',
       scope: m.scope || 'global',
       at: m.at || null,
-      resources: (m.resources || []).map(s => s.slice(0, 120))
+      resources: ownedResources.map(s => s.slice(0, 120))
     }));
   }
   // 全局 Turbo Pilot：Turbo + ASK + Hooks
@@ -1265,54 +1383,6 @@ const server = http.createServer((req, res) => {
       return res.end(JSON.stringify({ ok: false, error: String(e.message || e) }));
     }
   }
-  // 仅当前项目：项目级 ASK + 项目 Turbo
-  if (req.url === '/api/pilot/project' && req.method === 'POST') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', () => {
-      try {
-        const data = JSON.parse(body || '{}');
-        const key = data.project || data.id || 'EasyAntigravity';
-        const targets = compileDangerRulesToOfficialTargets();
-        const resources = targets.map(t => {
-          const cleaned = t.replace(/^command\((.*)\)$/s, '$1');
-          return 'command(' + cleaned + ')';
-        });
-        // 定位项目文件
-        const projectsDir = path.join(os.homedir(), '.gemini', 'config', 'projects');
-        let projectFile = null;
-        if (fs.existsSync(projectsDir)) {
-          for (const f of fs.readdirSync(projectsDir).filter(x => x.endsWith('.json'))) {
-            try {
-              const obj = JSON.parse(fs.readFileSync(path.join(projectsDir, f), 'utf-8'));
-              if (obj.id === key || obj.name === key) {
-                projectFile = path.join(projectsDir, f);
-                obj.settings = obj.settings || {};
-                obj.settings.autoExecutionPolicy = 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER';
-                obj.settings.fileAccessPolicy = 'AGENT_SETTING_POLICY_ALLOW';
-                obj.settings.nonWorkspaceFileAccessPolicy = 'AGENT_SETTING_POLICY_ALLOW';
-                injectRulesIntoConfig(obj, targets, 'ask');
-                fs.writeFileSync(projectFile, JSON.stringify(obj, null, 2), 'utf-8');
-                break;
-              }
-            } catch (e) {}
-          }
-        }
-        if (!projectFile) {
-          res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ ok: false, error: 'project not found: ' + key }));
-        }
-        /* Hooks 默认不安装（会卡住 AG 命令闸门）；需要时手动 install-hooks.cjs */
-        logToGUI('SECURITY', `项目「${key}」已配置 Turbo + ASK ${resources.length} 条`, 'tag-proxy');
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ ok: true, count: resources.length, project: key, file: projectFile }));
-      } catch (e) {
-        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ ok: false, error: String(e.message || e) }));
-      }
-    });
-    return;
-  }
   if (req.url === '/api/agent-event' && req.method === 'POST') {
     let body = '';
     req.on('data', c => body += c);
@@ -1326,28 +1396,35 @@ const server = http.createServer((req, res) => {
         }
         if (data.type === 'pre_tool') {
           const cmd = String(data.command || '');
+          if (state.launchMode !== 'pilot') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ ok: true, decision: 'allow', risk: null }));
+          }
           const risk = assessCommandRisk(cmd);
           // 副驾策略：命中风险 → force_ask（Turbo 下也停下问人）；干净命令放行
           let decision = 'allow';
           if (risk) {
             decision = 'force_ask';
-            const lvCls = risk.level === 'high' ? 'tag-alert' : risk.level === 'medium' ? 'tag-warn' : 'tag-i18n';
-            logToGUI('RISK', `[${risk.levelLabel}] ${cmd.slice(0, 100)}`, lvCls);
-            if (risk.danger && risk.danger.length) {
-              logToGUI('RISK', '规则: ' + risk.danger.map(x => x.id + '(' + x.severity + ')').join(', '), 'tag-warn');
+            if (state.riskAdvisor && state.launchMode === 'pilot') {
+              const lvCls = risk.level === 'high' ? 'tag-alert' : risk.level === 'medium' ? 'tag-warn' : 'tag-i18n';
+              logToGUI('RISK', `[${risk.levelLabel}] ${cmd.slice(0, 100)}`, lvCls);
+              if (risk.danger && risk.danger.length) {
+                logToGUI('RISK', '规则: ' + risk.danger.map(x => x.id + '(' + x.severity + ')').join(', '), 'tag-warn');
+              }
+              const p = risk.primary || {};
+              if (p.root_cause) logToGUI('RISK', '病理: ' + String(p.root_cause).slice(0, 160), 'tag-warn');
+              if (p.destructive_impact) logToGUI('RISK', '后果: ' + String(p.destructive_impact).slice(0, 160), 'tag-warn');
+              if (p.safe_alternative) logToGUI('RISK', '替代: ' + String(p.safe_alternative).slice(0, 160), 'tag-proxy');
+              state.riskHits += 1;
+              pushCounters();
+              sendResident({
+                cmd: 'show_capsule',
+                type: 'risk_' + risk.level,
+                title: p.name || '命令需要人工确认',
+                detail: String(p.destructive_impact || p.root_cause || '该命令可能改变当前环境，请确认作用范围。').slice(0, 180),
+                solution: String(p.safe_alternative || '确认目标、路径和参数后再决定是否执行。').slice(0, 180)
+              });
             }
-            const p = risk.primary || {};
-            if (p.root_cause) logToGUI('RISK', '病理: ' + String(p.root_cause).slice(0, 160), 'tag-warn');
-            if (p.destructive_impact) logToGUI('RISK', '后果: ' + String(p.destructive_impact).slice(0, 160), 'tag-warn');
-            if (p.safe_alternative) logToGUI('RISK', '替代: ' + String(p.safe_alternative).slice(0, 160), 'tag-proxy');
-            state.riskHits += 1;
-            pushCounters();
-            sendResident({
-              cmd: 'show_capsule',
-              type: risk.level === 'high' ? 'danger' : 'interaction',
-              title: risk.levelLabel + ' · ' + (p.name || '命令待审'),
-              detail: String(p.destructive_impact || p.root_cause || '请人工确认后再放行').slice(0, 120)
-            });
           }
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ ok: true, decision, risk }));
@@ -1510,15 +1587,30 @@ const server = http.createServer((req, res) => {
           }
         }
 
-        const prevBlockDangerous = state.blockDangerous;
+        const prevLaunchMode = state.launchMode;
+        const prevRiskAdvisor = state.riskAdvisor;
         const prevI18n = state.enableI18n;
 
-        if (typeof data.blockDangerous === 'boolean') state.blockDangerous = data.blockDangerous;
+        if (data.launchMode === 'pilot' || data.launchMode === 'compatibility') {
+          state.launchMode = data.launchMode;
+        } else if (typeof data.blockDangerous === 'boolean') {
+          state.launchMode = data.blockDangerous ? 'pilot' : 'compatibility';
+        }
+        state.blockDangerous = state.launchMode === 'pilot';
+        if (typeof data.riskAdvisor === 'boolean') state.riskAdvisor = data.riskAdvisor;
         if (typeof data.enableI18n === 'boolean') state.enableI18n = data.enableI18n;
-        fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ port: state.port, blockDangerous: state.blockDangerous, enableI18n: state.enableI18n }, null, 2));
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify({
+          port: state.port,
+          launchMode: state.launchMode,
+          riskAdvisor: state.riskAdvisor,
+          enableI18n: state.enableI18n
+        }, null, 2));
 
-        if (typeof data.blockDangerous === 'boolean' && data.blockDangerous !== prevBlockDangerous) {
-          logToGUI('SECURITY', state.blockDangerous ? '高危指令监控已开启' : '高危指令监控已停用', 'tag-proxy');
+        if (state.launchMode !== prevLaunchMode) {
+          logToGUI('SYSTEM', state.launchMode === 'pilot' ? '启动模式：Turbo Pilot' : '启动模式：兼容模式', 'tag-proxy');
+        }
+        if (state.riskAdvisor !== prevRiskAdvisor) {
+          logToGUI('SECURITY', state.riskAdvisor ? '病毒库后果提示已开启' : '病毒库后果提示已关闭', 'tag-proxy');
         }
         if (typeof data.enableI18n === 'boolean' && data.enableI18n !== prevI18n) {
           logToGUI('I18N', state.enableI18n ? '汉化引擎已启用' : '汉化引擎已停用，已还原原生英文界面', 'tag-i18n');
@@ -1535,34 +1627,65 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (req.url === '/api/launch' && req.method === 'POST') {
-    logToGUI('PROXY', `原生代理已就绪：Chromium + language_server 使用 HTTP 代理 127.0.0.1:${state.port}，本地回环直连`, 'tag-proxy');
-
-    if (state.enableI18n) logToGUI('I18N', `已装载汉化引擎 (${state.dictEntries} 条词条)`, 'tag-i18n');
-
     // 若已在跑，只提示刷新，不重复 spawn
     if (state.clientRunning) {
       logToGUI('SYSTEM', '客户端已在运行，CDP 界面接管通道保持重试', 'tag-warn');
       pushClientStatus();
-      res.end('ok');
-      return;
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ ok: true, alreadyRunning: true }));
     }
 
-    const launch = buildNativeProxyLaunch();
     const currentPaths = getAntigravityPaths();
     const launchCmd = currentPaths.appExe;
     if (!fs.existsSync(launchCmd)) {
-      res.writeHead(404);
-      return res.end('未找到 Antigravity: ' + launchCmd);
+      res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ ok: false, error: '未找到 Antigravity: ' + launchCmd }));
     }
+
+    // Pilot 先写入并验证 ASK + Turbo；兼容模式恢复 EasyAG 遗留后沿用用户设置。
+    let pilot = { ok: true, skipped: true };
+    if (state.launchMode === 'pilot') {
+      pilot = syncDangerRulesToAntigravity('ask', 'global');
+      if (!pilot.ok) {
+        logToGUI('SECURITY', '启动已取消：ASK/Turbo 配置失败：' + (pilot.error || '未知错误'), 'tag-alert');
+        res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ ok: false, stage: 'pilot', error: pilot.error || 'ASK/Turbo 配置失败' }));
+      }
+      logToGUI('SECURITY', `启动前校验通过：Turbo + ${pilot.count} 条高危 ASK`, 'tag-proxy');
+    } else {
+      const cleanup = cleanupInjectedAsk();
+      if (!cleanup.ok) {
+        logToGUI('SECURITY', '兼容模式启动已取消：无法恢复上次增强配置：' + cleanup.error, 'tag-alert');
+        res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ ok: false, stage: 'restore', error: cleanup.error }));
+      }
+      logToGUI('SYSTEM', '兼容模式：沿用用户的自动审批与权限设置', 'tag-proxy');
+    }
+
+    logToGUI('PROXY', `原生代理已就绪：Chromium + language_server 使用 HTTP 代理 127.0.0.1:${state.port}，本地回环直连`, 'tag-proxy');
+    if (state.enableI18n) logToGUI('I18N', `已装载汉化引擎 (${state.dictEntries} 条词条)`, 'tag-i18n');
+
+    const launch = buildNativeProxyLaunch();
     const launchArgs = launch.args;
-    const child = spawn(launchCmd, launchArgs, {
-      detached: true,
-      stdio: 'ignore',
-      env: launch.env
-    });
+    let child;
+    activeLaunchMode = state.launchMode;
+    try {
+      child = spawn(launchCmd, launchArgs, {
+        detached: true,
+        stdio: 'ignore',
+        env: launch.env
+      });
+    } catch (e) {
+      if (activeLaunchMode === 'pilot') cleanupInjectedAsk();
+      activeLaunchMode = null;
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ ok: false, stage: 'spawn', error: String(e.message || e) }));
+    }
     launchedClient = child;
     child.on('error', err => {
       state.clientRunning = false;
+      if (activeLaunchMode === 'pilot') cleanupInjectedAsk();
+      activeLaunchMode = null;
       logToGUI('SYSTEM', '启动 Antigravity 失败: ' + err.message, 'tag-alert');
       pushClientStatus();
     });
@@ -1586,10 +1709,17 @@ const server = http.createServer((req, res) => {
         try { entry.ws.close(); } catch (e) {}
       }
       cdpSockets.clear();
+      if (activeLaunchMode === 'pilot') {
+        const cleanup = cleanupInjectedAsk();
+        if (cleanup.ok) logToGUI('SECURITY', 'Turbo Pilot 已结束，Antigravity 原设置已恢复', 'tag-proxy');
+        else logToGUI('SECURITY', '恢复 Antigravity 原设置失败: ' + cleanup.error, 'tag-alert');
+      }
+      activeLaunchMode = null;
       logToGUI('SYSTEM', 'Antigravity 客户端已关闭', 'tag-warn');
       pushClientStatus();
     });
-    res.end('ok');
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: true, pilot }));
     return;
   }
 
@@ -1674,7 +1804,8 @@ function handleAgentStop(reason, fullyIdle) {
       cmd: 'show_capsule',
       type: 'interaction',
       title: '等待后台任务',
-      detail: 'Agent 已停，但仍有后台命令在跑。'
+      detail: 'Agent 已停，但仍有后台命令在跑。',
+      solution: '等待后台任务结束后再检查最终结果。'
     });
     return;
   }
@@ -1683,29 +1814,10 @@ function handleAgentStop(reason, fullyIdle) {
     cmd: 'show_capsule',
     type: 'ready',
     title: '任务完成',
-    detail: reason === 'error' ? '异常终止，请检查日志。' : 'Agent 已空闲，结果可检视或开始下一轮。'
-  });
-  sendResident({
-    cmd: 'show_capsule',
-    type: 'ready',
-    title: '任务完成',
-    detail: reason === 'error' ? '异常终止，请检查日志。' : 'Agent 已空闲，结果可检视或开始下一轮。'
+    detail: reason === 'error' ? '异常终止，请检查日志。' : 'Agent 已空闲，结果可检视或开始下一轮。',
+    solution: reason === 'error' ? '返回 Antigravity 查看错误详情。' : '返回 Antigravity 查看本轮结果。'
   });
 }
-
-// 首次启动：把高危正则注入**全局** Ask（所有项目生效，Turbo 下仍会询问）
-try {
-  const flag = path.join(DATA_DIR, 'ask-injected.flag');
-  const manifest = readInjectedManifest();
-  const already = (manifest.resources || []).length > 0;
-  if (!fs.existsSync(flag) && !already) {
-    const r = syncDangerRulesToAntigravity('ask', 'global');
-    if (r && r.ok) {
-      fs.writeFileSync(flag, new Date().toISOString());
-      logToGUI('SECURITY', `首次启动：已向全局注入 ${r.count} 条高危 ASK（退出时自动清理）`, 'tag-proxy');
-    }
-  }
-} catch (e) {}
 
 async function tryAttachExistingClient() {
   try {

@@ -192,6 +192,60 @@
       flex: 1 1 auto;
     }
 
+    .mode-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .mode-option {
+      appearance: none;
+      text-align: left;
+      background: #111319;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      color: var(--text-main);
+      padding: 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, transform 0.15s;
+    }
+    .mode-option:hover {
+      border-color: #4b5060;
+      transform: translateY(-1px);
+    }
+    .mode-option.selected {
+      border-color: var(--primary);
+      background: rgba(124, 58, 237, 0.12);
+      box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.18);
+    }
+    .mode-option:disabled {
+      cursor: default;
+      opacity: 0.65;
+      transform: none;
+    }
+    .mode-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 12.5px;
+      font-weight: 700;
+    }
+    .mode-badge {
+      color: #c4b5fd;
+      font-size: 9px;
+      font-weight: 700;
+    }
+    .mode-desc {
+      display: block;
+      margin-top: 5px;
+      color: var(--text-dark);
+      font-size: 10.5px;
+      line-height: 1.4;
+    }
+    .advisor-row.disabled {
+      opacity: 0.45;
+    }
+
     /* 端口与选项控件 */
     .port-cluster {
       display: flex;
@@ -337,6 +391,43 @@
       box-shadow: none;
       transform: none;
     }
+    .launch-btn.busy .launch-icon { animation: spin 900ms linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .advanced {
+      flex: 1 1 auto;
+      min-height: 42px;
+      overflow: hidden;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      background: rgba(15, 17, 21, 0.72);
+    }
+    .advanced[open] { min-height: 150px; }
+    .advanced summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 11px 13px;
+      color: var(--text-muted);
+      font-size: 11.5px;
+      font-weight: 650;
+      cursor: pointer;
+      list-style: none;
+    }
+    .advanced summary::-webkit-details-marker { display: none; }
+    .advanced summary::after { content: '⌄'; color: var(--text-dark); transition: transform 180ms cubic-bezier(.2,.8,.2,1); }
+    .advanced[open] summary::after { transform: rotate(180deg); }
+    .advanced-meta { margin-left: auto; color: var(--text-dark); font-size: 10px; font-weight: 500; }
+    .advanced-body {
+      height: calc(100% - 40px);
+      min-height: 0;
+      padding: 0 11px 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .advanced-tools { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
 
     /* 日志控制台 (仿 Party 终端) */
     .console-pane {
@@ -432,6 +523,9 @@
       outline: 2px solid rgba(129, 140, 248, 0.72);
       outline-offset: 2px;
     }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+    }
   </style>
 </head>
 <body>
@@ -494,56 +588,61 @@
     </div>
   </div>
 
-  <!-- 卡片 3: Turbo Pilot -->
+  <!-- 卡片 3: 启动模式 -->
   <div class="card">
-    <div class="card-label">Turbo Pilot · 风险控制</div>
-    <div class="row">
-      <span style="font-weight: 500;">全局 Turbo Pilot</span>
+    <div class="card-label">启动模式</div>
+    <div class="mode-options" id="modeOptions">
+      <button type="button" class="mode-option selected" data-mode="pilot" aria-pressed="true" onclick="selectLaunchMode('pilot')">
+        <span class="mode-title">Turbo Pilot <span class="mode-badge">推荐</span></span>
+        <span class="mode-desc">自动审批 + 高危命令拦截</span>
+      </button>
+      <button type="button" class="mode-option" data-mode="compatibility" aria-pressed="false" onclick="selectLaunchMode('compatibility')">
+        <span class="mode-title">兼容模式</span>
+        <span class="mode-desc">沿用用户默认审批设置</span>
+      </button>
+    </div>
+    <div class="row advisor-row" id="advisorRow">
+      <span>
+        <strong style="font-weight: 500;">病毒库后果提示</strong><br>
+        <small style="color: var(--text-dark);">拦截时提示可能后果与安全替代</small>
+      </span>
       <label class="switch">
-        <input type="checkbox" id="pilotToggle" checked>
+        <input type="checkbox" id="riskAdvisorToggle" checked>
         <span class="slider"></span>
       </label>
     </div>
-    <div class="row">
-      <span style="font-size: 11.5px; color: var(--text-dark);">开启后：启动 AG 前自动配置 Turbo + 高危 ASK + Hooks</span>
-    </div>
-    <div class="row">
-      <span style="font-weight: 500;">本会话:</span>
-      <span id="approveCountBadge" style="color: var(--yellow); font-size: 12px; font-weight: 700;">风险 0</span>
-    </div>
-    <div class="row">
-      <div class="port-cluster">
-        <button type="button" class="quick-tag" onclick="pilotProject()">配置当前项目</button>
-        <button type="button" class="quick-tag" onclick="openRules()">打开规则</button>
-        <button type="button" class="quick-tag" onclick="reloadRules()">重载</button>
-        <button type="button" class="quick-tag" onclick="cleanupRules()">清理注入</button>
-      </div>
-    </div>
-    <div class="row">
-      <span id="rulesCountBadge" style="color: var(--yellow); font-size: 11px; font-weight: 600;">--</span>
-      <span id="kbCountBadge" style="color: #c084fc; font-size: 11px; font-weight: 600;">KB --</span>
-    </div>
   </div>
 
-  <!-- 启动大按钮 -->  <!-- 启动大按钮 -->  <!-- 启动大按钮 -->
+  <!-- 核心启动按钮 -->
   <button class="launch-btn" id="launchBtn" onclick="launchClient()">
-    <span>🚀</span>
-    <span>启动 Antigravity</span>
+    <span class="launch-icon" id="launchIcon">🚀</span>
+    <span id="launchText">启动 Antigravity</span>
   </button>
 
-  <!-- 日志控制台 -->
-  <div class="console-pane">
-    <div class="console-bar">
-      <span class="card-label">运行审计日志</span>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <button type="button" class="clean-btn" onclick="copyLogs()">复制日志</button>
-        <button class="clean-btn" onclick="document.getElementById('consoleBox').innerHTML=''">清空</button>
+  <details class="advanced" id="advancedPanel">
+    <summary>
+      <span>高级工具与运行日志</span>
+      <span class="advanced-meta"><span id="approveCountBadge">风险 0</span> · <span id="rulesCountBadge">--</span> · <span id="kbCountBadge">KB --</span></span>
+    </summary>
+    <div class="advanced-body">
+      <div class="advanced-tools">
+        <div class="port-cluster">
+          <button type="button" class="quick-tag" onclick="openRules()">打开规则</button>
+          <button type="button" class="quick-tag" onclick="reloadRules()">重载规则</button>
+          <button type="button" class="quick-tag" onclick="cleanupRules()">恢复原设置</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" class="clean-btn" onclick="copyLogs()">复制日志</button>
+          <button type="button" class="clean-btn" onclick="document.getElementById('consoleBox').innerHTML=''">清空</button>
+        </div>
+      </div>
+      <div class="console-pane">
+        <div class="console" id="consoleBox">
+          <div class="log-line" style="color: var(--text-dark);">[SYSTEM] EasyAG 已就绪。</div>
+        </div>
       </div>
     </div>
-    <div class="console" id="consoleBox">
-      <div class="log-line" style="color: var(--text-dark);">[SYSTEM] 控制中心渲染完成.</div>
-    </div>
-  </div>
+  </details>
 
   <script>
     const consoleBox = document.getElementById('consoleBox');
@@ -589,8 +688,10 @@
       document.getElementById('patchStatusBadge').style.color = 'var(--green)';
       document.getElementById('proxyPortInput').value = d.port;
       
-      document.getElementById('pilotToggle').checked = d.blockDangerous;
-      
+      selectLaunchMode(d.launchMode || (d.blockDangerous === false ? 'compatibility' : 'pilot'), false);
+      document.getElementById('riskAdvisorToggle').checked = d.riskAdvisor !== false;
+      updateAdvisorAvailability();
+
       document.getElementById('i18nToggle').checked = d.enableI18n;
       document.getElementById('dictCountBadge').innerText = `已载入 ${d.dictEntries} 条汉化词条`;
       refreshRulesBadge(d.dangerRulesOn, d.dangerRulesTotal);
@@ -660,6 +761,29 @@
       updateConfig();
     }
 
+    let selectedLaunchMode = 'pilot';
+    let uiState = 'idle';
+
+    function selectLaunchMode(mode, persist = true) {
+      selectedLaunchMode = mode === 'compatibility' ? 'compatibility' : 'pilot';
+      document.querySelectorAll('.mode-option').forEach(el => {
+        const selected = el.dataset.mode === selectedLaunchMode;
+        el.classList.toggle('selected', selected);
+        el.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      });
+      updateAdvisorAvailability();
+      updateLaunchBtn(false);
+      if (persist) updateConfig();
+    }
+
+    function updateAdvisorAvailability() {
+      const enabled = selectedLaunchMode === 'pilot';
+      const toggle = document.getElementById('riskAdvisorToggle');
+      const row = document.getElementById('advisorRow');
+      if (toggle) toggle.disabled = !enabled;
+      if (row) row.classList.toggle('disabled', !enabled);
+    }
+
     function refreshApproveBadge(risk, block) {
       const el = document.getElementById('approveCountBadge');
       if (!el) return;
@@ -706,31 +830,6 @@
       }
     }
 
-    async function pilotProject() {
-      try {
-        const r = await fetch('/api/pilot/project', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project: 'EasyAntigravity' })
-        });
-        const d = await r.json();
-        if (!r.ok || d.ok === false) {
-          appendLog('SECURITY', '配置当前项目失败: ' + (d.error || ('HTTP ' + r.status)), 'tag-alert');
-          return;
-        }
-        appendLog('SECURITY', '当前项目已配置：Turbo + ASK ' + (d.count || 0) + ' 条', 'tag-proxy');
-      } catch (e) {
-        appendLog('SECURITY', '配置当前项目失败: ' + (e && e.message ? e.message : e), 'tag-alert');
-      }
-    }
-
-    async function applyGlobalPilot() {
-      const on = document.getElementById('pilotToggle').checked;
-      if (!on) return { ok: true, skipped: true };
-      const r = await fetch('/api/pilot/global', { method: 'POST' });
-      return await r.json();
-    }
-
     async function cleanupRules() {
       try {
         const r = await fetch('/api/danger-rules/cleanup', { method: 'POST' });
@@ -763,14 +862,15 @@
       }
     }
 
-    function updateConfig() {
+    async function updateConfig() {
       const portVal = parseInt(document.getElementById('proxyPortInput').value, 10);
       const payload = {
         port: (portVal >= 1 && portVal <= 65535) ? portVal : 7890,
-        blockDangerous: document.getElementById('pilotToggle').checked,
+        launchMode: selectedLaunchMode,
+        riskAdvisor: document.getElementById('riskAdvisorToggle').checked,
         enableI18n: document.getElementById('i18nToggle').checked
       };
-      fetch('/api/config', {
+      return fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -782,36 +882,63 @@
       this.value = this.value.replace(/\D/g, '');
     };
     portEl.onchange = updateConfig;
-    document.getElementById('pilotToggle').onchange = updateConfig;
+    document.getElementById('riskAdvisorToggle').onchange = updateConfig;
     document.getElementById('i18nToggle').onchange = updateConfig;
 
     function updateLaunchBtn(clientRunning) {
       const btn = document.getElementById('launchBtn');
       if (!btn) return;
       if (clientRunning) {
-        btn.disabled = true;
-        btn.innerHTML = '<span>●</span><span>Antigravity 运行中</span>';
-        btn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
-      } else {
-        btn.disabled = false;
-        btn.innerHTML = '<span>🚀</span><span>启动 Antigravity</span>';
-        btn.style.background = '';
+        setUiState('running');
+      } else if (uiState === 'running') {
+        setUiState('idle');
+      } else if (uiState !== 'preparing' && uiState !== 'launching') {
+        setUiState(uiState === 'error' ? 'error' : 'idle');
       }
     }
 
-    async function launchClient() {
+    function setUiState(next) {
+      uiState = next;
+      document.body.dataset.uiState = next;
       const btn = document.getElementById('launchBtn');
-      btn.disabled = true;
-      btn.innerHTML = '<span>⏳</span><span>正在配置并启动...</span>';
+      const icon = document.getElementById('launchIcon');
+      const text = document.getElementById('launchText');
+      const busy = next === 'preparing' || next === 'launching';
+      const locked = busy || next === 'running';
+      btn.disabled = locked;
+      btn.classList.toggle('busy', busy);
+      document.querySelectorAll('.mode-option').forEach(el => { el.disabled = locked; });
+      document.getElementById('proxyPortInput').disabled = locked;
+      icon.textContent = busy ? '◌' : next === 'running' ? '●' : next === 'error' ? '↻' : '🚀';
+      if (next === 'preparing') text.textContent = '正在准备增强环境…';
+      else if (next === 'launching') text.textContent = '正在启动 Antigravity…';
+      else if (next === 'running') text.textContent = 'Antigravity 运行中';
+      else if (next === 'error') text.textContent = '启动失败，点击重试';
+      else text.textContent = selectedLaunchMode === 'pilot' ? '以 Turbo Pilot 启动' : '以兼容模式启动';
+      btn.style.background = next === 'running' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '';
+    }
+
+    async function launchClient() {
+      setUiState('preparing');
       try {
-        const d = await applyGlobalPilot();
-        if (d && d.ok === false) {
-          appendLog('SECURITY', '启动前配置失败: ' + (d.error || ''), 'tag-alert');
-        } else if (d && !d.skipped) {
-          appendLog('SECURITY', '全局 Turbo Pilot 已配置（ASK ' + (d.count || 0) + ' + Hooks）', 'tag-proxy');
+        await updateConfig();
+        setUiState('launching');
+        const r = await fetch('/api/launch', { method: 'POST' });
+        let d = null;
+        try { d = await r.json(); } catch (_) {}
+        if (!r.ok || !d || d.ok === false) {
+          appendLog('SECURITY', '启动失败: ' + ((d && d.error) || ('HTTP ' + r.status)), 'tag-alert');
+          setUiState('error');
+          return;
         }
-      } catch (e) {}
-      await fetch('/api/launch', { method: 'POST' });
+        if (d.pilot && !d.pilot.skipped) {
+          appendLog('SECURITY', '启动前校验通过：Turbo + 高危 ASK ' + (d.pilot.count || 0) + ' 条', 'tag-proxy');
+        }
+        if (d.alreadyRunning) setUiState('running');
+      } catch (e) {
+        appendLog('SYSTEM', '启动失败: ' + (e && e.message ? e.message : e), 'tag-alert');
+        setUiState('error');
+      }
     }
 
     async function hideToTray() {

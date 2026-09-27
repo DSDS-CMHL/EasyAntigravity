@@ -87,6 +87,7 @@ namespace EasyAGResident {
         private static int agPid = 0;
         private static int backendPort = 8080;
         private static string currentType = "danger";
+        private static DispatcherTimer autoHideTimer;
 
         // Capsule UI Elements
         private static Border cardBorder;
@@ -311,8 +312,8 @@ namespace EasyAGResident {
             try {
                 capsuleWin = new Window {
                     Title = "EasyAG_HUD_Capsule",
-                    Width = 340,
-                    Height = 150,
+                    Width = 390,
+                    Height = 200,
                     WindowStyle = WindowStyle.None,
                     AllowsTransparency = true,
                     Background = Brushes.Transparent,
@@ -335,6 +336,10 @@ namespace EasyAGResident {
                     capsuleWin.Left = 800;
                     capsuleWin.Top = 600;
                 }
+                capsuleWin.MouseEnter += (s, e) => {
+                    if (autoHideTimer != null) autoHideTimer.Stop();
+                };
+                capsuleWin.MouseLeave += (s, e) => RestartAutoHide();
 
             Grid rootGrid = new Grid();
             rootGrid.ClipToBounds = false;
@@ -407,7 +412,10 @@ namespace EasyAGResident {
             stateSubText = new TextBlock {
                 FontSize = 11,
                 Foreground = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
-                Margin = new Thickness(0, 2, 0, 0)
+                Margin = new Thickness(0, 4, 0, 0),
+                TextWrapping = TextWrapping.Wrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxHeight = 58
             };
             body.Children.Add(stateMainText);
             body.Children.Add(stateSubText);
@@ -452,7 +460,7 @@ namespace EasyAGResident {
 
         private static void ApplyStateVisuals(string type, string titleText, string subText) {
             currentType = type;
-            if (type == "danger") {
+            if (type == "danger" || type == "risk_high") {
                 // 🚨 命中危险命令
                 Color rose = Color.FromRgb(0xFB, 0x71, 0x85);
                 cardBorder.BorderBrush = new SolidColorBrush(rose);
@@ -469,20 +477,22 @@ namespace EasyAGResident {
                 actionBtnText.Foreground = Brushes.White;
                 actionBtnText.Text = "前往审查 ↵";
 
-            } else if (type == "interaction") {
+            } else if (type == "interaction" || type == "risk_medium" || type == "risk_low") {
                 // 等待方案决策
-                Color mint = Color.FromRgb(0x00, 0xF5, 0xD4);
-                cardBorder.BorderBrush = new SolidColorBrush(mint);
-                cardGlow.Color = mint;
-                comicTail.Stroke = new SolidColorBrush(mint);
-                stateDot.Fill = new SolidColorBrush(mint);
-                stateCatText.Text = "等待方案决策";
-                stateCatText.Foreground = new SolidColorBrush(mint);
+                Color tone = type == "risk_medium" ? Color.FromRgb(0xF5, 0x9E, 0x0B)
+                    : type == "risk_low" ? Color.FromRgb(0x38, 0xBD, 0xF8)
+                    : Color.FromRgb(0x00, 0xF5, 0xD4);
+                cardBorder.BorderBrush = new SolidColorBrush(tone);
+                cardGlow.Color = tone;
+                comicTail.Stroke = new SolidColorBrush(tone);
+                stateDot.Fill = new SolidColorBrush(tone);
+                stateCatText.Text = type == "risk_medium" ? "中风险命令" : type == "risk_low" ? "低风险提醒" : "等待方案决策";
+                stateCatText.Foreground = new SolidColorBrush(tone);
 
                 stateMainText.Text = string.IsNullOrEmpty(titleText) ? "方案问答：等待您选择决策方案" : titleText;
                 stateSubText.Text = string.IsNullOrEmpty(subText) ? "Agent 暂缓后续操作，等待您的指引。" : subText;
 
-                actionBtn.Background = new SolidColorBrush(mint);
+                actionBtn.Background = new SolidColorBrush(tone);
                 actionBtnText.Foreground = new SolidColorBrush(Color.FromRgb(0x0B, 0x0C, 0x10));
                 actionBtnText.Text = "前往选择 ↵";
 
@@ -513,15 +523,9 @@ namespace EasyAGResident {
             }
             wpfApp.Dispatcher.Invoke(() => {
                 ApplyStateVisuals(type, titleText, subText);
-                Rect workArea = SystemParameters.WorkArea;
-                if (workArea.Width > 0 && workArea.Height > 0) {
-                    capsuleWin.Left = workArea.Right - capsuleWin.Width - 18;
-                    capsuleWin.Top = workArea.Bottom - capsuleWin.Height - 16;
-                } else {
-                    capsuleWin.Left = 800;
-                    capsuleWin.Top = 600;
-                }
+                PositionCapsule();
                 capsuleWin.Show();
+                RestartAutoHide();
                 try {
                     System.Media.SystemSounds.Asterisk.Play();
                 } catch { }
@@ -530,8 +534,41 @@ namespace EasyAGResident {
 
         private static void HideCapsule() {
             wpfApp.Dispatcher.Invoke(() => {
+                if (autoHideTimer != null) autoHideTimer.Stop();
                 capsuleWin.Hide();
             });
+        }
+
+        private static void PositionCapsule() {
+            try {
+                RefreshWindowHandles();
+                Screen screen = agHwnd != IntPtr.Zero ? Screen.FromHandle(agHwnd) : Screen.PrimaryScreen;
+                var work = screen.WorkingArea;
+                double scaleX = 1.0;
+                double scaleY = 1.0;
+                using (Graphics graphics = Graphics.FromHwnd(IntPtr.Zero)) {
+                    scaleX = graphics.DpiX > 0 ? graphics.DpiX / 96.0 : 1.0;
+                    scaleY = graphics.DpiY > 0 ? graphics.DpiY / 96.0 : 1.0;
+                }
+                capsuleWin.Left = work.Right / scaleX - capsuleWin.Width - 18;
+                capsuleWin.Top = work.Bottom / scaleY - capsuleWin.Height - 18;
+            } catch {
+                Rect workArea = SystemParameters.WorkArea;
+                capsuleWin.Left = workArea.Right - capsuleWin.Width - 18;
+                capsuleWin.Top = workArea.Bottom - capsuleWin.Height - 18;
+            }
+        }
+
+        private static void RestartAutoHide() {
+            if (capsuleWin == null || !capsuleWin.IsVisible) return;
+            if (autoHideTimer == null) {
+                autoHideTimer = new DispatcherTimer();
+                autoHideTimer.Tick += (s, e) => HideCapsule();
+            }
+            autoHideTimer.Stop();
+            int seconds = currentType == "ready" ? 6 : currentType == "risk_high" || currentType == "danger" ? 15 : currentType == "risk_medium" ? 12 : 9;
+            autoHideTimer.Interval = TimeSpan.FromSeconds(seconds);
+            autoHideTimer.Start();
         }
 
         private static void HandleCapsuleAction() {
@@ -688,6 +725,8 @@ namespace EasyAGResident {
                 string type = ExtractJsonVal(json, "type");
                 string title = ExtractJsonVal(json, "title");
                 string detail = ExtractJsonVal(json, "detail");
+                string solution = ExtractJsonVal(json, "solution");
+                if (!string.IsNullOrEmpty(solution)) detail += "\n建议：" + solution;
                 ShowCapsule(type, title, detail);
             } else if (cmd == "hide_capsule") {
                 HideCapsule();

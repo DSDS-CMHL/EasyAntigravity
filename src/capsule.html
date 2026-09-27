@@ -2,55 +2,127 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>EasyAG Capsule</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EasyAG 风险提示</title>
   <style>
+    :root {
+      color-scheme: dark;
+      --accent: #fb7185;
+      --accent-soft: rgba(251, 113, 133, 0.13);
+      --accent-line: rgba(251, 113, 133, 0.55);
+      --surface: rgba(18, 20, 28, 0.97);
+      --text: #f8fafc;
+      --muted: #a8b2c2;
+      --subtle: #697586;
+    }
+    * { box-sizing: border-box; }
     html, body {
-      margin: 0; height: 100%;
-      background: #12141c;
-      font-family: system-ui, "Segoe UI", sans-serif;
+      width: 100%; height: 100%; margin: 0; overflow: hidden;
+      background: transparent; color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
-    #card {
-      box-sizing: border-box;
-      height: 100%;
-      padding: 14px 16px;
-      color: #f1f5f9;
+    body { padding: 10px; }
+    .notice {
+      position: relative; height: 100%; padding: 15px 16px 13px; overflow: hidden;
+      border: 1px solid var(--accent-line); border-radius: 16px; background: var(--surface);
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42), 0 0 28px var(--accent-soft);
+      animation: enter 220ms cubic-bezier(.2,.8,.2,1) both;
     }
-    #t {
-      font-size: 14px;
-      font-weight: 650;
-      margin: 0 0 6px;
-      line-height: 1.3;
+    .notice.leaving { animation: leave 160ms ease-in both; }
+    .notice.medium { --accent:#f59e0b; --accent-soft:rgba(245,158,11,.12); --accent-line:rgba(245,158,11,.5); }
+    .notice.low { --accent:#38bdf8; --accent-soft:rgba(56,189,248,.12); --accent-line:rgba(56,189,248,.45); }
+    .notice.ready { --accent:#34d399; --accent-soft:rgba(52,211,153,.12); --accent-line:rgba(52,211,153,.45); }
+    .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+    .risk-label { display:inline-flex; align-items:center; gap:7px; color:var(--accent); font-size:11px; font-weight:750; letter-spacing:.05em; }
+    .risk-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+    .close {
+      width:28px; height:28px; margin:-5px -6px -5px 0; border:0; border-radius:8px;
+      background:transparent; color:var(--muted); cursor:pointer; font-size:17px; line-height:1;
+      transition:color 140ms ease, background 140ms ease;
     }
-    #d {
-      font-size: 12px;
-      line-height: 1.45;
-      color: #cbd5e1;
-      margin: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
+    .close:hover { color:var(--text); background:rgba(255,255,255,.08); }
+    .title {
+      margin:0 34px 10px 0; overflow:hidden; color:var(--text); font-size:14px; font-weight:700;
+      line-height:1.35; text-overflow:ellipsis; white-space:nowrap;
     }
-    #bar {
-      height: 3px;
-      border-radius: 2px;
-      margin-top: 10px;
-      background: linear-gradient(90deg, #f43f5e, #fb7185);
+    .section { display:grid; grid-template-columns:58px 1fr; gap:9px; margin-top:8px; font-size:11.5px; line-height:1.45; }
+    .section-label { color:var(--subtle); font-weight:650; }
+    .section-value {
+      display:-webkit-box; overflow:hidden; color:var(--muted); -webkit-box-orient:vertical;
+      -webkit-line-clamp:2; word-break:break-word;
     }
-    .mode-amber #bar { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
-    .mode-green #bar { background: linear-gradient(90deg, #10b981, #34d399); }
+    .section.solution .section-value { color:#d7e2ef; }
+    .footer { position:absolute; right:16px; bottom:12px; color:var(--subtle); font-size:9.5px; }
+    .timer { position:absolute; right:0; bottom:0; left:0; height:3px; background:rgba(255,255,255,.05); }
+    .timer::after {
+      display:block; width:100%; height:100%; content:""; background:var(--accent); transform-origin:left;
+      animation:countdown var(--duration, 12s) linear forwards; animation-play-state:var(--timer-state, running);
+    }
+    @keyframes enter { from { opacity:0; transform:translateY(14px) scale(.985); } }
+    @keyframes leave { to { opacity:0; transform:translateY(8px) scale(.99); } }
+    @keyframes countdown { to { transform:scaleX(0); } }
+    @media (prefers-reduced-motion: reduce) { .notice, .notice.leaving { animation-duration:1ms; } }
   </style>
 </head>
 <body>
-  <div id="card">
-    <div id="t">EasyAG</div>
-    <p id="d"></p>
-    <div id="bar"></div>
-  </div>
+  <article class="notice" id="notice" role="alert" aria-live="polite">
+    <header class="header">
+      <div class="risk-label"><span class="risk-dot"></span><span id="level">高风险命令</span></div>
+      <button class="close" type="button" aria-label="关闭提示" title="关闭">×</button>
+    </header>
+    <h1 class="title" id="title">命令需要人工确认</h1>
+    <div class="section"><span class="section-label">可能后果</span><span class="section-value" id="impact">可能对当前环境造成不可逆修改。</span></div>
+    <div class="section solution" id="solutionRow"><span class="section-label">建议方案</span><span class="section-value" id="solution">检查命令作用范围，确认后再继续。</span></div>
+    <span class="footer">EasyAG 病毒库 · 悬停暂停</span>
+    <div class="timer"></div>
+  </article>
   <script>
-    window.__ea_capsule = function (type, title, detail) {
-      var c = document.getElementById('card');
-      c.className = type === 'ready' ? 'mode-green' : (type === 'interaction' ? 'mode-amber' : '');
-      document.getElementById('t').textContent = title || 'EasyAG';
-      document.getElementById('d').textContent = detail || '';
+    const notice = document.getElementById('notice');
+    let hideTimer = 0;
+    let remaining = 12000;
+    let startedAt = 0;
+
+    async function hideWindow() {
+      clearTimeout(hideTimer);
+      notice.classList.add('leaving');
+      await new Promise(resolve => setTimeout(resolve, 150));
+      try { await window.__TAURI__.window.getCurrentWindow().hide(); }
+      catch (_) { window.close(); }
+    }
+    function armTimer(ms) {
+      clearTimeout(hideTimer);
+      remaining = ms;
+      startedAt = Date.now();
+      notice.style.setProperty('--duration', ms + 'ms');
+      notice.style.setProperty('--timer-state', 'running');
+      hideTimer = setTimeout(hideWindow, ms);
+    }
+    notice.addEventListener('mouseenter', () => {
+      remaining = Math.max(800, remaining - (Date.now() - startedAt));
+      clearTimeout(hideTimer);
+      notice.style.setProperty('--timer-state', 'paused');
+    });
+    notice.addEventListener('mouseleave', () => armTimer(remaining));
+    document.querySelector('.close').addEventListener('click', hideWindow);
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') hideWindow(); });
+
+    window.__ea_capsule = function (type, title, impact, solution) {
+      clearTimeout(hideTimer);
+      notice.className = 'notice';
+      const isReady = type === 'ready';
+      const level = type === 'risk_low' ? 'low' : type === 'risk_medium' || type === 'interaction' ? 'medium' : isReady ? 'ready' : 'high';
+      notice.classList.add(level);
+      const labels = { high:'高风险命令', medium:'中风险命令', low:'低风险提醒', ready:'任务已完成' };
+      document.getElementById('level').textContent = labels[level];
+      document.getElementById('title').textContent = title || (isReady ? '本轮任务已完成' : '命令需要人工确认');
+      document.getElementById('impact').textContent = impact || (isReady ? 'Agent 已空闲，可以检查结果。' : '该命令可能改变当前环境，请确认作用范围。');
+      document.getElementById('solution').textContent = solution || (isReady ? '返回 Antigravity 查看结果。' : '确认目标、路径和参数后再决定是否执行。');
+      document.querySelector('.footer').textContent = isReady ? 'EasyAG · 悬停暂停' : 'EasyAG 病毒库 · 悬停暂停';
+      const duration = isReady ? 6000 : level === 'high' ? 15000 : level === 'medium' ? 12000 : 9000;
+      const timer = document.querySelector('.timer');
+      timer.replaceWith(timer.cloneNode(true));
+      armTimer(duration);
     };
   </script>
 </body>

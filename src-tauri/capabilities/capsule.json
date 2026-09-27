@@ -1,0 +1,11 @@
+{
+  "identifier": "capsule",
+  "description": "Risk notification window; may only hide itself.",
+  "windows": [
+    "capsule"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide"
+  ]
+}

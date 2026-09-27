@@ -45,7 +45,14 @@ EasyAG  assessCommandRisk（danger-rules + EAS）
 1. 从 [Releases](../../releases) 下载对应平台压缩包，完整解压  
 2. 运行 `EasyAntigravity.exe`（macOS 打开 `.app`）  
 3. 确认本地代理端口（默认 `7890`，指向你的 HTTP 代理）  
-4. 点 **启动 Antigravity**
+4. 选择启动模式并点 **启动 Antigravity**
+
+EasyAG 不修改工作区内外的文件访问策略；是否允许访问工作区之外的文件，请在 Antigravity 中手动设置。
+
+| 启动模式 | 行为 |
+|------|------|
+| **Turbo Pilot** | 自动审批 + 高危命令 ASK；退出后恢复原执行策略，并可选择是否显示病毒库后果提示 |
+| **兼容模式** | 沿用用户原有审批与权限设置，仅使用代理和汉化 |
 
 首次运行会安装官方 Hooks（`~/.gemini/config/hooks.json` 中 `easyag-task-done` / `easyag-danger-gate`，可卸载）。
 
