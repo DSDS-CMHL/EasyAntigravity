@@ -1,7 +1,7 @@
 {
   "$schema": "https://agentguard.dev/schema/eas-v1.json",
   "version": "2.2.0",
-  "updated_at": "2026-09-27T08:28:07.461Z",
+  "updated_at": "2026-09-27T10:56:28.208Z",
   "rules": [
     {
       "id": "EAS-001",
@@ -43,8 +43,8 @@
       "pattern": "\\bgit\\s+(?:reset\\s+--hard|clean\\s+-[a-zA-Z]*[fxd][a-zA-Z]*)",
       "flags": "i",
       "root_cause": "AI Agent 在遇到代码冲突或执行报错时，常盲目尝试使用 git reset --hard HEAD 或 git clean -fdx 恢复环境，该操作直接丢弃工作区中所有尚未 commit 的代码。",
-      "destructive_impact": "开发者数小时甚至数天的最新编码心血瞬间蒸发，且无法通过 git reflog 找回。",
-      "safe_alternative": "请优先使用安全的非破坏性方案：git stash push -m \"agentguard-backup\"，或者先执行 git clean -n 预览待删文件。"
+      "destructive_impact": "本地尚未 commit 的代码改动会被直接丢弃，无法从工作区找回。",
+      "safe_alternative": "先 git stash push 或建备份分支，再 reset；优先 git restore 单文件。"
     },
     {
       "id": "EAS-004",
@@ -342,9 +342,9 @@
       "category": "destructive_vcs",
       "pattern": "\\bgit\\s+push\\s+.*(--force|-f)\\b|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*[fxd]",
       "flags": "i",
-      "root_cause": "force push 覆盖远端分支；reset --hard / clean -fdx 丢弃未提交修改。",
-      "destructive_impact": "团队提交被覆盖、未 commit 代码永久丢失。",
-      "safe_alternative": "用 git push --force-with-lease；reset 前先 stash 或备份分支。"
+      "root_cause": "git push --force 强行覆盖远端；git reset --hard / git clean -fdx 丢弃本地未提交内容。",
+      "destructive_impact": "远端分支被覆盖时，别人已推送、你未拉取的提交会丢失；reset --hard / clean 则会丢掉本地尚未 commit 的改动与未跟踪文件。",
+      "safe_alternative": "强推改用 --force-with-lease；reset 前先 git stash；clean 先 git clean -nd 预览。"
     },
     {
       "id": "EAS-025",
@@ -3279,7 +3279,7 @@
       "pattern": "\\bmkfs(?:\\.[a-z0-9]+)?\\s+(?!-n\\b)[^\\n]*/dev/|\\bmkswap\\b[\\s\\S]*/dev/",
       "flags": "i",
       "root_cause": "mkfs.* 重建文件系统即清空目标分区（T1485/GTFOBins）。",
-      "destructive_impact": "目标设备全部数据销毁。",
+      "destructive_impact": "目标分区/磁盘的文件系统元数据被重建，原有目录、文件与未备份数据全部无法读取。",
       "safe_alternative": "Agent 一律拒绝 mkfs；调试用 loop 文件而非块设备。",
       "test_cases": {
         "positive": [
@@ -3420,9 +3420,9 @@
       "category": "destructive_vcs",
       "pattern": "\\bgit\\s+push\\b[^\\n]*(?:--?force(?!-with-lease)(?=\\s|$)|-f(?=\\s|$))",
       "flags": "i",
-      "root_cause": "git push -f / --force 覆盖远端分支，他人未拉取的提交永久丢失（Git Flight Rules）。",
-      "destructive_impact": "主干/发布分支历史被改写，团队协作数据丢失。",
-      "safe_alternative": "使用 git push --force-with-lease；push 前 git fetch 并确认远程无新提交；保护分支走 PR。",
+      "root_cause": "git push -f / --force 会跳过「非快进」检查，用本地分支直接替换远端同名分支，而不是追加提交。",
+      "destructive_impact": "远端分支被本地覆盖：别人已推送、你还没拉取的提交会被直接丢弃；若推的是主干或发布分支，整条协作历史被改写，合并记录断裂，误覆盖后往往只能靠 reflog/备份部分找回。",
+      "safe_alternative": "改用 git push --force-with-lease（远程有新提交时会拒绝）；push 前先 git fetch 确认远端没有你没有的提交；主干/发布分支只走 PR 合并，禁止强推。",
       "test_cases": {
         "positive": [
           "git push -f origin main",
@@ -3451,7 +3451,7 @@
       "pattern": "\\bgit\\s+reset\\s+--hard\\b",
       "flags": "i",
       "root_cause": "git reset --hard 丢弃未提交修改并移动分支指针（Git Flight Rules）。",
-      "destructive_impact": "未 commit 的改动无法找回。",
+      "destructive_impact": "工作区里尚未 commit 的改动会被丢弃，分支指针退回旧提交；若误指到错误基线，后续提交会建在错误历史上。",
       "safe_alternative": "先 git stash push -m \"ares-backup\" 或建 backup 分支；改用 git restore --staged/--worktree 单文件。",
       "test_cases": {
         "positive": [
@@ -3479,7 +3479,7 @@
       "pattern": "\\bgit\\s+clean\\s+-[a-zA-Z]*[fx][a-zA-Z]*",
       "flags": "i",
       "root_cause": "git clean -fdx 删除未追踪文件与构建缓存，可抹掉未提交产物与本地配置。",
-      "destructive_impact": "未纳入版本库的数据全部消失。",
+      "destructive_impact": "未纳入 git 的文件会被永久删除：本地配置、构建产物、尚未 git add 的新文件都找不回来。",
       "safe_alternative": "先 git clean -nd 预览；确认后再 -fd；慎用 -x 连 ignore 文件一起清。",
       "test_cases": {
         "positive": [
@@ -3508,7 +3508,7 @@
       "pattern": "\\b[Gg]it\\s+[Bb]ranch\\s+(?:-D\\b|--delete\\s+--force\\b)",
       "flags": "",
       "root_cause": "git branch -D 强删未合并分支，工作内容随指针丢失。",
-      "destructive_impact": "功能分支上的提交成为孤儿，恢复依赖 reflog。",
+      "destructive_impact": "该分支上尚未合并进主干的提交会随分支一起删除；若之后没有备份分支，只能靠 reflog 里还没过期的 SHA 硬找。",
       "safe_alternative": "优先 git branch -d；确需 -D 时先打印分支头 SHA 并建备份分支。",
       "test_cases": {
         "positive": [

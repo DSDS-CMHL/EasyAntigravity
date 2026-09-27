@@ -6,7 +6,7 @@
     "bin":  "server.js",
     "scripts":  {
                     "start":  "node server.js",
-                    "test":  "node test/danger-rules.test.js && node test/rule-compile.test.js && node test/danger-sync.test.js && node test/i18n-revert.test.js && node test/capsule-ui.test.cjs && node test/foundation.test.cjs",
+                    "test":  "node test/danger-rules.test.js && node test/rule-compile.test.js && node test/danger-sync.test.js && node test/i18n-revert.test.js && node test/capsule-ui.test.cjs && node test/ares-copy.test.js && node test/foundation.test.cjs",
                     "test:danger-rules":  "node test/danger-rules.test.js",
                     "test:rule-compile":  "node test/rule-compile.test.js",
                     "test:danger-sync":  "node test/danger-sync.test.js",

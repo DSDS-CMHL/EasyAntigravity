@@ -47,6 +47,7 @@ jobs:
           node test/rule-compile.test.js
           node test/danger-sync.test.js
           node test/i18n-revert.test.js
+          node test/ares-copy.test.js
           node test/foundation.test.cjs
       - name: Prepare self-contained runtime
         run: node scripts/prepare-tauri.cjs ${{ matrix.target }}
