@@ -87,7 +87,6 @@ fn ensure_capsule(app: &tauri::AppHandle) {
     let _ = WebviewWindowBuilder::new(app, "capsule", WebviewUrl::App("capsule.html".into()))
         .title("EasyAG Capsule")
         .decorations(false)
-        .transparent(true)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
