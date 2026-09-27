@@ -104,8 +104,14 @@ async function start() {
     const clean = await fetch(app.url + '/api/danger-rules/cleanup', { method: 'POST' });
     const cleanBody = await clean.json();
     assert.equal(cleanBody.ok, true);
-    assert.deepEqual(JSON.parse(fs.readFileSync(app.agConfig, 'utf8')), app.initialConfig,
-      '清理后应恢复启动前的规则和策略');
+    const cleaned = JSON.parse(fs.readFileSync(app.agConfig, 'utf8'));
+    assert.equal(cleaned.userSettings.autoExecutionPolicy, 'CASCADE_COMMANDS_AUTO_EXECUTION_OFF',
+      '退出后切回默认：终端需审核');
+    assert.equal(cleaned.userSettings.nonWorkspaceFileAccessPolicy, 'AGENT_SETTING_POLICY_ASK',
+      '退出后切回默认：工作区外文件需审核');
+    assert.equal(cleaned.userSettings.fileAccessPolicy, 'AGENT_SETTING_POLICY_ALLOW');
+    assert.equal(cleaned.userSettings.globalPermissionGrants.ask.length, app.initialConfig.userSettings.globalPermissionGrants.ask.length,
+      '清理后只应保留用户原有 ASK');
 
     const withoutPolicy = JSON.parse(JSON.stringify(app.initialConfig));
     delete withoutPolicy.userSettings.autoExecutionPolicy;
@@ -120,8 +126,9 @@ async function start() {
     const cleanupWithoutPolicy = await fetch(app.url + '/api/danger-rules/cleanup', { method: 'POST' });
     assert.equal(cleanupWithoutPolicy.ok, true);
     const restoredWithoutPolicy = JSON.parse(fs.readFileSync(app.agConfig, 'utf8'));
-    assert.equal(Object.prototype.hasOwnProperty.call(restoredWithoutPolicy.userSettings, 'autoExecutionPolicy'), false,
-      '原本不存在的策略字段在退出时应删除');
+    assert.equal(restoredWithoutPolicy.userSettings.autoExecutionPolicy, 'CASCADE_COMMANDS_AUTO_EXECUTION_OFF',
+      '退出统一写回默认预设');
+    assert.equal(restoredWithoutPolicy.userSettings.nonWorkspaceFileAccessPolicy, 'AGENT_SETTING_POLICY_ASK');
     fs.writeFileSync(app.agConfig, JSON.stringify(app.initialConfig, null, 2));
 
     fs.renameSync(app.agConfig, app.agConfig + '.missing');

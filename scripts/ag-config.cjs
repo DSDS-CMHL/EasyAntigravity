@@ -207,28 +207,35 @@ function diff(aPath, bPath) {
 }
 
 /**
- * 预设 = autoExecutionPolicy + fileAccessPolicy (+ sandboxMode)
- * 由人机快照差分确认（2026-09-25）:
- *   default      : OFF  + ASK   + sandbox=false
- *   full-machine : OFF  + ALLOW + sandbox=false
- *   turbo        : EAGER+ ALLOW + sandbox=false
+ * 预设 = autoExecutionPolicy + nonWorkspaceFileAccessPolicy (+ fileAccessPolicy/sandbox)
+ * 2026-09-27 四模式实测（~/.gemini/config/config.json）:
+ *   default      : exec=OFF   + nonWorkspace=ASK   + file=ALLOW + sandbox=false
+ *   full-machine : exec=OFF   + nonWorkspace=ALLOW + file=ALLOW + sandbox=false
+ *   turbo        : exec=EAGER + nonWorkspace=ALLOW + file=ALLOW + sandbox=false
+ * 注：fileAccessPolicy 四种预设下都是 ALLOW；区分默认/整机的是 nonWorkspaceFileAccessPolicy。
  */
 const PRESETS = {
   default: {
     autoExecutionPolicy: 'CASCADE_COMMANDS_AUTO_EXECUTION_OFF',
-    fileAccessPolicy: 'AGENT_SETTING_POLICY_ASK',
-    sandboxMode: false
+    fileAccessPolicy: 'AGENT_SETTING_POLICY_ALLOW',
+    nonWorkspaceFileAccessPolicy: 'AGENT_SETTING_POLICY_ASK',
+    sandboxMode: false,
+    enableTerminalSandbox: false
   },
   'full-machine': {
     autoExecutionPolicy: 'CASCADE_COMMANDS_AUTO_EXECUTION_OFF',
     fileAccessPolicy: 'AGENT_SETTING_POLICY_ALLOW',
-    sandboxMode: false
+    nonWorkspaceFileAccessPolicy: 'AGENT_SETTING_POLICY_ALLOW',
+    sandboxMode: false,
+    enableTerminalSandbox: false
   },
   fullmachine: null, // alias, filled below
   turbo: {
     autoExecutionPolicy: 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER',
     fileAccessPolicy: 'AGENT_SETTING_POLICY_ALLOW',
-    sandboxMode: false
+    nonWorkspaceFileAccessPolicy: 'AGENT_SETTING_POLICY_ALLOW',
+    sandboxMode: false,
+    enableTerminalSandbox: false
   }
 };
 PRESETS.fullmachine = PRESETS['full-machine'];

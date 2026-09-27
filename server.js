@@ -1337,30 +1337,42 @@ function cleanupInjectedAsk() {
   }
 
   let restored = false;
-  if (manifest.savedGlobal) {
-    try {
-      const obj = JSON.parse(fs.readFileSync(globalFile, 'utf-8'));
-      obj.userSettings = obj.userSettings || {};
-      if (manifest.savedGlobal.values && manifest.savedGlobal.present) {
+  // 退出统一给用户切回「默认」模式（exec=OFF + 工作区外文件 ASK），而不是留在 Turbo
+  const DEFAULT_PRESET = {
+    autoExecutionPolicy: 'CASCADE_COMMANDS_AUTO_EXECUTION_OFF',
+    fileAccessPolicy: 'AGENT_SETTING_POLICY_ALLOW',
+    nonWorkspaceFileAccessPolicy: 'AGENT_SETTING_POLICY_ASK',
+    sandboxMode: false,
+    enableTerminalSandbox: false
+  };
+  try {
+    const obj = JSON.parse(fs.readFileSync(globalFile, 'utf-8'));
+    obj.userSettings = obj.userSettings || {};
+    for (const [key, val] of Object.entries(DEFAULT_PRESET)) {
+      obj.userSettings[key] = val;
+    }
+    fs.writeFileSync(globalFile, JSON.stringify(obj, null, 2), 'utf-8');
+    restored = true;
+    logToGUI('SECURITY', '已将全局安全预设切回默认（终端审核 + 工作区外文件审核）', 'tag-proxy');
+  } catch (e) {
+    failures.push(String(e.message || e));
+    // 失败时尽量按快照恢复
+    if (manifest.savedGlobal && manifest.savedGlobal.values && manifest.savedGlobal.present) {
+      try {
+        const obj = JSON.parse(fs.readFileSync(globalFile, 'utf-8'));
+        obj.userSettings = obj.userSettings || {};
         for (const key of Object.keys(manifest.savedGlobal.present)) {
-          if (manifest.savedGlobal.present[key]) {
-            if (manifest.savedGlobal.values[key] !== undefined) {
-              obj.userSettings[key] = manifest.savedGlobal.values[key];
-            }
-          } else {
+          if (manifest.savedGlobal.present[key] && manifest.savedGlobal.values[key] !== undefined) {
+            obj.userSettings[key] = manifest.savedGlobal.values[key];
+          } else if (!manifest.savedGlobal.present[key]) {
             delete obj.userSettings[key];
           }
         }
-      } else {
-        // 兼容旧版快照。
-        for (const k of ['autoExecutionPolicy', 'nonWorkspaceFileAccessPolicy', 'fileAccessPolicy', 'enableTerminalSandbox']) {
-          if (manifest.savedGlobal[k] !== undefined) obj.userSettings[k] = manifest.savedGlobal[k];
-        }
+        fs.writeFileSync(globalFile, JSON.stringify(obj, null, 2), 'utf-8');
+        restored = true;
+      } catch (e2) {
+        failures.push(String(e2.message || e2));
       }
-      fs.writeFileSync(globalFile, JSON.stringify(obj, null, 2), 'utf-8');
-      restored = true;
-    } catch (e) {
-      failures.push(String(e.message || e));
     }
   }
 

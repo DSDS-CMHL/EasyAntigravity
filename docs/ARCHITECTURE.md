@@ -117,18 +117,20 @@ Deny  >  Ask  >  Allow
 Ask  可压过  Turbo（Always Proceed）
 ```
 
-| UI 预设 | `autoExecutionPolicy` | `fileAccessPolicy` | `sandboxMode` |
-|---------|----------------------|--------------------|---------------|
-| Default | `CASCADE_COMMANDS_AUTO_EXECUTION_OFF` | `AGENT_SETTING_POLICY_ASK` | `false` |
-| Full Machine | `OFF` | `AGENT_SETTING_POLICY_ALLOW` | `false` |
-| Turbo | `CASCADE_COMMANDS_AUTO_EXECUTION_EAGER` | `ALLOW` | `false` |
-| **Custom** | 三旋钮独立可调（仅 Custom 时 UI 显示） | | |
+| UI 预设 | `autoExecutionPolicy` | `nonWorkspaceFileAccessPolicy` | `fileAccessPolicy` | `sandboxMode` |
+|---------|----------------------|--------------------------------|--------------------|---------------|
+| 默认 Default | `CASCADE_COMMANDS_AUTO_EXECUTION_OFF` | `AGENT_SETTING_POLICY_ASK` | `ALLOW` | `false` |
+| 整机权限 Full Machine | `OFF` | `AGENT_SETTING_POLICY_ALLOW` | `ALLOW` | `false` |
+| 高速模式 Turbo | `CASCADE_COMMANDS_AUTO_EXECUTION_EAGER` | `AGENT_SETTING_POLICY_ALLOW` | `ALLOW` | `false` |
+| **Custom** | 三旋钮独立可调（仅 Custom 时 UI 显示） | | | |
+
+> 2026-09-27 四模式实测：区分「默认 / 整机」的是 `nonWorkspaceFileAccessPolicy`（工作区外文件），不是 `fileAccessPolicy`。Pilot 启动写入高速预设，退出统一写回默认预设。
 
 Custom 三旋钮 ↔ JSON：
 
 | UI（仅 Custom） | 字段 |
 |-----------------|------|
-| Outside of folders file access policy | `fileAccessPolicy`（全局另名 `nonWorkspaceFileAccessPolicy`） |
+| Outside of folders file access policy | `nonWorkspaceFileAccessPolicy`（全局；项目侧 `fileAccessPolicy`） |
 | Terminal Command Auto Execution | `autoExecutionPolicy` |
 | Enable Sandbox Mode (Preview) | `sandboxMode` |
 
