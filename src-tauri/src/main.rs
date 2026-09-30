@@ -74,7 +74,11 @@ fn open_url(url: &str) {
     {
         let _ = Command::new("cmd").args(["/C", "start", "", url]).spawn();
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("open").arg(url).spawn();
+    }
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     {
         let _ = Command::new("xdg-open").arg(url).spawn();
     }

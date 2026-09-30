@@ -14,10 +14,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            build-args: --no-bundle
-            name: windows-x64
+          # - runner: windows-latest
+          #   target: x86_64-pc-windows-msvc
+          #   build-args: --no-bundle
+          #   name: windows-x64
           - runner: macos-14
             target: aarch64-apple-darwin
             build-args: --bundles app
@@ -110,13 +110,27 @@ jobs:
           # 4. 鍏抽敭鑷锛氬湪褰撳墠 runner 涓婃墽琛?V8 鍒濆鍖栨祴璇曪紝纭繚涓嶄細鍑虹幇 SIGTRAP
           "$app/Contents/MacOS/easyag-node" -e "console.log('easyag-node JIT OK, V8:', process.versions.v8)"
 
-          # 5. 鎵撳寘澶栧３锛氭斁鍏?stage 鐩綍锛岀‘淇?GitHub Artifact 涓嬭浇瑙ｅ帇鍚庡叿鏈夊畬鏁寸殑 EasyAntigravity.app 澶栧３锛岃€岄潪鏁ｈ惤鐨?Contents/
-          stage="dist-tauri/EasyAntigravity-3.0.0-${{ matrix.name }}"
-          mkdir -p "$stage"
-          ditto "$app" "$stage/EasyAntigravity.app"
-          cp LICENSE "$stage/"
-          cp docs/PORTABLE.md "$stage/" 2>/dev/null || true
-          ditto -c -k --sequesterRsrc --keepParent "$app" "$stage/EasyAntigravity-3.0.0-${{ matrix.name }}-beta.zip"
+          # 5. 打包分发 ZIP 包（保持 macOS 扩展属性、代码签名与完整 App 外壳）
+          mkdir -p dist-tauri
+          zip_name="EasyAntigravity-3.0.0-${{ matrix.name }}-beta.zip"
+          zip_path="dist-tauri/$zip_name"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$zip_path"
+
+          # 6. 完整性自检：校验 ZIP 结构与中央目录，杜绝坏包
+          unzip -t "$zip_path"
+
+          # 7. 模拟解压校验关键入口与可执行权限
+          verify_dir="dist-tauri/verify"
+          mkdir -p "$verify_dir"
+          ditto -x -k "$zip_path" "$verify_dir/"
+          test -d "$verify_dir/EasyAntigravity.app"
+          test -x "$verify_dir/EasyAntigravity.app/Contents/MacOS/EasyAntigravity"
+          test -x "$verify_dir/EasyAntigravity.app/Contents/MacOS/easyag-node"
+          test -f "$verify_dir/EasyAntigravity.app/Contents/Resources/backend/server.js"
+          rm -rf "$verify_dir"
+
+          # 8. 输出 SHA256 校验和到日志
+          shasum -a 256 "$zip_path"
       - name: Upload Windows package
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
@@ -130,7 +144,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: EasyAntigravity-3.0.0-${{ matrix.name }}-beta
-          path: dist-tauri/EasyAntigravity-3.0.0-${{ matrix.name }}
+          path: dist-tauri/EasyAntigravity-3.0.0-${{ matrix.name }}-beta.zip
           if-no-files-found: error
           retention-days: 14
       - name: Upload Standard Workflow Test Suite
