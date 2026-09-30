@@ -118,6 +118,14 @@ npm test
 |------|------|
 | [nicktan @ linux.do](https://linux.do/t/topic/2896116) | 界面汉化词典主要来源 |
 
+## 反重力账号相关问题
+
+- [一位不知名佬友写的文档](https://zcn91ppq6ur7.feishu.cn/wiki/L748wAHTriwwGVkc7TSc3TSennb)
+
+## 友链
+
+- [linux.do](https://linux.do)
+
 ## License
 
 [MIT](./LICENSE)
