@@ -29,7 +29,7 @@ for (const r of resources) {
 function resourceOf(id) {
   const rule = data.rules.find(x => x.id === id && x.enabled !== false);
   assert.ok(rule, '缺少规则 ' + id);
-  return toResource(compileJsPatternToOfficialTarget(rule.pattern));
+  return toResource(compileJsPatternToOfficialTarget(rule.pattern, rule.flags));
 }
 
 // fs-recursive-delete 应命中带路径命令

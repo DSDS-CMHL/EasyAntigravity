@@ -45,7 +45,7 @@ function validateRules(doc) {
       } catch (e) {
         issues.push(r.id + ' 正则非法: ' + e.message);
       }
-      const compiled = compileJsPatternToOfficialTarget(r.pattern);
+      const compiled = compileJsPatternToOfficialTarget(r.pattern, r.flags === undefined ? 'i' : r.flags);
       if (/\s/.test(compiled.replace(/^regex:/, ''))) {
         issues.push(r.id + ' 编译后仍含字面空白（会破坏单 token）: ' + compiled.slice(0, 60));
       }

@@ -18,6 +18,7 @@ test('CDP attaches, validates main-frame events, reconnects and removes owned sc
   await once(server, 'listening');
   const calls = [];
   const commands = [];
+  const metadata = [];
   let current;
   let connections = 0;
   server.on('connection', socket => {
@@ -36,7 +37,7 @@ test('CDP attaches, validates main-frame events, reconnects and removes owned sc
   const target = { type: 'page', url: 'http://127.0.0.1/chat', webSocketDebuggerUrl: `ws://127.0.0.1:${server.address().port}/page` };
   let discoveryError = false;
   const hub = new CdpHub({
-    source: () => 'void 0', onRisk: command => commands.push(command),
+    source: () => 'void 0', onRisk: (command, event) => { commands.push(command); metadata.push(event); },
     discover: async () => { if (discoveryError) throw new Error('temporary outage'); return [target]; }
   });
   t.after(async () => {
@@ -51,9 +52,10 @@ test('CDP attaches, validates main-frame events, reconnects and removes owned sc
   const send = (context, payload) => current.send(JSON.stringify({ method: 'Runtime.bindingCalled', params: { name: hub.binding, executionContextId: context, payload: JSON.stringify(payload) } }));
   send(8, { type: 'risk-command', command: 'wrong-frame' });
   send(7, { type: 'unknown', command: 'wrong-event' });
-  send(7, { type: 'risk-command', command });
+  send(7, { type: 'risk-command', command, invocationId: 'command-step-one' });
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.deepEqual(commands, [command], 'Analyze the complete command, not a truncated log preview');
+  assert.deepEqual(metadata, [{ invocationId: 'command-step-one' }], 'Keep invocation identity across the CDP boundary');
   discoveryError = true;
   await hub.tick();
   assert.equal(hub.running, true, 'Temporary discovery failure must not end the session');

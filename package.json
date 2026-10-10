@@ -1,15 +1,16 @@
 {
   "name": "easyantigravity",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Antigravity desktop launcher: process proxy, reversible localization and native permission rules",
   "main": "server.js",
   "bin": "server.js",
   "scripts": {
     "start": "node server.js",
     "check": "node scripts/check.cjs",
-    "test": "node test/danger-rules.test.js && node test/rule-compile.test.js && node test/i18n-revert.test.js && node test/capsule-ui.test.cjs && node test/ares-copy.test.js && node --test test/core.test.cjs test/cdp.test.cjs test/backend-resources.test.cjs && node test/foundation.test.cjs",
+    "test": "node test/danger-rules.test.js && node test/rule-compile.test.js && node test/i18n-revert.test.js && node test/capsule-ui.test.cjs && node test/ares-copy.test.js && node --test test/attack-defense.test.cjs test/permission-config.test.cjs test/core.test.cjs test/cdp.test.cjs test/backend-resources.test.cjs && node test/foundation.test.cjs",
     "test:core": "node --test test/core.test.cjs test/cdp.test.cjs test/backend-resources.test.cjs",
     "test:danger-rules": "node test/danger-rules.test.js",
+    "test:attack-audit": "node scripts/audit-danger-rules.cjs",
     "test:rule-compile": "node test/rule-compile.test.js",
     "test:i18n-revert": "node test/i18n-revert.test.js",
     "test:tauri-lifecycle": "node test/tauri-lifecycle.test.cjs",

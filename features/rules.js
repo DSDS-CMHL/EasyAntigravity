@@ -11,6 +11,18 @@ function riskLevel(severity) {
   return 'medium';
 }
 
+function migrateDefaultPatterns(document, bundled) {
+  let migrated = false;
+  for (const rule of document.rules) {
+    const stock = bundled.rules?.find(item => item.id === rule?.id);
+    if (stock?.previous_patterns?.includes(rule.pattern) && (rule.flags === undefined || rule.flags === stock.flags)) {
+      rule.pattern = stock.pattern;
+      migrated = true;
+    }
+  }
+  return migrated;
+}
+
 class RuleEngine {
   constructor({ rootDir, dataDir }) {
     this.rootDir = rootDir;
@@ -23,10 +35,14 @@ class RuleEngine {
     if (!fs.existsSync(this.file)) writeJson(this.file, bundled);
     const document = readJson(this.file);
     if (!Array.isArray(document.rules)) throw new Error('权限规则文件缺少 rules 数组');
+    // Upgrade only known, untouched stock patterns. User actions, switches and
+    // custom expressions remain theirs; unknown patterns are never replaced.
+    const migrated = migrateDefaultPatterns(document, bundled);
     const active = document.enabled === false ? [] : document.rules.filter(rule => rule && rule.enabled !== false && rule.pattern);
     // Compile once when loading, rather than rebuilding every pattern for every command.
     const patterns = active.map(rule => {
       if (rule.action && !ACTIONS.includes(rule.action)) throw new Error(`无效的权限动作: ${rule.id}`);
+      compileJsPatternToOfficialTarget(rule.pattern, rule.flags === undefined ? 'i' : rule.flags);
       return { rule, regex: new RegExp(rule.pattern, rule.flags === undefined ? 'i' : rule.flags) };
     });
     const candidates = [
@@ -42,6 +58,7 @@ class RuleEngine {
       catch { return []; }
     });
     // A failed reload must leave the previous working engine intact.
+    if (migrated) writeJson(this.file, document);
     Object.assign(this, { document, active, patterns, knowledge, signatures });
     return this.summary();
   }
@@ -55,7 +72,7 @@ class RuleEngine {
     const lists = { allow: [], deny: [], ask: [] };
     for (const rule of this.active) {
       const list = action || rule.action || 'ask';
-      lists[list].push(toResource(compileJsPatternToOfficialTarget(rule.pattern)));
+      lists[list].push(toResource(compileJsPatternToOfficialTarget(rule.pattern, rule.flags === undefined ? 'i' : rule.flags)));
     }
     for (const list of ACTIONS) lists[list] = [...new Set(lists[list])];
     return lists;
@@ -68,15 +85,24 @@ class RuleEngine {
       return regex.test(command);
     }).map(({ rule }) => ({
       ...rule, severity: riskLevel(rule.severity), source,
-      root_cause: rule.root_cause || rule.description || rule.name || ''
+      root_cause: rule.root_cause || ''
     }));
     const danger = collect(this.patterns, 'danger-rules');
     const eas = collect(this.signatures, 'ares');
-    const all = [...danger, ...eas].sort((a, b) => WEIGHT[b.severity] - WEIGHT[a.severity]
+    // A pipe alone is context, not evidence of remote execution. Keep other
+    // advisory signatures active; suppress only explicitly context-only hits.
+    const explanations = eas.filter(hit => hit.notification_policy !== 'context-only');
+    const all = [...danger, ...explanations].sort((a, b) => WEIGHT[b.severity] - WEIGHT[a.severity]
       || (Number(b.priority) || 0) - (Number(a.priority) || 0));
     if (!all.length) return null;
     const level = all[0].severity;
-    const primary = all.find(hit => hit.severity === level && hit.destructive_impact) || all[0];
+    const primary = explanations.sort((a, b) => WEIGHT[b.severity] - WEIGHT[a.severity]
+      || (Number(b.priority) || 0) - (Number(a.priority) || 0)).find(hit => hit.destructive_impact) || {
+      ...all[0],
+      root_cause: '命令命中了需要人工确认的操作特征；实际影响取决于目标、参数和权限。',
+      destructive_impact: '请核对操作对象和影响范围，确认不是误选路径、数据或系统资源后再执行。',
+      safe_alternative: '先使用对应工具的只读查询或预览功能；涉及修改时，先备份需要保留的数据。'
+    };
     return {
       level, levelLabel: { high: '高风险', medium: '中风险', low: '低风险' }[level],
       primary, danger, eas: eas.slice(0, 3)
@@ -84,4 +110,4 @@ class RuleEngine {
   }
 }
 
-module.exports = { RuleEngine, ACTIONS, riskLevel };
+module.exports = { RuleEngine, ACTIONS, riskLevel, migrateDefaultPatterns };

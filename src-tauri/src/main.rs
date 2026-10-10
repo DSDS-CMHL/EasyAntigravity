@@ -130,7 +130,7 @@ fn show_capsule(app: &tauri::AppHandle, kind: &str, title: &str, detail: &str, s
         let _ = window.set_position(tauri::PhysicalPosition::new(x.round() as i32, y.round() as i32));
     }
     let script = format!(
-        "(function(){{ window.__ea_port = {}; var t={}; var a={}; var d={}; var s={}; function go(){{ if(window.__ea_capsule) window.__ea_capsule(t,a,d,s); }}; if(document.readyState==='complete') go(); else window.addEventListener('load',go); setTimeout(go,50); setTimeout(go,200); }})();",
+        "(function(){{ window.__ea_port = {}; var t={}; var a={}; var d={}; var s={}; var delivered=false; var message={{}}; window.__ea_capsuleMessage=message; function go(){{ if(!delivered && window.__ea_capsuleMessage===message && window.__ea_capsule){{ delivered=true; window.__ea_capsule(t,a,d,s); }} }}; if(document.readyState==='complete') go(); else window.addEventListener('load',go,{{once:true}}); setTimeout(go,50); setTimeout(go,200); }})();",
         app.state::<Backend>().port.lock().ok().and_then(|p| *p).map(|p| p.to_string()).unwrap_or_else(|| "0".into()),
         serde_json::to_string(kind).unwrap_or_else(|_| "\"danger\"".into()),
         serde_json::to_string(title).unwrap_or_default(),

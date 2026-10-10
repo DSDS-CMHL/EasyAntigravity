@@ -36,7 +36,7 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
   const cdp = new CdpHub({
     profile: desktop.profile,
     source: binding => rendererSource(dictionary, { ...settings.get(), riskAdvisor: advisorEnabled() }, binding),
-    onRisk: command => advisor.observe(command),
+    onRisk: (command, metadata) => advisor.observe(command, metadata),
     onStatus: status => {
       const key = JSON.stringify([status.cdpSockets, status.cdpTargets, status.cdpError]);
       if (key === lastStatus) return;

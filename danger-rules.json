@@ -1,14 +1,15 @@
 {
-  "version": 4,
+  "version": 5,
   "enabled": true,
-  "_comment": "高危 ASK 黑名单（可独立分发）。severity=命中时提示等级；细节处方看 ARES（Agent Risk Execution Signatures）。CLI/IDE 亦可直接用本文件。",
+  "_comment": "危险命令权限规则（可独立分发，默认 Ask）。severity=提示等级；风险解释由 ARES 提供。previous_patterns 仅用于升级未修改的旧版默认表达式，不覆盖自定义规则和审批动作。",
   "rules": [
     {
       "id": "disk-destroy",
       "name": "磁盘/卷破坏",
       "severity": "high",
       "description": "format / Format-Volume / diskpart / mkfs / wipefs / shred / Clear-Disk / 删除分区",
-      "pattern": "\\bformat(?:\\.com)?\\s+[A-Za-z]:|\\bFormat-Volume\\b|\\bdiskpart\\b|\\bmkfs(?:\\.|\\b)|\\bwipefs\\b|\\bshred\\b|\\bClear-Disk\\b|\\bRemove-Partition\\b|\\bInitialize-Disk\\b",
+      "pattern": "\\bformat(?:\\.com)?\\s+[A-Za-z]:|\\bFormat-Volume\\b|\\bdiskpart\\b(?!\\s+/\\?(?=\\s|$|['\"]))|\\bmkfs(?:\\.|\\b)|\\bwipefs\\b|\\bshred\\b|\\bClear-Disk\\b|\\bRemove-Partition\\b|\\bInitialize-Disk\\b",
+      "previous_patterns": ["\\bformat(?:\\.com)?\\s+[A-Za-z]:|\\bFormat-Volume\\b|\\bdiskpart\\b|\\bmkfs(?:\\.|\\b)|\\bwipefs\\b|\\bshred\\b|\\bClear-Disk\\b|\\bRemove-Partition\\b|\\bInitialize-Disk\\b"],
       "flags": "i",
       "enabled": true
     },
@@ -17,7 +18,8 @@
       "name": "递归/强制删除",
       "severity": "high",
       "description": "rm -rf 系 / Remove-Item -Recurse -Force / del|rd /s /q / find -delete",
-      "pattern": "\\brm(?:\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)){1,4}|\\bRemove-Item\\b[\\s\\S]*-(?:Recurse|Force)\\b|\\b(del|rd|rmdir|erase)\\s+[^\\n]*\\/[sqf]|\\bfind\\b[\\s\\S]*(?:-delete|-exec\\s+rm)\\b",
+      "pattern": "\\brm\\b[^\\n|;&]*\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)(?=\\s|$|['\"])|\\bRemove-Item\\b[\\s\\S]*-(?:Recurse|Force)\\b|\\b(del|rd|rmdir|erase)\\s+[^\\n]*\\/[sqf]|\\bfind\\b[\\s\\S]*(?:-delete|-exec\\s+rm)\\b",
+      "previous_patterns": ["\\brm(?:\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)){1,4}|\\bRemove-Item\\b[\\s\\S]*-(?:Recurse|Force)\\b|\\b(del|rd|rmdir|erase)\\s+[^\\n]*\\/[sqf]|\\bfind\\b[\\s\\S]*(?:-delete|-exec\\s+rm)\\b"],
       "flags": "i",
       "enabled": true
     },
@@ -71,7 +73,8 @@
       "name": "下载执行/反弹/白加黑",
       "severity": "high",
       "description": "curl|bash、IEX、certutil/bits、nc -e、mshta/rundll32、ps -enc",
-      "pattern": "\\b(curl|wget|iwr|irm)\\b[^|\\n]*\\||\\b(iex|Invoke-Expression)\\b|\\b(certutil|bitsadmin)\\b[\\s\\S]*(?:urlcache|transfer|http)|\\b(nc|ncat|socat)\\b[^\\n]*(?:-e|exec)|\\b(mshta|rundll32|regsvr32|cmstp|installutil)\\b|\\bpowershell\\b[^\\n]*-e(?:nc\\w*)?\\s+[A-Za-z0-9+/=]{16,}",
+      "pattern": "\\b(curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^|\\n]*\\|\\s*(?:[^|\\n;&]*\\|\\s*)*(?:(?:sudo|env)\\s+)?(?:[^\\s|;&]+[/\\\\])?(?:bash|sh|zsh|pwsh|powershell|python[23]?|node|iex|Invoke-Expression)\\b|\\b(iex|Invoke-Expression)\\b|\\b(certutil|bitsadmin)\\b[\\s\\S]*(?:urlcache|transfer|http)|\\b(nc|ncat|socat)\\b[^\\n]*(?:-e|exec)|\\b(mshta|rundll32|regsvr32|cmstp|installutil)\\b|\\bpowershell\\b[^\\n]*-e(?:nc\\w*)?\\s+[A-Za-z0-9+/=]{16,}",
+      "previous_patterns": ["\\b(curl|wget|iwr|irm)\\b[^|\\n]*\\||\\b(iex|Invoke-Expression)\\b|\\b(certutil|bitsadmin)\\b[\\s\\S]*(?:urlcache|transfer|http)|\\b(nc|ncat|socat)\\b[^\\n]*(?:-e|exec)|\\b(mshta|rundll32|regsvr32|cmstp|installutil)\\b|\\bpowershell\\b[^\\n]*-e(?:nc\\w*)?\\s+[A-Za-z0-9+/=]{16,}"],
       "flags": "i",
       "enabled": true
     },
@@ -80,7 +83,8 @@
       "name": "清日志/改时间",
       "severity": "medium",
       "description": "wevtutil clear、Remove-Item *.log、Set-Date、tzutil",
-      "pattern": "\\bwevtutil\\b[^\\n]*clear|\\bRemove-Item\\b[\\s\\S]*\\.log\\b|\\bSet-Date\\b|\\btzutil\\b|\\bclear-eventlog\\b",
+      "pattern": "\\bwevtutil\\s+(?:cl|clear-log|clear)\\b|\\bRemove-Item\\b[\\s\\S]*\\.log\\b|\\bSet-Date\\b|\\btzutil\\b|\\bclear-eventlog\\b",
+      "previous_patterns": ["\\bwevtutil\\b[^\\n]*clear|\\bRemove-Item\\b[\\s\\S]*\\.log\\b|\\bSet-Date\\b|\\btzutil\\b|\\bclear-eventlog\\b"],
       "flags": "i",
       "enabled": true
     },
@@ -89,7 +93,8 @@
       "name": "持久化",
       "severity": "high",
       "description": "schtasks、crontab、服务安装、netsh helper",
-      "pattern": "\\bschtasks\\b|\\bRegister-ScheduledTask\\b|\\bcrontab\\b|\\bNew-Service\\b|\\bSet-Service\\b|\\bnetsh\\b[\\s\\S]*add\\s+helper",
+      "pattern": "\\bschtasks\\b[^\\n|;&]*\\/(?:create|change|delete|run|end)\\b|\\bRegister-ScheduledTask\\b|\\bcrontab\\b(?!\\s+(?:-u\\s+\\S+\\s+)?(?:-l|--help)(?=\\s*(?:$|['\"|;&])))|\\bNew-Service\\b|\\bSet-Service\\b|\\bnetsh\\b[\\s\\S]*add\\s+helper",
+      "previous_patterns": ["\\bschtasks\\b|\\bRegister-ScheduledTask\\b|\\bcrontab\\b|\\bNew-Service\\b|\\bSet-Service\\b|\\bnetsh\\b[\\s\\S]*add\\s+helper"],
       "flags": "i",
       "enabled": true
     },
@@ -116,7 +121,8 @@
       "name": "Git 破坏性",
       "severity": "medium",
       "description": "force push、reset --hard、clean -fdx、filter-branch",
-      "pattern": "\\bgit\\s+push\\s+[^\\n]*(?:--?force\\b|-f\\b)|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*[fxd]|\\bgit\\s+filter-branch\\b",
+      "pattern": "\\bgit\\s+push\\s+[^\\n]*(?:--?force\\b|-f\\b)|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\b(?![^\\n|;&]*\\s+(?:--dry-run\\b|-[a-zA-Z]*n[a-zA-Z]*(?=\\s|$|['\"])))[^\\n|;&]*\\s+(?:--force\\b|-[a-zA-Z]*[fxd][a-zA-Z]*(?=\\s|$|['\"]))|\\bgit\\s+filter-branch\\b",
+      "previous_patterns": ["\\bgit\\s+push\\s+[^\\n]*(?:--?force\\b|-f\\b)|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*[fxd]|\\bgit\\s+filter-branch\\b"],
       "flags": "i",
       "enabled": true
     },

@@ -1,21 +1,40 @@
 // UI observation supplies explanations only. Allow/Deny/Ask is enforced by AG itself.
 function installRiskObserver(window, document, enabled, report) {
   window.__easyagRisk?.dispose();
-  const seen = new WeakMap();
+  // Survive CDP remounts. A command step is one invocation; changing approval
+  // status, output or the capsule's visibility must not create another event.
+  const state = window.__easyagRiskState ||= {
+    nodes: new WeakMap(), delivered: new Set(), sequence: 0,
+    session: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  };
   let timer;
   function scan() {
     if (!enabled) return;
     const roots = document.querySelectorAll('[data-testid="run-command-step"], [data-testid*="approval"], [data-testid*="permission"]');
     for (const root of roots) {
       const candidates = root.matches('[data-testid="run-command-step"]')
-        ? [root] : root.querySelectorAll('[data-testid="run-command-step"],pre,code');
-      for (const candidate of candidates) {
+        ? [root] : root.querySelectorAll('[data-testid="run-command-step"]');
+      // Legacy approval panels may not expose a run-command-step wrapper.
+      const legacyCommand = root.querySelector('pre,code');
+      const steps = candidates.length ? candidates : legacyCommand ? [legacyCommand] : [];
+      for (const candidate of steps) {
         if (candidate.closest('[role="radiogroup"],[role="listbox"]')) continue;
-        const command = (candidate.innerText || candidate.textContent || '').trim();
+        const source = candidate.querySelector('[data-testid="command"], [data-testid="command-text"], pre code, pre, code') || candidate;
+        const command = (source.innerText || source.textContent || '').trim();
         if (!command || command.length > 16000 || /^(allow|deny|ask|允许|拒绝)(?:\s|$)/i.test(command)) continue;
-        if (seen.get(candidate) === command) continue;
-        seen.set(candidate, command);
-        report({ type: 'risk-command', command });
+        let invocationId = state.nodes.get(candidate);
+        if (!invocationId) {
+          const owner = candidate.closest('[data-tool-call-id],[data-step-id],[data-message-id],[data-command-id]') || candidate;
+          const key = ['data-tool-call-id', 'data-step-id', 'data-command-id', 'data-message-id', 'id']
+            .map(attr => owner.getAttribute(attr)).find(Boolean);
+          const index = owner === candidate ? 0 : Array.from(owner.querySelectorAll('[data-testid="run-command-step"]')).indexOf(candidate);
+          invocationId = `${state.session}:${key ? 'step:' + key + ':' + index : 'node:' + ++state.sequence}`;
+          state.nodes.set(candidate, invocationId);
+        }
+        if (state.delivered.has(invocationId)) continue;
+        state.delivered.add(invocationId);
+        if (state.delivered.size > 2048) state.delivered.delete(state.delivered.values().next().value);
+        report({ type: 'risk-command', command, invocationId });
       }
     }
   }
@@ -45,12 +64,16 @@ class RiskAdvisor {
     this.hits = 0;
   }
 
-  observe(command) {
+  observe(command, metadata = {}) {
     if (!this.enabled()) return;
     const now = Date.now();
-    for (const [key, time] of this.recent) if (now - time > 5000) this.recent.delete(key);
-    if (this.recent.has(command)) return;
-    this.recent.set(command, now);
+    const invocationId = typeof metadata.invocationId === 'string' && metadata.invocationId.length <= 17000
+      ? metadata.invocationId : '';
+    for (const [key, time] of this.recent) if (key.startsWith('text:') && now - time > 30000) this.recent.delete(key);
+    const key = invocationId ? 'invocation:' + invocationId : 'text:' + command;
+    if (this.recent.has(key)) return;
+    this.recent.set(key, now);
+    if (this.recent.size > 2048) this.recent.delete(this.recent.keys().next().value);
     const risk = this.rules.assess(command);
     if (!risk) return;
     this.hits++;

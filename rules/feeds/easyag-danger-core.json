@@ -1,13 +1,13 @@
 {
   "pack": "easyag-danger-core",
-  "version": 3,
-  "updated_at": "2026-09-26T05:22:43.298Z",
+  "version": 4,
+  "updated_at": "2026-10-11T00:00:00.000Z",
   "rules": [
     {
       "id": "rm-rf",
       "name": "递归强制删除",
       "description": "rm 含递归或强制参数（支持 -rf、-fr、拆分参数和长参数）",
-      "pattern": "\\brm(?:\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)){1,4}(?=\\s|$)",
+      "pattern": "\\brm\\b[^\\n|;&]*\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)(?=\\s|$|['\"])",
       "flags": "i",
       "enabled": true
     },
@@ -23,7 +23,7 @@
       "id": "disk-wipe",
       "name": "磁盘破坏",
       "description": "format 盘符 / format-volume / diskpart / mkfs / wipefs / shred",
-      "pattern": "\\bformat(?:\\.com)?\\s+[A-Za-z]:|\\bFormat-Volume\\b|\\bdiskpart\\b|\\bmkfs(?:\\.|\\b)|\\bwipefs\\b|\\bshred\\b",
+      "pattern": "\\bformat(?:\\.com)?\\s+[A-Za-z]:|\\bFormat-Volume\\b|\\bdiskpart\\b(?!\\s+/\\?(?=\\s|$|['\"]))|\\bmkfs(?:\\.|\\b)|\\bwipefs\\b|\\bshred\\b",
       "flags": "i",
       "enabled": true
     },
@@ -47,7 +47,7 @@
       "id": "git-destructive",
       "name": "Git 破坏性操作",
       "description": "force push / reset --hard / clean -fdx",
-      "pattern": "\\bgit\\s+push\\s+.*(-f|--force)\\b|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*[fxd]",
+      "pattern": "\\bgit\\s+push\\s+[^\\n]*(?:--?force\\b|-f\\b)|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\b(?![^\\n|;&]*\\s+(?:--dry-run\\b|-[a-zA-Z]*n[a-zA-Z]*(?=\\s|$|['\"])))[^\\n|;&]*\\s+(?:--force\\b|-[a-zA-Z]*[fxd][a-zA-Z]*(?=\\s|$|['\"]))|\\bgit\\s+filter-branch\\b",
       "flags": "i",
       "enabled": true
     },
@@ -367,7 +367,7 @@
       "id": "schtasks",
       "name": "计划任务",
       "description": "计划任务",
-      "pattern": "\\bschtasks\\b|\\bRegister-ScheduledTask\\b",
+      "pattern": "\\bschtasks\\b[^\\n|;&]*\\/(?:create|change|delete|run|end)\\b|\\bRegister-ScheduledTask\\b",
       "flags": "i",
       "enabled": true
     },
@@ -399,7 +399,7 @@
       "id": "curl-pipe",
       "name": "下载即执行",
       "description": "下载即执行",
-      "pattern": "\\b(curl|wget|iwr|irm|Invoke-WebRequest)\\b[^|\\n]*\\||\\b(iex|Invoke-Expression)\\b[\\s\\S]*(?:curl|wget|DownloadString|iwr)",
+      "pattern": "\\b(curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^|\\n]*\\|\\s*(?:[^|\\n;&]*\\|\\s*)*(?:(?:sudo|env)\\s+)?(?:[^\\s|;&]+[/\\\\])?(?:bash|sh|zsh|pwsh|powershell|python[23]?|node|iex|Invoke-Expression)\\b|\\b(iex|Invoke-Expression)\\b[\\s\\S]*(?:curl|wget|DownloadString|iwr)",
       "flags": "i",
       "enabled": true
     },
@@ -615,7 +615,7 @@
       "id": "log-tamper",
       "name": "清日志",
       "description": "清日志",
-      "pattern": "\\bwevtutil\\b[^\\n]*clear|\\beventcreate\\b|\\bclear-eventlog\\b|\\bRemove-Item\\b[\\s\\S]*(?:.log|logs\\\\)",
+      "pattern": "\\bwevtutil\\s+(?:cl|clear-log|clear)\\b|\\bRemove-Item\\b[\\s\\S]*\\.log\\b|\\bSet-Date\\b|\\btzutil\\b|\\bclear-eventlog\\b",
       "flags": "i",
       "enabled": true
     },
@@ -639,7 +639,7 @@
       "id": "cron-backdoor",
       "name": "crontab 后门",
       "description": "crontab 后门",
-      "pattern": "\\bcrontab\\b|\\bNew-CronItem\\b",
+      "pattern": "\\bcrontab\\b(?!\\s+(?:-u\\s+\\S+\\s+)?(?:-l|--help)(?=\\s*(?:$|['\"|;&])))|\\bNew-CronItem\\b",
       "flags": "i",
       "enabled": true
     },

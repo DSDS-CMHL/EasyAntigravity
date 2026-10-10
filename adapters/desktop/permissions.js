@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { readJson, writeJson } = require('../../core/storage');
+const { ACTIONS, normalizePermissionGrants, verifyPermissionGrants, restorePermissionStructure } = require('./permission-config');
 
-const ACTIONS = ['allow', 'deny', 'ask'];
 const TERMINAL_TURBO = 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER';
 const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 const isObject = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -68,21 +68,9 @@ class PermissionAdapter {
         object.userSettings = {};
       }
       const settings = object.userSettings;
-      if (settings.globalPermissionGrants !== undefined && !isObject(settings.globalPermissionGrants)) {
-        throw new Error('globalPermissionGrants 格式不正确');
-      }
-      if (!owns(settings, 'globalPermissionGrants')) {
-        journal.created.push(['userSettings', 'globalPermissionGrants']);
-        settings.globalPermissionGrants = {};
-      }
-      const grants = settings.globalPermissionGrants;
+      const grants = normalizePermissionGrants(settings, journal);
       for (const action of ACTIONS) {
         if (!lists[action].length) continue;
-        if (grants[action] !== undefined && !Array.isArray(grants[action])) throw new Error(`${action} 规则格式不正确`);
-        if (!owns(grants, action)) {
-          journal.created.push(['userSettings', 'globalPermissionGrants', action]);
-          grants[action] = [];
-        }
         const additions = lists[action].filter(resource => !grants[action].includes(resource));
         grants[action].push(...additions);
         let entry = journal.injections.find(item => item.file === this.configFile && item.list === action);
@@ -106,7 +94,7 @@ class PermissionAdapter {
       this.write(this.configFile, object);
       const checked = readJson(this.configFile).userSettings;
       if (!checked || (turbo && checked.autoExecutionPolicy !== TERMINAL_TURBO)
-        || ACTIONS.some(action => lists[action].some(resource => !checked.globalPermissionGrants?.[action]?.includes(resource)))) {
+        || !verifyPermissionGrants(checked, lists)) {
         throw new Error('原生权限规则或自动执行策略写后校验失败');
       }
       return {
@@ -152,11 +140,9 @@ class PermissionAdapter {
             else delete settings[key];
             restored = true;
           }
-          for (const parts of [...(journal.created || [])].reverse()) {
-            const parent = parts.slice(0, -1).reduce((current, key) => current?.[key], object);
-            const key = parts.at(-1);
-            if (parent?.[key] && typeof parent[key] === 'object' && !Object.keys(parent[key]).length) delete parent[key];
-          }
+          const structure = restorePermissionStructure(object, journal);
+          restored ||= structure.restored;
+          conflicts.push(...structure.conflicts);
         }
         this.write(file, object);
         if (JSON.stringify(readJson(file)) !== JSON.stringify(object)) throw new Error('配置恢复校验失败');

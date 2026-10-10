@@ -143,7 +143,11 @@ class CdpHub {
       && connection.contexts.has(params.executionContextId) && this.running && params.payload?.length < 20000) {
       try {
         const event = JSON.parse(params.payload);
-        if (event.type === 'risk-command' && typeof event.command === 'string' && event.command.length <= 16000) this.onRisk(event.command);
+        if (event.type === 'risk-command' && typeof event.command === 'string' && event.command.length <= 16000) {
+          const invocationId = typeof event.invocationId === 'string' && event.invocationId.length <= 17000
+            ? event.invocationId : undefined;
+          this.onRisk(event.command, { invocationId });
+        }
       } catch { /* The bridge accepts only bounded command observations. */ }
     }
   }
