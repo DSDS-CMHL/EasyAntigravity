@@ -14,10 +14,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # - runner: windows-latest
-          #   target: x86_64-pc-windows-msvc
-          #   build-args: --no-bundle
-          #   name: windows-x64
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            build-args: --no-bundle
+            name: windows-x64
           - runner: macos-14
             target: aarch64-apple-darwin
             build-args: --bundles app
@@ -42,13 +42,8 @@ jobs:
       - name: Backend dependencies and regressions
         run: |
           npm ci
-          node --check server.js
-          node test/danger-rules.test.js
-          node test/rule-compile.test.js
-          node test/danger-sync.test.js
-          node test/i18n-revert.test.js
-          node test/ares-copy.test.js
-          node test/foundation.test.cjs
+          npm run check
+          npm test
       - name: Prepare self-contained runtime
         run: node scripts/prepare-tauri.cjs ${{ matrix.target }}
       - name: Include runtime license
@@ -153,12 +148,30 @@ jobs:
         with:
           name: EasyAntigravity-3.0.0-standard-workflow-test-suite
           path: |
-            test/STANDARD_TEST_WORKFLOW.md
-            test/standard-workflow.test.js
-            test/i18n-revert.test.js
-            test/danger-rules.test.js
-            test/approval-lifecycle.test.js
+            test/
+            core/
+            features/
+            adapters/
+            desktop/
+            ui/
+            scripts/check.cjs
+            scripts/backend-resources.cjs
+            scripts/rule-compile.cjs
+            src/capsule.html
+            src-tauri/src/main.rs
+            src-tauri/capabilities/
+            src-tauri/tauri.conf.json
+            scripts/resident/EasyAG-Resident.cs
+            Agentguard-dev/src/rules/signatures.json
+            rules/feeds/ares-signatures.json
+            dicts/
+            assets/*.png
+            package.json
+            package-lock.json
+            server.js
+            index.html
             danger-rules.json
+            README.md
           retention-days: 14
       - name: Build diagnostics
         if: always()

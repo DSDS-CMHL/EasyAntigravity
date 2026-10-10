@@ -103,12 +103,17 @@
     let remaining = 12000;
     let startedAt = 0;
     let hovering = false;
+    let closeTimer = 0;
+    let generation = 0;
 
     function hideWindow() {
       clearTimeout(hideTimer);
       hideTimer = 0;
+      clearTimeout(closeTimer);
+      const closingGeneration = generation;
       notice.classList.add('leaving');
-      setTimeout(function () {
+      closeTimer = setTimeout(async function () {
+        if (closingGeneration !== generation) return;
         try {
           var t = window.__TAURI__;
           var win = t && (
@@ -116,7 +121,16 @@
             (t.webview && t.webview.getCurrentWebviewWindow && t.webview.getCurrentWebviewWindow()) ||
             (t.webviewWindow && t.webviewWindow.getCurrentWebviewWindow && t.webviewWindow.getCurrentWebviewWindow())
           );
-          if (win && typeof win.hide === 'function') { win.hide(); return; }
+          if (win && typeof win.hide === 'function') { await win.hide(); return; }
+        } catch (e) {}
+        // External capsule pages may lack Tauri privileges; ask the local host instead.
+        try {
+          const origin = location.protocol === 'http:' || location.protocol === 'https:'
+            ? location.origin : window.__ea_port ? 'http://127.0.0.1:' + window.__ea_port : '';
+          if (origin) {
+            await fetch(origin + '/api/capsule/hide', { method: 'POST', mode: 'no-cors', keepalive: true });
+            return;
+          }
         } catch (e) {}
         try { window.close(); } catch (e) {}
       }, 140);
@@ -181,6 +195,8 @@
     });
 
     window.__ea_capsule = function (type, title, impact) {
+      generation++;
+      clearTimeout(closeTimer);
       clearTimeout(hideTimer);
       hideTimer = 0;
       hovering = false;

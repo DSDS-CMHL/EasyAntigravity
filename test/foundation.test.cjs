@@ -81,7 +81,7 @@ async function start() {
     assert.deepEqual(JSON.parse(fs.readFileSync(app.agConfig, 'utf8')), app.initialConfig,
       '点击启动 AG 前不得改动官方配置');
 
-    // sync 必须同时写入 ASK 与 Turbo，并且通过写后校验。
+    // 权限规则与自动执行策略必须写入并通过校验；文件权限保持用户选择。
     const sync = await fetch(app.url + '/api/danger-rules/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -92,10 +92,9 @@ async function start() {
     assert.ok(syncBody.verifiedFiles.includes(app.agConfig));
     const applied = JSON.parse(fs.readFileSync(app.agConfig, 'utf8'));
     assert.equal(applied.userSettings.autoExecutionPolicy, 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER');
-    assert.equal(applied.userSettings.fileAccessPolicy, 'AGENT_SETTING_POLICY_ALLOW',
-      'Turbo 预设必须写入文件访问 ALLOW，AG 才会切到 Turbo 而不是 Custom');
-    assert.equal(applied.userSettings.nonWorkspaceFileAccessPolicy, 'AGENT_SETTING_POLICY_ALLOW');
-    assert.equal(applied.userSettings.sandboxMode, false);
+    assert.equal(applied.userSettings.fileAccessPolicy, app.initialConfig.userSettings.fileAccessPolicy);
+    assert.equal(applied.userSettings.nonWorkspaceFileAccessPolicy, app.initialConfig.userSettings.nonWorkspaceFileAccessPolicy);
+    assert.equal(applied.userSettings.sandboxMode, undefined);
     assert.equal(applied.userSettings.globalPermissionGrants.ask.length, syncBody.count);
     const owned = await (await fetch(app.url + '/api/injected')).json();
     assert.equal(owned.count, syncBody.count - 1,
@@ -106,10 +105,10 @@ async function start() {
     assert.equal(cleanBody.ok, true);
     const cleaned = JSON.parse(fs.readFileSync(app.agConfig, 'utf8'));
     assert.equal(cleaned.userSettings.autoExecutionPolicy, 'CASCADE_COMMANDS_AUTO_EXECUTION_OFF',
-      '退出后切回默认：终端需审核');
+      '退出后精确恢复用户原执行策略');
     assert.equal(cleaned.userSettings.nonWorkspaceFileAccessPolicy, 'AGENT_SETTING_POLICY_ASK',
-      '退出后切回默认：工作区外文件需审核');
-    assert.equal(cleaned.userSettings.fileAccessPolicy, 'AGENT_SETTING_POLICY_ALLOW');
+      '退出后保留用户原工作区外文件权限');
+    assert.deepEqual(cleaned, app.initialConfig);
     assert.equal(cleaned.userSettings.globalPermissionGrants.ask.length, app.initialConfig.userSettings.globalPermissionGrants.ask.length,
       '清理后只应保留用户原有 ASK');
 
@@ -126,8 +125,8 @@ async function start() {
     const cleanupWithoutPolicy = await fetch(app.url + '/api/danger-rules/cleanup', { method: 'POST' });
     assert.equal(cleanupWithoutPolicy.ok, true);
     const restoredWithoutPolicy = JSON.parse(fs.readFileSync(app.agConfig, 'utf8'));
-    assert.equal(restoredWithoutPolicy.userSettings.autoExecutionPolicy, 'CASCADE_COMMANDS_AUTO_EXECUTION_OFF',
-      '退出统一写回默认预设');
+    assert.equal(Object.hasOwn(restoredWithoutPolicy.userSettings, 'autoExecutionPolicy'), false,
+      '原本缺失的策略字段不能被默认值替代');
     assert.equal(restoredWithoutPolicy.userSettings.nonWorkspaceFileAccessPolicy, 'AGENT_SETTING_POLICY_ASK');
     fs.writeFileSync(app.agConfig, JSON.stringify(app.initialConfig, null, 2));
 
@@ -144,6 +143,20 @@ async function start() {
 
     const removedProjectPilot = await fetch(app.url + '/api/pilot/project', { method: 'POST' });
     assert.equal(removedProjectPilot.status, 404, '项目级 Turbo Pilot 接口应已移除');
+
+    const removedHook = await fetch(app.url + '/api/agent-event', { method: 'POST' });
+    assert.equal(removedHook.status, 404, 'Hook 上报接口应已移除');
+    assert.ok((await fetch(app.url + '/ui/launcher.js')).ok, '独立界面脚本必须可加载');
+    assert.ok((await fetch(app.url + '/ui/launcher.css')).ok, '独立样式必须可加载');
+    const traversal = await fetch(app.url + '/ui/..%2fserver.js');
+    assert.equal(traversal.status, 403, '静态目录不得暴露后端文件');
+    const crossOrigin = await fetch(app.url + '/api/config', {
+      method: 'POST', headers: { Origin: 'https://unrelated.example' }, body: JSON.stringify({ port: 1234 })
+    });
+    assert.equal(crossOrigin.status, 403, '外部网页不得修改本地设置');
+    const invalidConfig = await fetch(app.url + '/api/config', { method: 'POST', body: JSON.stringify({ port: 0 }) });
+    assert.equal(invalidConfig.status, 400);
+    assert.equal((await (await fetch(app.url + '/api/status')).json()).port, 7890);
 
     const cfg = await fetch(app.url + '/api/config', {
       method: 'POST',

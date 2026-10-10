@@ -1,131 +1,83 @@
 # EasyAntigravity（EasyAG）
 
-**Turbo Mode 的副驾** —— 免 TUN 登录 · 界面汉化 · 高危命令风险旁路
+AG 桌面端的启动器与 Turbo 副驾：免 TUN 代理、界面汉化、一键自动审批与原生权限规则。
 
-<p align="center">苦反重力久矣。</p>
+## 功能
 
----
+| 功能 | 行为 |
+| --- | --- |
+| 进程代理 | 启动参数与环境变量指向本地 HTTP/Mixed 代理，保留回环直连 |
+| 汉化 | 通过 CDP 翻译界面文案；关闭时恢复 EasyAG 修改的原文 |
+| Turbo Pilot | 启动前开启终端自动执行并叠加 Allow / Deny / Ask 权限规则 |
+| 风险说明 | 观察 AG 界面中的命令，用 ARES 给出低、中、高风险提示，可关闭 |
+| 托盘与胶囊 | 启动后收起窗口；风险提示可关闭、超时消失、点击返回 AG |
 
-## 它做什么
+权限执行由 AG 自身完成；EasyAG 负责配置操作的一键化和风险解释。
+风险提示不替代原生权限规则，也不自动点击审批按钮。
 
-| 能力 | 说明 |
-|------|------|
-| **免 TUN 代理** | 启动 Antigravity 时注入 Chromium 本地 HTTP 代理，不改系统代理、不用 TUN/DLL |
-| **界面汉化** | CDP 只读词典，替换 UI 文案（不点击、不碰审批） |
-| **高危旁路** | 官方 **Hooks** 在命令执行前匹配 `danger-rules` + ARES（Agent Risk Execution Signatures），输出 **低/中/高** 风险与处方；命中则 `force_ask` |
+当前专注 AG 桌面端。上下文、额度与速度面板属于后续接入项；AG IDE 与 AG CLI 尚未适配。
+Hook 执行机制已移除，升级时仅清理可识别的旧 EasyAG Hook 注册。
 
-自动放行交给官方 **Turbo Mode**；EasyAG **不做 CDP 自动审批**。
+## 使用
 
----
+1. 完整解压对应平台的发布包，运行 EasyAntigravity。
+2. 选择常见代理端口，或输入自定义 HTTP/Mixed 端口。
+3. 保留或关闭汉化，选择启动模式，点击启动 AG。
 
-## 架构（一览）
+| 模式 | 配置行为 |
+| --- | --- |
+| Turbo Pilot | 自动审批 + 原生权限规则，风险说明单独开关 |
+| 兼容模式 | 使用代理与汉化，沿用用户原有审批和权限设置 |
 
-```text
-Antigravity 执行 run_command
-        ↓  PreToolUse Hook（官方）
-EasyAG  assessCommandRisk（danger-rules + EAS）
-        ↓
-   allow / force_ask   +  风险胶囊（低/中/高）
-        ↓
-官方弹窗由你决策
+文件访问范围和沙箱策略由用户在 AG 中自行设置。EasyAG 只更改终端自动执行字段，因此 AG 的预设标签可能显示为自定义；不会为了让标签显示 Turbo 而扩大文件权限。
 
-执行环结束
-        ↓  Stop Hook（fullyIdle）
-胶囊「任务完成」
-```
-
-- **Hooks**（官方扩展点）：危险门禁、任务完成  
-- **CDP**：仅界面汉化  
-- 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/RULES.md](docs/RULES.md)
-
----
-
-## 快速开始
-
-1. 从 [Releases](../../releases) 下载对应平台压缩包，完整解压  
-2. 运行 `EasyAntigravity.exe`（macOS 打开 `.app`）  
-3. 确认本地代理端口（默认 `7890`，指向你的 HTTP 代理）  
-4. 选择启动模式并点 **启动 Antigravity**
-
-EasyAG 不修改工作区内外的文件访问策略；是否允许访问工作区之外的文件，请在 Antigravity 中手动设置。
-
-| 启动模式 | 行为 |
-|------|------|
-| **Turbo Pilot** | 自动审批 + 高危命令 ASK；退出后恢复原执行策略，并可选择是否显示 ARES 风险提示 |
-| **兼容模式** | 沿用用户原有审批与权限设置，仅使用代理和汉化 |
-
-首次运行会安装官方 Hooks（`~/.gemini/config/hooks.json` 中 `easyag-task-done` / `easyag-danger-gate`，可卸载）。
-
-### 面板操作
-
-| 按钮 | 作用 |
-|------|------|
-| 注入 ASK | 把 `danger-rules` 编译为官方 ASK 写入全局（退出可清理） |
-| 清理注入 | 只移除 EasyAG 写入的条目，并恢复注入前策略 |
-| 打开规则 / 重载 | 编辑 `danger-rules.json` |
-
----
-
-## 规则与 ARES（可独立使用）
-
-不装 EasyAG 也能用，适合 CLI / IDE 的 auto-accept 插件：
-
-| 文件 | 规模 | 用途 |
-|------|------|------|
-| `danger-rules.json` | 19 条合并规则（带 severity） | 高危 ASK/Deny 黑名单 |
-| `Agentguard-dev/src/rules/signatures.json` | 199 条 ARES | 病理 / 后果 / 安全替代 |
-
-- 官方规则只填 **target**（如 `regex:rm -rf .*`），不要写 `command(…)` 外壳  
-- 编译语义见 `docs/RULES.md`（单 token 整行 `^…$`，需 `.*(?:pat).*` 包裹）  
-- 导出：`rules/feeds/easyag-danger-core.json`、`rules/feeds/antigravity-cli-ask.json`
-
-```bash
-node scripts/rules-packs.cjs validate
-node scripts/rules-packs.cjs snapshot
-node scripts/ag-config.cjs set-mode turbo EasyAntigravity
-```
-
----
+AG 退出或 EasyAG 退出时移除本次新增的规则，恢复原执行策略。原本缺失的字段仍保持缺失；运行中用户对同一策略做了修改时保留新选择。异常中断的恢复记录在下次启动时处理。
+关闭主窗口会收起至托盘；从托盘退出应用才结束 EasyAG。退出不强制结束其他 AG 进程。
 
 ## 开发
 
-```bash
-npm install
+需要 Node.js 22 或更高版本。
+
+```sh
+npm ci
 npm start
+npm run check
 npm test
+npm run test:tauri-lifecycle
 ```
 
-| 路径 | 说明 |
-|------|------|
-| `server.js` / `index.html` | 后端 + 面板 |
-| `scripts/rule-compile.cjs` | danger-rules → 官方 `command(regex:…)` |
-| `scripts/easyag-*-hook.cjs` | 官方 Hooks 脚本 |
-| `scripts/ag-config.cjs` | AG 权限 JSON 控制（快照/模式/规则） |
-| `src-tauri/` | Tauri 壳（打包） |
+开发入口使用浏览器面板；发布版使用 Tauri 外壳，自带 Node.js 与依赖。
 
----
+| 路径 | 职责 |
+| --- | --- |
+| `server.js` | 薄启动入口、退出信号 |
+| `core/` | 会话、设置、事件、原子存储 |
+| `features/` | 代理、规则、汉化、风险说明、通知 |
+| `adapters/desktop/` | 桌面发现、权限配置、CDP、渲染器接入、旧版迁移 |
+| `desktop/` | 模块组装、本地 HTTP/SSE、桌面外壳通信 |
+| `ui/` | 面板样式、界面交互、API 客户端 |
+| `src-tauri/` | 原生窗口、托盘、Node 后台生命周期 |
+| `scripts/backend-resources.cjs` | 发布资源白名单 |
+| `test/` | 模块行为、接口、CDP、汉化、发布资源与生命周期验证 |
 
-## 安全说明
+详见 [总体架构](docs/ARCHITECTURE.md)、[权限规则与 ARES](docs/RULES.md)、[便携版说明](docs/PORTABLE.md)。
 
-- 代理只改启动参数与环境变量，**不读写账号凭据**  
-- Hooks 写入用户配置 `hooks.json`，可删除；`decision` 不阻止正常停止  
-- 高危规则为**基础防呆**，无法穷尽所有变种；请自行增补，重要环境请备份  
-- Antigravity 为 Google 产品，本项目与其官方无关。请遵守当地法律与软件许可协议。
+## 规则资产
 
-## 致谢
+`danger-rules.json` 是权限规则来源，`Agentguard-dev/src/rules/signatures.json` 是 ARES 风险知识库。
+规则引擎按 `action` 编译为 Allow / Deny / Ask，未填写时默认为 Ask。发布包将 ARES 独立放入 `backend/knowledge/`。
 
-| 来源 | 说明 |
-|------|------|
-| [nicktan @ linux.do](https://linux.do/t/topic/2896116) | 界面汉化词典主要来源 |
+这些规则属于基础防呆，无法覆盖全部命令变种。请在目标 AG 版本中验证原生规则的实际行为。
 
-## 反重力账号相关问题
+## 致谢与链接
 
-- [一位不知名佬友写的文档](https://zcn91ppq6ur7.feishu.cn/wiki/L748wAHTriwwGVkc7TSc3TSennb)
+汉化词典主要来源：[nicktan @ linux.do](https://linux.do/t/topic/2896116)。
 
-## 友链
+反重力账号相关问题：[社区文档](https://zcn91ppq6ur7.feishu.cn/wiki/L748wAHTriwwGVkc7TSc3TSennb)。
+友链：[linux.do](https://linux.do)。
 
-- [linux.do](https://linux.do)
+Antigravity 为 Google 产品，本项目与其官方无关。
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](LICENSE)

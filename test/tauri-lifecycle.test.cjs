@@ -41,6 +41,7 @@ async function stop(child, eof = false) {
     let app = await start(data); child = app.child;
     let status = await (await fetch(app.url + '/api/status')).json();
     assert.ok(status.dictEntries > 3000);
+    assert.ok(status.kbRules >= 20, 'Packaged risk knowledge must not be missing');
     assert.equal(status.blockDangerous, true);
     const html = await (await fetch(app.url)).text();
     assert.ok(!html.includes('sendBeacon'));

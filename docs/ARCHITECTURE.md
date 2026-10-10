@@ -1,272 +1,105 @@
-# EasyAntigravity 架构说明
+# EasyAG 桌面架构
 
-**Turbo Mode 的副驾**：免 TUN 登录 · 汉化界面 · 高危 ASK + ARES 风险旁路。
+## 定位与范围
 
----
+EasyAG 将用户的“开启终端自动审批、配置原生权限规则”操作脚本化，并提供进程代理、汉化及可选风险说明。
+AG 自身执行 Allow / Deny / Ask。CDP 负责界面增强与观察，不承担执行门禁。
 
-## 1. 定位（本版起）
+本轮只适配 AG 桌面端。Rust 承担 Tauri 系统能力，JavaScript 承担共享内核与业务逻辑。
+指标面板、独立 easyag CLI 以及 AG IDE/CLI 适配是后续工作，当前不提供这些能力。
 
-| 能力 | 谁负责 | 说明 |
-|------|--------|------|
-| 自动放行 | **官方 Turbo Mode** | EasyAG 不再模拟点击 |
-| 高危询问 | **官方 ASK**（点击启动 AG 前注入并校验） | 高危正则「永远询问」 |
-| 风险处方 | **EasyAG + ARES**（Agent Risk Execution Signatures） | Ask 弹窗时旁路匹配，给出病理/后果/安全替代 |
-| 免 TUN 登录 | **EasyAG** | 官方无代理配置 |
-| 界面汉化 | **EasyAG** | 官方无 i18n |
-
-愿景：**ARES**（Agent Risk Execution Signatures）可独立成为 Agent 时代的命令风险特征库；EasyAG 是 Antigravity 侧的第一落地壳。
-
----
-
-## 2. 总览
-
-```mermaid
-flowchart TB
-  subgraph easyag [EasyAG 副驾]
-    UI[桌面面板]
-    Proxy[原生代理启动器]
-    I18N[汉化注入器]
-    Rules[danger-rules.json]
-    Sync[ASK 注入器]
-    KB[ARES<br/>Agent Risk Execution Signatures]
-    Advisor[风险处方旁路]
-  end
-
-  subgraph ag [Antigravity]
-    Chromium[Chromium / 语言服务]
-    Engine[官方权限引擎]
-    Turbo[Turbo Mode]
-  end
-
-  subgraph store [官方配置]
-    Ask["permissionGrants.ask<br/>command(regex:…)"]
-  end
-
-  UI --> Proxy -->|代理 env| Chromium
-  UI --> I18N -->|CDP 词典| Chromium
-  Rules --> Sync --> Ask --> Engine
-  Turbo --> Engine
-  Engine -->|高危| AskUI[弹窗询问]
-  AskUI -.只读抽取命令.-> Advisor
-  KB --> Advisor
-  Advisor -->|病理/后果/替代| UI
-  Engine -->|其余| Run[Turbo 放行]
-```
-
----
-
-## 3. 三大模块
-
-启动器提供两种模式：**Turbo Pilot** 临时叠加终端 Turbo 与高危 ASK，**兼容模式**沿用用户原有审批设置，仅启用代理和汉化。ARES 风险提示是 Pilot 下的可选能力，关闭提示不会关闭高危 ASK。Pilot 结束后只移除本次实际新增的规则，并恢复启动前的命令执行策略。
-
-### 3.1 免 TUN 登录代理
-
-- **问题**：桌面端登录/推理需出站；TUN、系统代理、DLL 注入均过重或已冲突。
-- **做法**：启动 Antigravity 时为 Chromium 传本地 HTTP 代理，并把 `HTTP_PROXY` / `HTTPS_PROXY` 传给语言服务；回环直连。
-- **边界**：不改系统代理、不装 TUN、不加载网络 Hook。
-- **数据面**：用户自备的本地 HTTP/SOCKS 端口（如 Clash 等）。
-
-### 3.2 界面汉化
-
-- **问题**：官方无界面语言包。
-- **做法**：CDP 注入词典，对 DOM 文本节点做实时替换；MutationObserver 跟增量渲染。
-- **边界**：**只读 UI 文案**，不点击、不改业务逻辑、不碰权限流。
-- **数据面**：`dicts/` 下的词典 JSON。
-
-### 3.3 Turbo 副驾（ASK + ARES 旁路）
-
-- **问题**：Turbo 静默放行未命中项；纯 Deny 过狠且缺上下文。
-- **做法**：
-  1. `danger-rules.json` 高危正则，**点击启动 AG 前注入并回读校验官方 ASK**（`command(regex:…)`）；
-  2. Ask 弹窗出现时，CDP **只读**抽取待审命令；
-  3. 匹配 **ARES**（Agent Risk Execution Signatures，`Agentguard-dev/.../signatures.json`）；
-  4. 输出「病理 / 破坏后果 / 安全替代」处方，**不代替用户点允许**。
-- **边界**：观察与提示；放行决策留给用户。熔断由官方 ASK 保证「一定会停」。
-- **防坑**：规则只填 target；同步时清理 `command(command(…))` 双重包裹。
-
-**编译规则**（`scripts/rule-compile.cjs`，与官方语义对齐）：
+## 分层
 
 ```text
-JS pattern（RegExp.test 部分匹配）
-  → 字面空白转为 \s+（保持单 token）
-  → regex:.*(?:<pattern>).*     ← 还原 test()，兼容整行 ^…$ 锚定
-  → 落盘 command(regex:…)
+Tauri 窗口 / 托盘 / 胶囊       浏览器开发面板
+          │ stdout JSON + stdin       │ HTTP / SSE
+          └──────── desktop ──────────┘
+                       │
+       features：代理 / 汉化 / 规则 / 风险说明 / 通知
+                       │
+       core：会话生命周期 / 设置 / 事件 / 原子存储
+                       │
+       adapters/desktop：定位 / 配置 / CDP / 渲染接入
+                       │
+                    AG 桌面端
 ```
 
----
+依赖约定：界面通过 API 访问应用；应用组装服务；会话调用注入的适配器。
+规则计算、代理参数生成和汉化脚本可独立测试。共享内核不引用 HTTP 响应或 Tauri 窗口。
 
-## 4. 官方权限匹配语义（Windows 实测定稿）
+## 模块
 
-> 2026-09-25 人机快照差分 + 无害命令矩阵验证。发版前以此为准，勿信「前缀」直觉。
+| 模块 | 实现 | 边界 |
+| --- | --- | --- |
+| 桌面外壳 | Tauri + Rust | 窗口、托盘、后台进程、原生通知窗口 |
+| 面板 | HTML / CSS / JavaScript ES modules | 展示与输入，不直接读写 AG 配置 |
+| 应用组装 | Node.js CommonJS | 创建服务、传递依赖、注册生命周期 |
+| 会话 | 状态机 + 子进程 | 启动序列、并发保护、进程退出与恢复 |
+| 权限规则 | JavaScript + JSON + 现有规则编译器 | Allow / Deny / Ask 分类，AG 配置格式由适配器负责 |
+| 配置适配 | 原子 JSON 写入 + 持久化会话记录 | 只登记新增条目，恢复自身修改 |
+| CDP | Node.js + ws | 请求响应、页面过滤、绑定、预加载、重连、清理 |
+| 汉化 | JSON 词典 + MutationObserver | 保存原文；跳过代码和可编辑区域；释放断开的节点 |
+| 风险说明 | 本地规则匹配 + 有界渲染器绑定 | 完整命令分析；日志只显示摘要；不点击审批 |
+| 事件 | EventEmitter | 日志、状态、计数；通知展示与规则执行分离 |
+| 本地 API | Node.js HTTP + SSE | 回环监听；有界请求；静态目录隔离；慢连接释放 |
+| 发布资源 | 明确白名单 | 携带内核、界面、词典、ARES 与 ws；不分发旧 C# 宿主 |
 
-### 4.1 匹配模型
+## 启动与恢复
 
-| 形态 | 行为 | 示例 |
-|------|------|------|
-| **非 `regex:`** | **整行全等**（不是词前缀） | `command(echo hello)` ≡ 命令全文 `echo hello` |
-| **`regex:` 单 token** | **整行** `^(?:token)$` | `regex:.*(?:\brm\s+-rf\s+).*` 吃带路径的 rm |
-| **`regex:` 多 token** | 空格分 token，**逐词对齐** | `regex:echo -rf .*` ↔ `echo` / `-rf` / 余下 |
-| **末尾 `.*`** | 可吞**余下多个词** | `regex:echo .*` 命中 `echo hello world` |
-| **引号串** | 算 **1 个词** | `echo -rf "a b"` 为 3 词 |
+1. EasyAG 初始化权限适配器，优先处理上次异常中断的恢复记录。
+2. 加载设置、权限规则和词典，启动回环 API；此时不提前开启自动执行。
+3. 用户点击启动：验证目标程序和当前运行状态，锁定启动序列。
+4. Pilot 编译权限规则，保存持久化会话记录，然后写入 AG 配置并回读验证。
+5. 验证通过才创建 AG 进程；启动错误立即尝试恢复。
+6. AG 启动后连接 CDP；暂时断连只重试，不表示 AG 已退出。
+7. AG 进程退出时清理页面组件，恢复配置；EasyAG 退出也执行恢复。
 
-### 4.2 优先级与策略
+兼容模式跳过增强配置。连接已有 AG 时按兼容会话处理，不追溯开启 Pilot。
 
-```text
-Deny  >  Ask  >  Allow
-显式规则  >  预设/默认
-Ask  可压过  Turbo（Always Proceed）
-```
+## 权限配置事务
 
-| UI 预设 | `autoExecutionPolicy` | `nonWorkspaceFileAccessPolicy` | `fileAccessPolicy` | `sandboxMode` |
-|---------|----------------------|--------------------------------|--------------------|---------------|
-| 默认 Default | `CASCADE_COMMANDS_AUTO_EXECUTION_OFF` | `AGENT_SETTING_POLICY_ASK` | `ALLOW` | `false` |
-| 整机权限 Full Machine | `OFF` | `AGENT_SETTING_POLICY_ALLOW` | `ALLOW` | `false` |
-| 高速模式 Turbo | `CASCADE_COMMANDS_AUTO_EXECUTION_EAGER` | `AGENT_SETTING_POLICY_ALLOW` | `ALLOW` | `false` |
-| **Custom** | 三旋钮独立可调（仅 Custom 时 UI 显示） | | | |
+配置文件是 AG 全局 `~/.gemini/config/config.json`。
+恢复记录是 EasyAG 数据目录中的 `permission-session.json`。
 
-> 2026-09-27 四模式实测：区分「默认 / 整机」的是 `nonWorkspaceFileAccessPolicy`（工作区外文件），不是 `fileAccessPolicy`。Pilot 启动写入高速预设，退出统一写回默认预设。
+记录包含：
+- 原策略值与字段是否存在；
+- 本次应用的策略值；
+- 各权限动作下真正新增的资源；
+- EasyAG 新建的空配置容器。
 
-Custom 三旋钮 ↔ JSON：
+写入顺序为“记录落盘 → 配置落盘 → 回读校验”。失败时尝试恢复，恢复失败则保留记录供重试。
+恢复仅移除自己新增的规则；原有相同规则不会被认领。策略仅在仍等于 EasyAG 应用值时恢复，用户后续修改被保留。
 
-| UI（仅 Custom） | 字段 |
-|-----------------|------|
-| Outside of folders file access policy | `nonWorkspaceFileAccessPolicy`（全局；项目侧 `fileAccessPolicy`） |
-| Terminal Command Auto Execution | `autoExecutionPolicy` |
-| Enable Sandbox Mode (Preview) | `sandboxMode` |
+只修改 `autoExecutionPolicy`，不改变文件访问与沙箱策略。自动执行字段采用原有实现使用的 EAGER 值；AG 的模式标签由其多个设置共同决定，不将标签本身作为成功标准。
 
-### 4.3 Local Permissions 五通道
+旧版 `injected-ask.json` 可迁移恢复。没有可用原值的历史改动无法凭空还原，不写入猜测的默认预设。
 
-| UI | JSON action |
-|----|-------------|
-| File Access Rules | `read_file` / `write_file` |
-| Network Access Rules | `read_url` / `execute_url` |
-| Terminal Commands | `command` |
-| Commands Outside Sandbox | `unsandboxed` |
-| MCP Tools | `mcp` |
+## CDP 与页面生命周期
 
-落盘：`~/.gemini/config/config.json`（全局）+ `~/.gemini/config/projects/*.json`（项目）。
+页面连接通过回环调试端口或 profile 的 `DevToolsActivePort` 发现。
+只接受本地页面和同端口回环 WebSocket，忽略 iframe、worker 与外部网页。
+风险上报仅接受主 frame 的默认执行上下文和指定事件，负载有上限。
 
-### 4.4 常见坑（勿回退）
+页面脚本在 DOM 就绪后安装；更新与关闭使用代次标记取消旧的待安装操作。
+断线重连清理上次连接遗留的预加载脚本。正常退出恢复汉化并移除自身绑定、脚本。
+如果 AG 调试端口在退出清理时不可达，无法立即撤销页面内容；AG 页面重启会清除 DOM，后续重连可清理已记录的预加载标识。
 
-1. UI 输入框**只填 target**，不要写 `command(…)`，否则落盘成 `command(command(…))` 永不命中。  
-2. 弹窗「始终允许」写入的是**整行 grant**，换参数会再弹；要变参请写规则列表。  
-3. 把 JS 正则整段塞进 `regex:` 而不做 `.*(?:…).*` 包裹 → 被 `^…$` 锁死，`rm -rf /path` 不命中。  
-4. 非 `regex:` 的 `command(echo)` **不会**匹配 `echo hello`（整行全等，不是前缀）。
+## 通知与退出
 
-### 4.5 自动化工具
+风险说明开关只控制观察与展示。权限规则在 AG 内继续执行。
+胶囊由页面处理关闭和悬停倒计时，后台仅提供一个可重置的失效保护计时器，避免旧通知的计时器误关新通知。
 
-| 脚本 | 用途 |
-|------|------|
-| `scripts/ag-config.cjs` | 快照/差分、`set-mode` / `set-custom`、`set-rules` / `verify` |
-| `scripts/rule-compile.cjs` | danger-rules → 官方 target + 本地语义模拟 |
-| `scripts/semantics-lab.cjs` | 无害命令语义矩阵 P1–P10 |
+关闭 Tauri 主窗口收起至托盘；托盘退出通过 stdin 告知 Node 恢复配置并停止。
+页面刷新、SSE 断开或后台节流不会结束会话。
+EasyAG 退出不使用按进程名批量结束 AG 的操作。
 
----
+## 验证与后续
 
-## 5. 技术栈
+`npm run check` 检查模块语法，`npm test` 覆盖规则、事务、恢复、CDP、实际汉化脚本、本地接口与发布资源。
+`npm run test:tauri-lifecycle` 验证宿主退出、32 秒后台驻留、SSE 断开和设置持久化。
+GitHub Actions 使用同一套检查，再验证自包含后台并构建 Tauri。
 
-| 层 | 选型 | 原因 |
-|----|------|------|
-| 后端 | Node.js | Chromium/CDP 生态、JSON 配置、跨平台启动 |
-| 壳 | Tauri 2（或便携 exe + 内嵌页） | 轻量窗口 + 系统 WebView |
-| 前端 | 单页 HTML/CSS/JS | 控制台体量小，无需重框架 |
-| 进程编排 | 子进程启动 Antigravity + 代理 env | 与产品进程隔离 |
-| 浏览器控制 | Chrome DevTools Protocol（CDP） | 仅用于汉化注入与状态感知 |
-| 权限落地 | 官方 `permissionGrants` JSON | 一等公民，跨会话、执行前生效 |
-| 词典 / 规则 | 本地 JSON + 热重载 | 用户可改、可 diff |
+这些测试不等于实机 AG 验收。原生权限规则语义、AG DOM、Windows/macOS 胶囊与安装路径仍需目标版本验证。
 
----
-
-## 6. 运行时序
-
-```mermaid
-sequenceDiagram
-  participant U as 用户
-  participant E as EasyAG
-  participant A as Antigravity
-  participant P as 官方权限引擎
-
-  U->>E: 点「启动」
-  E->>A: 代理参数 + env 启动
-  E->>A: CDP 注入词典（汉化）
-  U->>E: 点「注入 ASK」
-  E->>P: 写入 command(regex:…) ASK（已编译）
-  Note over A,P: 会话中 Agent 执行命令
-  A->>P: 评估 action(target)
-  P-->>A: 命中 ASK → 弹窗（Turbo 也停）
-  P-->>A: 其余 → Turbo 放行
-```
-
----
-
-## 7. 配置与数据流
-
-| 数据 | 位置 | 谁写 | 谁读 |
-|------|------|------|------|
-| 代理端口、汉化开关 | EasyAG 用户数据目录 | EasyAG 面板 | EasyAG |
-| 界面词典 | `dicts/*.json` | 社区/用户 | CDP 注入 |
-| 高危正则 | `danger-rules.json` | 用户编辑 | EasyAG 编译器 |
-| 官方 Deny | Antigravity 权限配置 | **EasyAG 同步** | **官方引擎** |
-
-**同步原则**：`danger-rules.json` 是唯一规则源（Source of Truth）；官方 `deny` 是编译产物。改规则后「重载 + 同步」，避免两边漂移。
-
----
-
-## 8. 三端适用性（Desktop / CLI / IDE）
-
-规则语言是同一套官方 `action(target)` / `command(regex:…)`，**语义上三端通用**；差异在配置文件形态与落盘路径。
-
-| 端 | 配置落点 | 规则形态 | 同步现状 |
-|----|----------|----------|----------|
-| **Antigravity 2.0 桌面** | `~/.gemini/config/config.json` → `userSettings.globalPermissionGrants.deny`；项目 `~/.gemini/config/projects/*.json` | `command(regex:…)` 字符串数组 | **已支持**（全局 + 项目） |
-| **Antigravity CLI** | `~/.gemini/antigravity-cli/settings.json` | `permissions.deny: ["command(…)"]` | 结构已知，可扩展 |
-| **Antigravity IDE** | 与 2.0 共享项目/全局 grants，或 `~/.gemini/antigravity-ide` | 同桌面权限引擎 | 与桌面项目配置互通时即生效 |
-
-### 结论
-
-- **可以通用**：只要写入的是官方 `command(regex:…)` Deny，CLI / IDE / 桌面共用同一套匹配语义（Deny > Ask > Allow）。
-- **不能一份文件打天下**：CLI 的 `settings.json` 与桌面的 `globalPermissionGrants` **不是同一 schema**，需要各写各的，但源规则（`danger-rules.json`）可以只维护一份。
-- **建议演进**：Deny 同步器做成多 target（Desktop / CLI / IDE），同一编译结果 fan-out 写入；任一端未安装则跳过。
-
-```text
-danger-rules.json  ──编译──►  command(regex:…)
-                                │
-                ┌───────────────┼───────────────┐
-                ▼               ▼               ▼
-         桌面 global/项目    CLI settings    IDE grants
-```
-
----
-
-## 9. 安全边界（写进产品原则）
-
-1. **默认不在 EasyAG 侧放行**：放行是 Turbo 的事，EasyAG 只保证黑名单能拦。
-2. **不碰凭据**：代理只改启动参数与环境变量，不读写 Google 账号令牌。
-3. **CDP 只读**：汉化不点击、不提交表单、不代替用户授权。
-4. **同步可审计**：每次写入官方 Deny 可在日志中看到条数与文件列表；用户可在 Antigravity 设置里复核。
-5. **正则有限**：静态正则无法穷尽危险变种，需与官方 Ask/Deny、项目隔离、备份策略配合。
-6. **文件权限由用户决定**：EasyAG 只开启终端命令自动执行，不修改工作区内外文件访问策略。
-
----
-
-## 10. 模块边界一览
-
-| 模块 | 依赖 | 不依赖 |
-|------|------|--------|
-| 代理启动 | 本地 HTTP 代理端口 | 系统代理 / TUN / DLL |
-| 汉化 | CDP、词典 JSON | 权限流、审批 UI |
-| Deny 同步 | `danger-rules.json`、Antigravity 配置路径 | CDP、自动点击 |
-| 面板 | 本地 HTTP API | 云服务 |
-
----
-
-## 11. 后续可扩展
-
-- 同步到 CLI / IDE 多落点（同一编译，多 schema 适配）
-- 规则导入/导出与团队共享
-- 与官方 `hooks.json`（`PreToolUse` → `deny`）双轨熔断
-- 官方配置变更探测（路径/schema 漂移时告警）
-
----
-
-*Antigravity 为 Google 产品，本项目与其官方无关。*
+后续指标模块只读取 AG 本地数据，规范化后由事件中心提供给内嵌组件。
+缺失接口时标记能力不可用；不猜测额度或上下文容量。优先验证指标接口，再增加 CDP 内嵌条或 Sidecar 展示。

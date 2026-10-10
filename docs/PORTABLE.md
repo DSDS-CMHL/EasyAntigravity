@@ -1,22 +1,29 @@
-# EasyAntigravity v3.0.0 渚挎惡鐗堟寚鍗?
+# EasyAntigravity 便携版
 
-Windows锛氬畬鏁磋В鍘?ZIP锛屽弻鍑?EasyAntigravity.exe銆傝淇濈暀鍚岀洰褰曠殑
-easyag-node.exe 鍜?backend 鏂囦欢澶癸紝涓嶈鍗曠嫭鎷疯礉涓?exe銆?
-浣跨敤绯荤粺宸插畨瑁呯殑 Microsoft Edge WebView2 Runtime锛屼笉浼氳嚜鍔ㄥ畨瑁呰繍琛屽簱銆?
+Windows：完整解压发布包，运行 EasyAntigravity.exe。保留同目录 easyag-node.exe 和 backend 文件夹。
+桌面外壳使用系统 WebView2 Runtime；缺失时需安装对应运行库。
 
-macOS锛堢ぞ鍖烘祴璇曠増 / Beta锛夛細瑙ｅ帇瀵瑰簲 Apple Silicon / Intel 鐨?ZIP锛岀洿鎺ユ墦寮€ EasyAntigravity.app銆?
-鏃犻渶绉诲埌 Applications锛屼篃涓嶉渶瑕佸畨瑁?Node 鎴?Rust銆?
-娴嬭瘯鐗堝皻鏈?Apple 鍏瘉锛岄娆℃墦寮€鍙兘闇€瑕侀€氳繃绯荤粺鈥滈殣绉佷笌瀹夊叏鎬р€濆厑璁搞€?
+macOS（Beta）：解压对应 Apple Silicon 或 Intel 的 ZIP，打开 EasyAntigravity.app。
+发布包自带 Node.js，无需安装 Node 或 Rust。未经过 Apple 公证的测试版可能需要在系统设置中允许打开。
 
-璁剧疆銆佽鍒欏拰鏃ュ織瀛樹簬鐢ㄦ埛鏁版嵁鐩綍锛?
-- Windows锛?LOCALAPPDATA%/com.easyag.launcher.tauri
-- macOS锛殈/Library/Application Support/com.easyag.launcher.tauri
+## 使用与退出
 
-鍏抽棴鍘熺敓绐楀彛浼氱粨鏉?EasyAG 鍚庣锛涢〉闈㈠埛鏂版垨鍚庡彴鍋滅暀涓嶄細瑙﹀彂蹇冭烦閫€鍑恒€?
-娴嬭瘯鏃跺厛鍏抽棴绋冲畾鐗堬紝閬垮厤涓や釜鍚姩鍣ㄥ悓鏃舵帶鍒?AG銆?
+选择 HTTP/Mixed 代理端口，按需开启汉化，选择 Turbo Pilot 或兼容模式。
+Pilot 一键开启终端自动执行并叠加原生权限规则；兼容模式沿用用户权限设置。
+工作区之外的文件访问和沙箱策略请在 AG 内自行设置。
 
-## 鈿狅笍 瀹夊叏涓庨鎺ч』鐭?
-1. 鍐呯疆楂樺嵄瑙勫垯灞炰簬閫氱敤鍩虹闃插憜鏈哄埗锛岄潤鎬佹鍒欐棤娉?100% 绌蜂妇鎵€鏈夊懡浠ゅ彉绉嶏紙濡傝剼鏈寘瑁呫€佹彁鏉冩墽琛屻€佸紩鍙疯浆涔夊闄风瓑锛夈€?
-2. 鐢ㄦ埛鍙寜闇€鍦ㄩ潰鏉跨偣鍑汇€屾墦寮€瑙勫垯銆嶈ˉ鍏呬笓灞炶鍒欙紝淇濆瓨鍚庣偣銆岄噸杞姐€嶅嵆鏃剁敓鏁堛€?
-3. 褰撹Е鍙戦珮鍗辨嫤鎴紙鐣岄潰楂樹寒璀︾ず銆佹棩蹇楄緭鍑?SECURITY ALERT锛夋垨绯荤粺寮瑰嚭 Windows UAC 绠＄悊鍛樻彁鏉冨脊绐楁椂锛孍asyAG 宸插仠姝㈣嚜鍔ㄤ唬鐐癸紝璇峰姟蹇呴€愬瓧浠旂粏鏍告煡褰撳墠鎸囦护锛屽垏鍕跨洸鐩墜鍔ㄦ斁琛岋紒
-4. 鍒囧嬁鍦ㄦ湭澶囦唤閲嶈鏁版嵁鎴栨牳蹇冪敓浜ц澶囦笂瀹屽叏鑴辩浜哄伐鐩戠杩愯 AI Agent銆?
+关闭主窗口收起至托盘，后台继续运行。托盘“退出应用”会恢复 EasyAG 的增强配置并结束后台。
+AG 退出也会恢复配置。EasyAG 退出不会强制结束其他 AG 进程。
+页面刷新和界面断连不会触发退出。
+
+## 用户数据
+
+数据目录由 Tauri 的 app_local_data_dir 提供，包含：
+
+- settings.json：代理端口、启动模式、汉化及风险说明开关。
+- danger-rules.json：用户可编辑的权限规则。
+- permission-session.json：尚未完成恢复的配置变更记录。
+- easyag.log：有界轮转运行日志。
+
+不要在存在未恢复会话时删除 permission-session.json。异常中断后再次启动 EasyAG 会尝试恢复。
+风险日志可能含命令片段，对外分享日志前请检查内容。

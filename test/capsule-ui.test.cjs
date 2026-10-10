@@ -30,4 +30,42 @@ assert.equal(config.app.withGlobalTauri, true);
 assert.ok(capability.windows.includes('capsule'));
 assert.ok(capability.permissions.includes('core:window:allow-hide'));
 
-console.log('PASS: capsule close, timeout, risk content and work-area positioning');
+// Exercise the actual page timer/close code, including an old close racing a new notice.
+const vm = require('node:vm');
+const timers = new Map();
+let sequence = 0;
+let hidden = 0;
+function mockElement() {
+  return {
+    events: {}, classList: { add() {} }, style: { setProperty() {} },
+    addEventListener(name, handler) { this.events[name] = handler; },
+    cloneNode() { return mockElement(); }, replaceWith() {}
+  };
+}
+const elements = Object.fromEntries(['notice', 'level', 'title', 'impact', 'reviewBtn', '.close', '.timer'].map(id => [id, mockElement()]));
+const document = {
+  getElementById: id => elements[id], querySelector: selector => elements[selector], addEventListener() {}
+};
+const context = {
+  window: { __TAURI__: { window: { getCurrentWindow: () => ({ hide() { hidden++; return Promise.resolve(); } }) } }, close() {} },
+  document, location: { protocol: 'http:', origin: 'http://127.0.0.1:1234' }, navigator: {},
+  setTimeout(callback, delay) { const id = ++sequence; timers.set(id, { callback, delay }); return id; },
+  clearTimeout(id) { timers.delete(id); }, fetch: async () => ({ ok: true })
+};
+vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
+context.window.__ea_capsule('risk_high', 'First', 'Impact');
+assert.ok([...timers.values()].some(timer => timer.delay === 18000));
+elements.notice.events.mouseenter();
+assert.equal(timers.size, 0, 'Hover pauses auto hide');
+elements.notice.events.mouseleave();
+assert.equal(timers.size, 1, 'Leaving resumes auto hide');
+elements['.close'].events.click();
+const oldClose = [...timers.values()].find(timer => timer.delay === 140).callback;
+context.window.__ea_capsule('risk_medium', 'New', 'New impact');
+oldClose();
+assert.equal(hidden, 0, 'The old close callback must not hide a new notification');
+elements['.close'].events.click();
+const close = [...timers.values()].find(timer => timer.delay === 140).callback;
+close();
+assert.equal(hidden, 1, 'The close button must call the native hide API');
+console.log('PASS: capsule close, hover/timers, notification race and work-area positioning');

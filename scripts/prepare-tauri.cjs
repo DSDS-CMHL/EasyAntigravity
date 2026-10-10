@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+const { copyBackendResources } = require('./backend-resources.cjs');
 const root = path.resolve(__dirname, '..');
 const triple = process.argv[2];
 const targets = {
@@ -11,29 +12,20 @@ const targets = {
 };
 assert.deepEqual([process.platform, process.arch], targets[triple], 'Build Node on the matching target runner');
 const backend = path.join(root, 'src-tauri', 'backend');
-fs.mkdirSync(backend, { recursive: true });
-for (const name of ['server.js', 'index.html', 'danger-rules.json', 'dicts', 'assets', 'scripts']) {
-  const src = path.join(root, name);
-  if (fs.existsSync(src)) {
-    fs.cpSync(src, path.join(backend, name), { recursive: true });
-  }
-}
-// 胶囊页放在 backend 根下，便于 /capsule.html 热更新
-const capsuleSrc = path.join(root, 'src', 'capsule.html');
-if (fs.existsSync(capsuleSrc)) {
-  fs.copyFileSync(capsuleSrc, path.join(backend, 'capsule.html'));
-}
-fs.cpSync(path.dirname(require.resolve('ws/package.json')), path.join(backend, 'node_modules', 'ws'), { recursive: true });
+assert.equal(path.resolve(backend), path.resolve(root, 'src-tauri', 'backend'));
+assert.ok(backend.startsWith(root + path.sep), 'Clean only the generated backend directory');
+fs.rmSync(backend, { recursive: true, force: true });
+copyBackendResources(root, backend);
 fs.mkdirSync(path.join(root, 'src-tauri', 'binaries'), { recursive: true });
 const runtime = path.join(root, 'src-tauri', 'binaries', 'easyag-node-' + triple + (process.platform === 'win32' ? '.exe' : ''));
 fs.copyFileSync(process.execPath, runtime);
 if (process.platform !== 'win32') fs.chmodSync(runtime, 0o755);
 if (process.platform === 'darwin') {
   try {
-    const { execSync } = require('node:child_process');
+    const { execFileSync } = require('node:child_process');
     const entPath = path.join(root, 'src-tauri', 'Entitlements.plist');
     if (fs.existsSync(entPath)) {
-      execSync(`codesign --force --options runtime --sign - --entitlements "${entPath}" "${runtime}"`);
+      execFileSync('codesign', ['--force', '--options', 'runtime', '--sign', '-', '--entitlements', entPath, runtime]);
       console.log('Signed easyag-node with JIT entitlements');
     }
   } catch (e) {

@@ -140,12 +140,8 @@ fn show_capsule(app: &tauri::AppHandle, kind: &str, title: &str, detail: &str, s
     let _ = window.eval(&script);
     let _ = window.show();
     let _ = window.set_always_on_top(true);
-    // 纯失效保护：页面倒计时/悬停暂停是主路径，这里只防“彻底关不掉”
-    let app2 = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(45_000));
-        hide_capsule(&app2);
-    });
+    // The backend owns a resettable failsafe timer. An older notification must
+    // never hide a newer one through an independent native timer.
 }
 
 fn hide_capsule(app: &tauri::AppHandle) {
@@ -260,6 +256,7 @@ fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Erro
                     if trimmed.starts_with('{') {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
                             match v["cmd"].as_str().unwrap_or("") {
+                                "popup" | "focus" => show_main_window(&handle),
                                 "show_capsule" => show_capsule(
                                     &handle,
                                     v["type"].as_str().unwrap_or("danger"),

@@ -1,134 +1,85 @@
-/*
- * 汉化与双向还原回归测试
- */
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
+const { loadDictionary, installI18n } = require('../features/i18n');
 const path = require('node:path');
+const dictionary = loadDictionary(path.resolve(__dirname, '..'));
+assert.ok(Object.keys(dictionary).length > 3000);
 
-const dictDir = path.join(__dirname, '..', 'dicts');
-const translationDict = {};
-const files = ['ui_v2.json', 'common.json'];
-files.forEach(f => {
-  const fullPath = path.join(dictDir, f);
-  if (fs.existsSync(fullPath)) {
-    Object.assign(translationDict, JSON.parse(fs.readFileSync(fullPath, 'utf-8')));
+// Exercise the renderer function shipped by CDP, rather than a second implementation.
+const callbacks = [];
+class Observer {
+  constructor(callback) { this.callback = callback; callbacks.push(this); }
+  observe() { this.active = true; }
+  disconnect() { this.active = false; }
+}
+class Element {
+  constructor(attributes = {}, ignored = false) {
+    this.nodeType = 1;
+    this.attributes = { ...attributes };
+    this.isConnected = true;
+    this.ignored = ignored;
   }
-});
+  closest() { return this.ignored ? this : null; }
+  getAttribute(name) { return this.attributes[name] ?? null; }
+  setAttribute(name, value) { this.attributes[name] = value; }
+}
+const text = (value, parent) => ({ nodeType: 3, nodeValue: value, parentElement: parent, isConnected: true });
+const body = new Element();
+const input = new Element({ placeholder: 'Search...' });
+const code = new Element({}, true);
+const nodes = [text('  About  ', body), text('About', code), text('用户自己的中文', body)];
+body.querySelectorAll = () => [input];
+const document = {
+  body, documentElement: body,
+  createTreeWalker() {
+    let index = -1;
+    return { nextNode() { index++; return index < nodes.length; }, get currentNode() { return nodes[index]; } };
+  }
+};
+const window = { MutationObserver: Observer, NodeFilter: { SHOW_TEXT: 4 } };
 
-const reverseDict = {};
-for (const [en, zh] of Object.entries(translationDict)) {
-  if (typeof zh === 'string' && zh.trim() && !reverseDict[zh.trim()]) {
-    reverseDict[zh.trim()] = en.trim();
-  }
+for (let index = 0; index < 5; index++) {
+  installI18n(window, document, dictionary, true);
+  assert.equal(nodes[0].nodeValue, '  关于  ');
+  assert.equal(nodes[1].nodeValue, 'About', 'Code and editable content must not be translated');
+  assert.equal(input.getAttribute('placeholder'), dictionary['Search...']);
+  installI18n(window, document, dictionary, false);
+  assert.equal(nodes[0].nodeValue, '  About  ', 'Original whitespace must survive repeated toggles');
+  assert.equal(input.getAttribute('placeholder'), 'Search...');
+  assert.equal(nodes[2].nodeValue, '用户自己的中文');
+  assert.equal(callbacks.filter(observer => observer.active).length, 0);
 }
 
-assert.ok(Object.keys(translationDict).length > 3000, '词典应载入超过3000条');
-assert.ok(Object.keys(reverseDict).length > 2500, '反向词典应有效建立');
+installI18n(window, document, dictionary, true);
+nodes[0].nodeValue = 'host changed this text';
+input.setAttribute('placeholder', 'host changed this placeholder');
+installI18n(window, document, dictionary, false);
+assert.equal(nodes[0].nodeValue, 'host changed this text');
+assert.equal(input.getAttribute('placeholder'), 'host changed this placeholder');
 
-// 简单 DOM 模拟
-class MockNode {
-  constructor(nodeValue) {
-    this.nodeType = 3; // TEXT_NODE
-    this.nodeValue = nodeValue;
-    this.parentElement = null;
-  }
-}
+nodes[0].nodeValue = 'About';
+installI18n(window, document, dictionary, true);
+nodes[0].nodeValue = 'Search...';
+callbacks.at(-1).callback([{ type: 'characterData', target: nodes[0] }]);
+assert.equal(nodes[0].nodeValue, dictionary['Search...']);
+window.__easyagI18n.dispose();
+assert.equal(nodes[0].nodeValue, 'Search...', 'Restore the latest host text after dynamic changes');
 
-class MockElement {
-  constructor(tagName = 'DIV', attrs = {}) {
-    this.nodeType = 1; // ELEMENT_NODE
-    this.tagName = tagName;
-    this.attributes = { ...attrs };
-    this.children = [];
-    this.parentElement = null;
-  }
-  getAttribute(name) {
-    return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null;
-  }
-  setAttribute(name, val) {
-    this.attributes[name] = String(val);
-  }
-  removeAttribute(name) {
-    delete this.attributes[name];
-  }
-  hasAttribute(name) {
-    return Object.prototype.hasOwnProperty.call(this.attributes, name);
-  }
-  querySelectorAll(sel) {
-    const res = [];
-    const walk = (el) => {
-      if (sel.includes('[placeholder]') && el.attributes.placeholder !== undefined) res.push(el);
-      else if (sel.includes('[data-ea-orig-placeholder]') && el.attributes['data-ea-orig-placeholder'] !== undefined) res.push(el);
-      for (const child of el.children) {
-        if (child.nodeType === 1) walk(child);
-      }
-    };
-    walk(this);
-    return res;
-  }
-}
-
-// 模拟 translateDOM 和 revertDOM
-function simulateTranslate(textNode, dict) {
-  const text = textNode.nodeValue.trim();
-  if (dict[text]) {
-    if (textNode.__ea_translated !== textNode.nodeValue) {
-      textNode.__ea_orig = textNode.nodeValue;
-    }
-    textNode.nodeValue = textNode.nodeValue.replace(text, dict[text]);
-    textNode.__ea_translated = textNode.nodeValue;
-  }
-}
-
-function simulateRevert(textNode, revDict) {
-  if (textNode.__ea_orig !== undefined) {
-    textNode.nodeValue = textNode.__ea_orig;
-    delete textNode.__ea_orig;
-    delete textNode.__ea_translated;
-    return;
-  }
-  const text = textNode.nodeValue.trim();
-  if (text && revDict && revDict[text]) {
-    textNode.nodeValue = textNode.nodeValue.replace(text, revDict[text]);
-    delete textNode.__ea_translated;
-  }
-}
-
-// 1. 验证常规文本翻译与精确还原
-const node1 = new MockNode('  About  ');
-simulateTranslate(node1, translationDict);
-assert.equal(node1.nodeValue, '  关于  ', '应该翻译为关于');
-assert.equal(node1.__ea_orig, '  About  ', '应该保留原始英文');
-
-simulateRevert(node1, reverseDict);
-assert.equal(node1.nodeValue, '  About  ', '取消汉化后必须精确还原为 About 包含空格');
-assert.equal(node1.__ea_orig, undefined, '还原后应清理 orig 标识');
-
-// 2. 验证多轮开关切换的稳定性
-for (let i = 0; i < 5; i++) {
-  simulateTranslate(node1, translationDict);
-  assert.equal(node1.nodeValue, '  关于  ');
-  simulateRevert(node1, reverseDict);
-  assert.equal(node1.nodeValue, '  About  ');
-}
-
-// 3. 验证无 orig 标识时的反向字典兜底还原
-const node2 = new MockNode('关于');
-simulateRevert(node2, reverseDict);
-assert.equal(node2.nodeValue, 'About', '反向词典兜底应正确还原');
-
-// 4. 验证属性翻译与还原
-const el = new MockElement('INPUT', { placeholder: 'Search...' });
-if (translationDict['Search...']) {
-  el.setAttribute('data-ea-orig-placeholder', el.getAttribute('placeholder'));
-  el.setAttribute('placeholder', translationDict['Search...']);
-}
-assert.notEqual(el.getAttribute('placeholder'), 'Search...');
-// 还原属性
-const orig = el.getAttribute('data-ea-orig-placeholder');
-el.setAttribute('placeholder', orig);
-el.removeAttribute('data-ea-orig-placeholder');
-assert.equal(el.getAttribute('placeholder'), 'Search...', '属性应完整还原');
-assert.equal(el.hasAttribute('data-ea-orig-placeholder'), false);
-
-console.log('PASS: 汉化双向注入与还原测试通过！');
+const vm = require('node:vm');
+const { rendererSource, disposeSource } = require('../adapters/desktop/renderer');
+const mounts = [];
+const frameWindow = { MutationObserver: Observer, NodeFilter: { SHOW_TEXT: 4 } };
+frameWindow.top = frameWindow;
+const frameDocument = { ...document, readyState: 'loading', addEventListener(name, callback) { mounts.push(callback); } };
+const context = { window: frameWindow, document: frameDocument, clearTimeout };
+nodes[0].nodeValue = 'About';
+vm.runInNewContext(rendererSource({ About: '关于' }, { enableI18n: true, riskAdvisor: false }, 'testBinding'), context);
+assert.equal(nodes[0].nodeValue, 'About', 'Preloads must wait for the DOM');
+vm.runInNewContext(rendererSource({ About: '关于' }, { enableI18n: false, riskAdvisor: false }, 'testBinding'), context);
+for (const mount of mounts) mount();
+assert.equal(nodes[0].nodeValue, 'About', 'An older delayed mount must not overwrite newer settings');
+frameDocument.readyState = 'complete';
+vm.runInNewContext(rendererSource({ About: '关于' }, { enableI18n: true, riskAdvisor: false }, 'testBinding'), context);
+assert.equal(nodes[0].nodeValue, '关于');
+vm.runInNewContext(disposeSource, context);
+assert.equal(nodes[0].nodeValue, 'About');
+console.log('PASS: actual i18n renderer — toggles, attributes, editable/code exclusion and host changes');

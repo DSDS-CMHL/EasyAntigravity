@@ -41,6 +41,8 @@ settings.json
 ask-injected.flag
 gui-port.txt
 injected-ask.json
+permission-session.json
+*.json.*.tmp
 easyag-pretool-hook.cjs
 easyag-stop-hook.cjs
 .playwright-cli/
