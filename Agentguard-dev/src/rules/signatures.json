@@ -3291,7 +3291,7 @@
       "category": "command_injection_escape",
       "pattern": "`[^`]+`",
       "flags": "i",
-      "root_cause": "反引号命令替换。",
+      "root_cause": "命令包含反引号替换语法，Shell 可能先执行内部命令并把输出作为外层参数。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-BACKTICK-SUB",
@@ -3346,7 +3346,7 @@
     },
     {
       "id": "ARES-140",
-      "name": "算术上下文可执行检查",
+      "name": "算术表达式展开检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -3354,7 +3354,7 @@
       "category": "command_injection_escape",
       "pattern": "\\$\\(\\([\\s\\S]+?\\)\\)",
       "flags": "i",
-      "root_cause": "算术上下文可执行。",
+      "root_cause": "命令包含算术展开表达式，具体 Shell 可能继续解析其中的变量或嵌套展开。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-ARITH-EVAL",
@@ -3577,7 +3577,7 @@
     },
     {
       "id": "ARES-151",
-      "name": "动态调用绕关键字检查",
+      "name": "动态成员调用检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -3585,7 +3585,7 @@
       "category": "command_injection_escape",
       "pattern": "\\.Invoke\\(|Invoke-Expression\\s*\\(",
       "flags": "i",
-      "root_cause": "动态调用绕关键字。",
+      "root_cause": "命令动态指定对象成员或方法名，需要结合实际对象和传入参数判断调用效果。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-PS-INVOK-MEMBER",
@@ -3619,7 +3619,7 @@
     },
     {
       "id": "ARES-153",
-      "name": "内存加载程序集检查",
+      "name": "程序集加载检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -3627,7 +3627,7 @@
       "category": "command_injection_escape",
       "pattern": "\\[Reflection\\.Assembly\\]|New-Object\\s+.*Byte",
       "flags": "i",
-      "root_cause": "内存加载程序集。",
+      "root_cause": "命令通过反射或加载接口引入程序集，需要确认程序集来源及后续调用内容。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-PS-REFLECTION",
@@ -3787,7 +3787,7 @@
     },
     {
       "id": "ARES-161",
-      "name": "反弹 shell检查",
+      "name": "网络工具执行子进程检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -3795,7 +3795,7 @@
       "category": "command_injection_escape",
       "pattern": "\\b(?:nc|ncat|netcat)\\b[^\\n]*-e\\s*",
       "flags": "i",
-      "root_cause": "反弹 shell。",
+      "root_cause": "网络工具参数包含执行子进程的特征，需要检查程序、连接端点和输入来源。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-NC-EXEC",
@@ -3808,7 +3808,7 @@
     },
     {
       "id": "ARES-162",
-      "name": "转发并执行检查",
+      "name": "网络转发与程序执行检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -3816,7 +3816,7 @@
       "category": "command_injection_escape",
       "pattern": "\\bsocat\\b[^\\n]*EXEC",
       "flags": "i",
-      "root_cause": "转发并执行。",
+      "root_cause": "命令可能将网络连接与本地程序执行组合，需要核对地址、程序和授权用途。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-SOCAT-EXEC",
@@ -3829,7 +3829,7 @@
     },
     {
       "id": "ARES-165",
-      "name": "现场编译 exe检查",
+      "name": "编译程序检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -3837,7 +3837,7 @@
       "category": "command_injection_escape",
       "pattern": "\\bcsc(?:\\.exe)?\\b",
       "flags": "i",
-      "root_cause": "现场编译 exe。",
+      "root_cause": "命令调用编译器生成可执行程序，风险取决于源代码、输出路径和后续执行步骤。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-CSHARP-CSC",
@@ -3850,7 +3850,7 @@
     },
     {
       "id": "ARES-166",
-      "name": "托管执行检查",
+      "name": "托管程序执行检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -3858,7 +3858,7 @@
       "category": "command_injection_escape",
       "pattern": "\\bdotnet\\b[^\\n]*(?:exec|msbuild)",
       "flags": "i",
-      "root_cause": "托管执行。",
+      "root_cause": "命令通过托管运行时执行程序，需检查项目内容、依赖来源和运行权限。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-DOTNET-RUN",
@@ -3892,7 +3892,7 @@
     },
     {
       "id": "ARES-169",
-      "name": "十六进制还原脚本检查",
+      "name": "十六进制内容还原检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -3900,7 +3900,7 @@
       "category": "command_injection_escape",
       "pattern": "\\bxxd\\b[^\\n]*-r",
       "flags": "i",
-      "root_cause": "十六进制还原脚本。",
+      "root_cause": "命令将十六进制内容还原为字节，需确认输出文件和是否会继续加载或执行。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-XXD-REVERT",
@@ -3913,7 +3913,7 @@
     },
     {
       "id": "ARES-170",
-      "name": "原始转储拼接检查",
+      "name": "字节转储处理检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -3921,7 +3921,7 @@
       "category": "command_injection_escape",
       "pattern": "\\bod\\b[^\\n]*-A\\s+x",
       "flags": "i",
-      "root_cause": "原始转储拼接。",
+      "root_cause": "命令处理原始字节转储，需核对输入来源、处理步骤以及输出的后续用途。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-OD-PARSE",
@@ -3955,7 +3955,7 @@
     },
     {
       "id": "ARES-172",
-      "name": "零宽字符藏关键字检查",
+      "name": "命令中的零宽字符检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -3963,7 +3963,7 @@
       "category": "command_injection_escape",
       "pattern": "[\\u200B-\\u200F\\uFEFF]",
       "flags": "i",
-      "root_cause": "零宽字符藏关键字。",
+      "root_cause": "命令文本包含零宽字符，显示结果可能与实际传给解释器的字符序列不同。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-ZERO-WIDTH",
@@ -3976,7 +3976,7 @@
     },
     {
       "id": "ARES-173",
-      "name": "空白等价绕过检查",
+      "name": "命令分隔符检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -3984,7 +3984,7 @@
       "category": "command_injection_escape",
       "pattern": "%20|\\\\x20|\\+",
       "flags": "i",
-      "root_cause": "空白等价绕过。",
+      "root_cause": "命令包含可能影响参数分隔的特殊空白或替代写法，需结合具体 Shell 检查解析结果。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-SPACE-SUBST",
@@ -4102,7 +4102,7 @@
     },
     {
       "id": "ARES-179",
-      "name": "吞输出掩盖执行检查",
+      "name": "命令重定向检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -4110,7 +4110,7 @@
       "category": "command_injection_escape",
       "pattern": "1>nul|2>nul|>nul|/dev/null",
       "flags": "i",
-      "root_cause": "吞输出掩盖执行。",
+      "root_cause": "命令包含重定向操作，可能改变输出位置或覆盖目标文件，需要检查重定向方向和路径。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-REDIRECT-TRUNC",
@@ -4186,7 +4186,7 @@
     },
     {
       "id": "ARES-183",
-      "name": "指定引擎执行检查",
+      "name": "脚本引擎选择检查",
       "severity": "MEDIUM",
       "platforms": [
         "all"
@@ -4194,7 +4194,7 @@
       "category": "command_injection_escape",
       "pattern": "\\bcscript\\b[^\\n]*//e:",
       "flags": "i",
-      "root_cause": "指定引擎执行。",
+      "root_cause": "命令显式选择脚本引擎，实际执行行为取决于所选引擎、脚本内容和参数。",
       "destructive_impact": "命令包含展开、组合或动态执行特征；若输入来源不可信，实际执行内容可能超出预期。仅凭此语法不能判定恶意行为。",
       "safe_alternative": "检查完整命令及展开后的参数，不执行命令来验证展开；避免将不可信输入拼入 Shell 字符串，独立程序传参优先使用参数数组。",
       "feature_code": "ESCAPE-CSCRIPT-UNICODE",
