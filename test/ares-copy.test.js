@@ -10,7 +10,7 @@ const feed = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'rules', 'feeds', 'ares-signatures.json'), 'utf8')
 );
 const sig = JSON.parse(
-  fs.readFileSync(path.join(__dirname, '..', 'Agentguard-dev', 'src', 'rules', 'signatures.json'), 'utf8')
+  fs.readFileSync(path.join(__dirname, '..', 'knowledge', 'signatures.json'), 'utf8')
 );
 
 const vague = [

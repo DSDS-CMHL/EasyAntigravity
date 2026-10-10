@@ -5,9 +5,9 @@
 | 资产 | 文件 | 职责 |
 | --- | --- | --- |
 | 权限规则 | `danger-rules.json` | 编译成 AG 原生 Allow / Deny / Ask 资源 |
-| ARES | `Agentguard-dev/src/rules/signatures.json` | 风险等级、成因、后果与安全替代方案 |
+| ARES | `knowledge/signatures.json` | 风险等级、触发条件、成因、后果与执行前检查建议 |
 
-权限配置与风险解释分开运行。关闭风险说明不会关闭已应用的权限规则。
+权限配置与风险解释分开运行。Pilot 固定开启 ARES，兼容模式关闭 ARES；风险等级不直接决定 Allow / Deny / Ask。
 当前权限规则来自 19 条合并规则；实际数量以文件和面板显示为准。
 
 ## 规则格式
@@ -44,6 +44,26 @@ Pilot 仅叠加必要规则，记录实际新增条目。恢复时保留用户�
 
 稳定保留规则 `id`，新增或修订检测模式时提供无害正负样例。
 ARES 条目包含 `root_cause`、`destructive_impact`、`safe_alternative`；后果与建议分别描述。
+
+ARES 唯一维护源是 `knowledge/signatures.json`，开发运行与发布打包读取同一份数据。
+`Agentguard-dev/src/rules/signatures.json` 是旧开发工具的兼容副本，`rules/feeds/ares-signatures.json` 是分发副本；二者标记 `generated_from`，不独立编辑。
+修改源文件后，使用 `node scripts/sync-knowledge.cjs --write` 显式同步副本，不会修改用户数据目录。
+旧开发扫描器的副本保留其要求的大写风险等级，其余内容与源同步；桌面运行时使用统一的小写等级。
+ARES 分发包不能通过权限规则的 `merge` 命令导入，避免把风险说明特征误写成审批规则。
+
+### 知识条目约定
+
+- `id` 统一使用 ARES；旧 EAS 编号保存在条目的 `legacy_ids` 和文档的 `legacy_id_map`。一条旧综合规则可以对应多条更准确的规则。
+- `name` 是面向用户的简短标题；英文特征名放入 `feature_code`，不再作为弹窗主标题。
+- `trigger_conditions` 说明文本命中条件及尚未确认的上下文，不把正则命中当成攻击证据。
+- `severity` 统一为 `high`、`medium`、`low`，不把风险等级等同于权限动作。
+- `destructive_impact` 描述具体对象、可能变化和限制条件，不使用“必然整机崩溃”“永久无法恢复”等无条件断言。
+- `safe_alternative` 是执行前检查建议，不是可以直接复制执行的安全认证；改用另一工具不自动消除风险。
+- `priority` 在同一风险等级内优先选用具体解释，例如敏感目录和变量路径优先于通用删除说明。
+- `review_status: context-required` 表示仅凭工具名、引号或组合语法无法确定危害，必须检查完整参数；不意味着已经检测到注入。
+- `merged_from` 保留被合并条目的旧模式供追溯，不参与运行时匹配。`source_refs` 与历史样例不代表已逐项验证。
+
+本轮主要规整知识结构和文案，未运行匹配测试或实机验证；`test_cases` 为历史样例，不构成已通过验证的承诺。
 
 ```sh
 node scripts/rules-packs.cjs validate

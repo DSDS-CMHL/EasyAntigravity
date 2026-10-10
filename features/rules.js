@@ -72,7 +72,8 @@ class RuleEngine {
     }));
     const danger = collect(this.patterns, 'danger-rules');
     const eas = collect(this.signatures, 'ares');
-    const all = [...danger, ...eas].sort((a, b) => WEIGHT[b.severity] - WEIGHT[a.severity]);
+    const all = [...danger, ...eas].sort((a, b) => WEIGHT[b.severity] - WEIGHT[a.severity]
+      || (Number(b.priority) || 0) - (Number(a.priority) || 0));
     if (!all.length) return null;
     const level = all[0].severity;
     const primary = all.find(hit => hit.severity === level && hit.destructive_impact) || all[0];

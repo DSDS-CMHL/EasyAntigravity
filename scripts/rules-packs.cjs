@@ -21,7 +21,7 @@ const { compileJsPatternToOfficialTarget, compileRulesToResources } = require('.
 const ROOT = path.join(__dirname, '..');
 const RULES = path.join(ROOT, 'danger-rules.json');
 const FEEDS = path.join(ROOT, 'rules', 'feeds');
-const EAS = path.join(ROOT, 'Agentguard-dev', 'src', 'rules', 'signatures.json');
+const ARES = path.join(ROOT, 'knowledge', 'signatures.json');
 
 function readJson(p) {
   return JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -54,13 +54,13 @@ function validateRules(doc) {
   return issues;
 }
 
-function validateEas(doc) {
+function validateAres(doc) {
   const issues = [];
   if (!doc || !Array.isArray(doc.rules)) return ['rules 必须是数组'];
   const ids = new Set();
   for (const r of doc.rules) {
-    if (!r.id) issues.push('EAS 缺少 id');
-    else if (ids.has(r.id)) issues.push('EAS 重复 id: ' + r.id);
+    if (!r.id) issues.push('ARES 缺少 id');
+    else if (ids.has(r.id)) issues.push('ARES 重复 id: ' + r.id);
     else ids.add(r.id);
     for (const k of ['name', 'severity', 'pattern', 'root_cause', 'destructive_impact', 'safe_alternative']) {
       if (!r[k]) issues.push(r.id + ' 缺少 ' + k);
@@ -128,13 +128,13 @@ try {
     console.log(JSON.stringify({
       dangerRules: { count: d.rules.length, enabled: d.rules.filter(r => r.enabled !== false).length },
       compiled: res.slice(0, 3),
-      eas: fs.existsSync(EAS) ? readJson(EAS).rules.length : 0,
+      ares: fs.existsSync(ARES) ? readJson(ARES).rules.length : 0,
       feeds: fs.existsSync(FEEDS) ? fs.readdirSync(FEEDS) : []
     }, null, 2));
   } else if (cmd === 'validate') {
     const p = args[0] || RULES;
     const doc = readJson(p);
-    const issues = p.includes('signature') || p.includes('eas') ? validateEas(doc) : validateRules(doc);
+    const issues = p.includes('signature') || p.includes('eas') ? validateAres(doc) : validateRules(doc);
     console.log(JSON.stringify({ ok: issues.length === 0, issues }, null, 2));
     if (issues.length) process.exit(1);
   } else if (cmd === 'merge') {
@@ -144,6 +144,9 @@ try {
       process.exit(1);
     }
     const feed = readJson(feedPath);
+    if (feed.pack === 'ares-signatures' || feed.namespace === 'ARES') {
+      throw new Error('ARES 是风险解释知识库，不能合入 Allow / Deny / Ask 权限规则；请维护 knowledge/signatures.json');
+    }
     const local = readJson(RULES);
     const original = JSON.parse(JSON.stringify(local));
     const touched = mergeFeed(local, feed, original);

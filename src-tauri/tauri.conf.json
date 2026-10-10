@@ -13,9 +13,9 @@
         "label": "main",
         "title": "EasyAntigravity",
         "width": 490,
-        "height": 740,
+        "height": 840,
         "minWidth": 400,
-        "minHeight": 560,
+        "minHeight": 640,
         "center": true,
         "backgroundColor": "#0f1115"
       }

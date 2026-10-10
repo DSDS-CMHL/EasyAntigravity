@@ -12,7 +12,7 @@ function copyBackendResources(root, destination) {
   }
   fs.copyFileSync(path.join(root, 'scripts/rule-compile.cjs'), path.join(destination, 'scripts/rule-compile.cjs'));
   fs.copyFileSync(path.join(root, 'src/capsule.html'), path.join(destination, 'src/capsule.html'));
-  fs.copyFileSync(path.join(root, 'Agentguard-dev/src/rules/signatures.json'), path.join(destination, 'knowledge/signatures.json'));
+  fs.copyFileSync(path.join(root, 'knowledge/signatures.json'), path.join(destination, 'knowledge/signatures.json'));
   for (const name of fs.readdirSync(path.join(root, 'assets'))) {
     if (/\.(?:png|ico|svg|webp)$/i.test(name)) fs.copyFileSync(path.join(root, 'assets', name), path.join(destination, 'assets', name));
   }

@@ -3,6 +3,7 @@ import { api } from './api.js';
 const element = id => document.getElementById(id);
 const consoleBox = element('consoleBox');
 let mode = 'pilot';
+let activeMode = null;
 let phase = 'idle';
 let settingsQueue = Promise.resolve();
 let refreshing = false;
@@ -54,13 +55,17 @@ function renderMode() {
     control.classList.toggle('selected', selected);
     control.setAttribute('aria-pressed', String(selected));
   });
-  const enabled = mode === 'pilot';
-  element('riskAdvisorToggle').disabled = !enabled;
-  element('advisorRow').classList.toggle('disabled', !enabled);
+  element('riskAdvisorToggle').checked = (activeMode || mode) === 'pilot';
+  element('riskAdvisorToggle').disabled = true;
+  element('advisorRow').classList.add('disabled');
   renderPhase(phase);
 }
 
 function renderStatus(status) {
+  if (Object.prototype.hasOwnProperty.call(status, 'activeLaunchMode')) {
+    activeMode = status.activeLaunchMode;
+    renderMode();
+  }
   if (status.phase && !(launchPending && status.phase === 'idle')) renderPhase(status.phase);
   if (status.riskHits !== undefined) element('approveCountBadge').textContent = `风险 ${status.riskHits}`;
   if (status.dangerRulesTotal !== undefined) {
@@ -90,7 +95,7 @@ function loadSettings(status) {
 function persistSettings() {
   const payload = {
     port: Number(element('proxyPortInput').value), launchMode: mode,
-    riskAdvisor: element('riskAdvisorToggle').checked, enableI18n: element('i18nToggle').checked
+    enableI18n: element('i18nToggle').checked
   };
   settingsQueue = settingsQueue.catch(() => {}).then(() => api.configure(payload));
   return settingsQueue;
@@ -158,7 +163,7 @@ document.addEventListener('click', event => {
 });
 
 element('proxyPortInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, ''); });
-for (const id of ['proxyPortInput', 'riskAdvisorToggle', 'i18nToggle']) {
+for (const id of ['proxyPortInput', 'i18nToggle']) {
   element(id).addEventListener('change', () => { persistSettings().catch(report); });
 }
 

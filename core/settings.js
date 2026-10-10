@@ -22,6 +22,8 @@ function normalizeSettings(input = {}, previous = DEFAULTS) {
       result[key] = input[key];
     }
   }
+  // ARES is part of Pilot, not an independently switchable preference.
+  result.riskAdvisor = result.launchMode === 'pilot';
   return result;
 }
 

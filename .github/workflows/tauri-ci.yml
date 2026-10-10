@@ -162,7 +162,7 @@ jobs:
             src-tauri/capabilities/
             src-tauri/tauri.conf.json
             scripts/resident/EasyAG-Resident.cs
-            Agentguard-dev/src/rules/signatures.json
+            knowledge/signatures.json
             rules/feeds/ares-signatures.json
             dicts/
             assets/*.png

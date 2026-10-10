@@ -9,7 +9,7 @@ AG 桌面端的启动器与 Turbo 副驾：免 TUN 代理、界面汉化、一�
 | 进程代理 | 启动参数与环境变量指向本地 HTTP/Mixed 代理，保留回环直连 |
 | 汉化 | 通过 CDP 翻译界面文案；关闭时恢复 EasyAG 修改的原文 |
 | Turbo Pilot | 启动前开启终端自动执行并叠加 Allow / Deny / Ask 权限规则 |
-| 风险说明 | 观察 AG 界面中的命令，用 ARES 给出低、中、高风险提示，可关闭 |
+| 风险说明 | Pilot 下用 ARES 给出低、中、高风险提示，兼容模式关闭 |
 | 托盘与胶囊 | 启动后收起窗口；风险提示可关闭、超时消失、点击返回 AG |
 
 权限执行由 AG 自身完成；EasyAG 负责配置操作的一键化和风险解释。
@@ -64,7 +64,7 @@ npm run test:tauri-lifecycle
 
 ## 规则资产
 
-`danger-rules.json` 是权限规则来源，`Agentguard-dev/src/rules/signatures.json` 是 ARES 风险知识库。
+`danger-rules.json` 是权限规则来源，`knowledge/signatures.json` 是统一的 ARES 风险知识库；旧 EAS 编号保留映射供追溯。
 规则引擎按 `action` 编译为 Allow / Deny / Ask，未填写时默认为 Ask。发布包将 ARES 独立放入 `backend/knowledge/`。
 
 这些规则属于基础防呆，无法覆盖全部命令变种。请在目标 AG 版本中验证原生规则的实际行为。

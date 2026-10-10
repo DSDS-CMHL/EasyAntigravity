@@ -30,7 +30,7 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
   const host = createHost({ native, testMode, events });
   const notifications = new Notifications({ host, events });
   let session;
-  const advisorEnabled = () => settings.get().riskAdvisor && (session?.mode || settings.get().launchMode) === 'pilot';
+  const advisorEnabled = () => (session?.mode || settings.get().launchMode) === 'pilot';
   const advisor = new RiskAdvisor({ rules, events, notifications, enabled: advisorEnabled });
   let lastStatus = '';
   const cdp = new CdpHub({
@@ -51,6 +51,7 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
     status() {
       return {
         ...settings.get(), ...session.snapshot(), ...rules.summary(), ...cdp.status,
+        riskAdvisor: advisorEnabled(),
         blockDangerous: (session.mode || settings.get().launchMode) === 'pilot',
         dictEntries: Object.keys(dictionary).length, riskHits: advisor.hits, blockCount: 0,
         injectedCount: permissions.status().count, capabilities: desktop.capabilities
