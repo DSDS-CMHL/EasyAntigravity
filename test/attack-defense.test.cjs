@@ -60,7 +60,8 @@ test('extended audit reports gaps honestly and agrees with the recorded local pr
     assert.equal(row.approvalMatches, (row.predictedApproval === 'Ask') === row.expectedAsk && row.predictedApproval !== 'Deny');
     const line = tableRows.find(line => line.startsWith('| ' + row.id + ' |'));
     assert.ok(line.includes('`' + row.command.replace(/\|/g, '\\|') + '`'), row.id + ': complete echo');
-    assert.ok(line.includes(' | ' + row.predictedApproval + (row.approvalMatches ? '' : '（待修）') + ' | '), row.id + ': current prediction');
+    const columns = line.split(/(?<!\\)\|/).map(column => column.trim());
+    assert.equal(columns[5], row.predictedApproval + (row.approvalMatches ? '' : '（待修）'), row.id + ': current prediction');
   }
   // This validates the reporting tool, not a claim that the extended rules
   // passed. The separate audit CLI exits nonzero for every remaining gap.
@@ -97,7 +98,7 @@ test('queries do not suppress subsequent dangerous operations', () => {
 });
 
 test('case folding preserves escapes, classes, ranges and explicit case-sensitive rules', () => {
-  for (const pattern of ['\\bDEL\\s+[a-z]+\\b', '^[^a-z]DROP(?=\\s|$)', '\\x44ROP', '[\\s\\S]*remove-item', '[a-]', '[a-z-]', '[\\x41-\\x5a]', '[A-z]', '\\q']) {
+  for (const pattern of ['\\bDEL\\s+[a-z]+\\b', '^[^a-z]DROP(?:\\s|$)', '\\x44ROP', '[\\s\\S]*remove-item', '[a-]', '[a-z-]', '[\\x41-\\x5a]', '[A-z]', '\\q']) {
     const target = toResource(compileJsPatternToOfficialTarget(pattern, 'i'));
     for (const command of ['del abc', 'DEL ABC', '!drop table', 'DROP', 'drop', 'REMOVE-ITEM .\\probe', '-', 'b', 'B', 'q', 'Q']) {
       assert.equal(simulateOfficialMatch(target, command), new RegExp(pattern, 'i').test(command), pattern + ': ' + command);
@@ -105,6 +106,33 @@ test('case folding preserves escapes, classes, ranges and explicit case-sensitiv
   }
   assert.equal(simulateOfficialMatch(toResource(compileJsPatternToOfficialTarget('DROP', '')), 'drop'), false);
   assert.throws(() => compileJsPatternToOfficialTarget('x', 'm'), /flags/);
+});
+
+test('native compiler rejects assertions including an unused alternative', () => {
+  for (const pattern of ['x(?=y)', 'x(?!y)', '(?<=x)y', '(?<!x)y', 'probe|(?=unused)unused']) {
+    assert.throws(() => compileJsPatternToOfficialTarget(pattern, 'i'), /断言/);
+  }
+  for (const pattern of ['\\(\\?=literal\\)', '[(?=)]', '[()?!]', '(?:probe|unused)']) {
+    assert.ok(compileJsPatternToOfficialTarget(pattern, 'i').startsWith('regex:'));
+  }
+  const feed = JSON.parse(fs.readFileSync(path.join(root, 'rules/feeds/easyag-danger-core.json'), 'utf8'));
+  assert.equal(compileRulesToResources(feed.rules).length, feed.rules.filter(rule => rule.enabled !== false).length);
+  for (const command of ["echo 'rm -rf'", "echo 'git push -force'", "echo 'git clean -f; echo -n'",
+    'git clean -f "directory with spaces"', 'git clean "directory with spaces" -f',
+    "git clean -f 'directory with spaces'", 'crontab "file with spaces.txt"']) {
+    assert.ok(resources.some(resource => simulateOfficialMatch(resource, command)), command);
+  }
+  for (const command of ["echo 'git clean -nfdx'", "echo 'git clean -fdx --dry-run'",
+    "echo 'git clean --dry-run -fdx'", "echo 'crontab -l -u alice'", "echo 'diskpart /?'",
+    'git clean -f "directory with spaces" -n', 'git clean -f "directory with spaces" --dry-run']) {
+    assert.ok(!resources.some(resource => simulateOfficialMatch(resource, command)), command);
+  }
+  const cleanRule = defaults.rules.find(rule => rule.id === 'git-destructive');
+  for (const option of ['--dry-run', '-n', '-nf', '-fn', '-NFDX']) {
+    for (const payload of ['git clean ' + option + ' -fdx', 'git clean -fdx ' + option]) {
+      assert.ok(!new RegExp(cleanRule.pattern, 'i').test(payload), payload);
+    }
+  }
 });
 
 test('stock migration preserves custom patterns, flags, disabled switches and actions', () => {
@@ -119,6 +147,15 @@ test('stock migration preserves custom patterns, flags, disabled switches and ac
   assert.equal(caseSensitive.pattern, stock.previous_patterns[0]);
   assert.equal(document.enabled, false);
   assert.equal(migrateDefaultPatterns(document, defaults), false);
+  for (const stock of defaults.rules) {
+    for (const pattern of stock.previous_patterns || []) {
+      const previous = { ...stock, pattern, action: 'ask', enabled: false };
+      assert.equal(migrateDefaultPatterns({ rules: [previous] }, defaults), true, stock.id);
+      assert.equal(previous.pattern, stock.pattern);
+      assert.equal(previous.enabled, false);
+      assert.equal(previous.action, 'ask');
+    }
+  }
 });
 
 test('ARES explanations are independent of approval severity; fallback is user-facing', () => {

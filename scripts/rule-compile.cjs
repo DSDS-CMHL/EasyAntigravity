@@ -7,9 +7,11 @@
  *   regex: 多token → 逐词对齐，末尾 .* 吞余下多词
  *   引号串算 1 词
  *
- * EasyAG danger-rules 是 JS RegExp.test() 部分匹配，且常带 (?=\s|$)，
- * 直接塞进 regex: 会被 ^…$ 锁死导致 rm -rf /path 永不命中。
+ * EasyAG danger-rules 是 JS RegExp.test() 部分匹配。
+ * 直接塞进 regex: 会被 ^…$ 锁死，不能保留部分匹配语义。
  * 因此编译为: regex:.*(?:<pattern>).*   （字面空白转为 \s+ 以保持单 token）
+ * 2026-10-11 实机对照：正/负前瞻未命中，且正前瞻影响整个合并规则。
+ * 禁止输出前瞻；后顾未经实机确认，也保守拒绝。见 docs/AG-权限正则实机语义.md。
  */
 
 /** 将 JS pattern 规范为可放进单个官方 regex token 的形式 */
@@ -20,6 +22,7 @@ function compileJsPatternToOfficialTarget(jsPattern, flags = '') {
   // rather than relying on an unverified inline flag such as (?i).
   if (/[^ig]/.test(flags)) throw new Error(`无法编译权限正则 flags: ${flags}`);
   new RegExp(p, flags); // Reject invalid user expressions before emitting a grant.
+  assertNativeCompatible(p);
   if (flags.includes('i')) p = foldAsciiCase(p);
   // 字面空白 → \s+（保留已有 \s \t \n 等转义；\ 后跟 s/t/n/ 等不动）
   p = p.replace(/([^\\]|^)\s+/g, (m, pre) => pre + '\\s+');
@@ -27,6 +30,21 @@ function compileJsPatternToOfficialTarget(jsPattern, flags = '') {
   p = p.replace(/^\s+/, '\\s+');
   // test() 语义：允许前后有其它字符
   return 'regex:.*(?:' + p + ').*';
+}
+
+// Check syntax outside escaped literals and character classes. A JS regex
+// compiling successfully is not evidence that AG supports its assertions.
+function assertNativeCompatible(pattern) {
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern[i] === '\\') { i++; continue; }
+    if (pattern[i] === '[' && !inClass) { inClass = true; continue; }
+    if (pattern[i] === ']' && inClass) { inClass = false; continue; }
+    if (!inClass && pattern[i] === '(' && pattern[i + 1] === '?'
+      && (/^[=!]/.test(pattern.slice(i + 2)) || /^<[=!]/.test(pattern.slice(i + 2)))) {
+      throw new Error('AG 原生权限规则不支持前瞻/后顾断言，请改用不含断言的表达式（ARES 本地规则不受此限制）');
+    }
+  }
 }
 
 function foldAsciiCase(pattern) {
@@ -91,7 +109,7 @@ function toResource(target) {
   return 'command(' + t + ')';
 }
 
-/** 按实测语义做本地匹配（用于编译自检；与官方一致时应 100% 对齐） */
+/** JS 本地匹配自检；不模拟 AG 全部语法限制，不替代原生审批验证。 */
 function simulateOfficialMatch(resource, commandLine) {
   const m = String(resource).match(/^command\((.*)\)$/s);
   const body = m ? m[1] : String(resource);

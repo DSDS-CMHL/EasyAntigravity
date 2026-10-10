@@ -45,9 +45,13 @@ function validateRules(doc) {
       } catch (e) {
         issues.push(r.id + ' 正则非法: ' + e.message);
       }
-      const compiled = compileJsPatternToOfficialTarget(r.pattern, r.flags === undefined ? 'i' : r.flags);
-      if (/\s/.test(compiled.replace(/^regex:/, ''))) {
-        issues.push(r.id + ' 编译后仍含字面空白（会破坏单 token）: ' + compiled.slice(0, 60));
+      try {
+        const compiled = compileJsPatternToOfficialTarget(r.pattern, r.flags === undefined ? 'i' : r.flags);
+        if (/\s/.test(compiled.replace(/^regex:/, ''))) {
+          issues.push(r.id + ' 编译后仍含字面空白（会破坏单 token）: ' + compiled.slice(0, 60));
+        }
+      } catch (e) {
+        issues.push(r.id + ' 原生权限编译失败: ' + e.message);
       }
     }
   }
@@ -134,7 +138,11 @@ try {
   } else if (cmd === 'validate') {
     const p = args[0] || RULES;
     const doc = readJson(p);
-    const issues = p.includes('signature') || p.includes('eas') ? validateAres(doc) : validateRules(doc);
+    // Use the document's namespace, not an incidental substring in its path:
+    // "easyag-danger-core.json" is a permission feed, not ARES knowledge.
+    const isAres = doc.pack === 'ares-signatures' || doc.namespace === 'ARES'
+      || /^(?:ares-|eas-)?signatures\.json$/i.test(path.basename(p));
+    const issues = isAres ? validateAres(doc) : validateRules(doc);
     console.log(JSON.stringify({ ok: issues.length === 0, issues }, null, 2));
     if (issues.length) process.exit(1);
   } else if (cmd === 'merge') {
