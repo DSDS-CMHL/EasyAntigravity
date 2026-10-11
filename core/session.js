@@ -1,18 +1,21 @@
 const { spawn } = require('node:child_process');
 const { buildProxyLaunch } = require('../features/proxy');
+const { LABELS, validateProtectionLevel } = require('../features/protection');
 
 class Session {
-  constructor({ settings, permissions, rules, desktop, cdp, events, host, testMode = false, spawnProcess = spawn }) {
-    Object.assign(this, { settings, permissions, rules, desktop, cdp, events, host, testMode, spawnProcess });
+  constructor({ settings, permissions, rules, desktop, cdp, events, host, testMode = false, spawnProcess = spawn, onStart = () => {} }) {
+    Object.assign(this, { settings, permissions, rules, desktop, cdp, events, host, testMode, spawnProcess, onStart });
     this.phase = 'idle';
     this.child = null;
     this.mode = null;
+    this.protectionLevel = null;
     this.closed = false;
     this.generation = 0;
   }
 
   snapshot() {
-    return { phase: this.phase, clientRunning: this.phase === 'running', activeLaunchMode: this.mode, pid: this.child?.pid || null };
+    return { phase: this.phase, clientRunning: this.phase === 'running', activeLaunchMode: this.mode,
+      activeProtectionLevel: this.protectionLevel, pid: this.child?.pid || null };
   }
 
   change(phase) {
@@ -37,10 +40,11 @@ class Session {
       this.mode = settings.launchMode;
       let pilot = { ok: true, skipped: true };
       if (this.mode === 'pilot') {
+        this.protectionLevel = validateProtectionLevel(settings.protectionLevel || 'standard');
         this.rules.reload();
-        pilot = this.permissions.apply(this.rules.compile());
+        pilot = this.permissions.apply(this.rules.compile(undefined, this.protectionLevel));
         if (!pilot.ok) throw new Error('增强配置失败: ' + pilot.error);
-        this.events.log('SECURITY', `启动前校验通过：自动审批 + ${pilot.count} 条原生权限规则`, 'tag-proxy');
+        this.events.log('SECURITY', `启动前校验通过：${LABELS[this.protectionLevel]}防护 + 自动审批 + ${pilot.count} 条原生权限规则`, 'tag-proxy');
       }
       this.change('launching');
       const launch = buildProxyLaunch(settings.port, this.cdp.port);
@@ -62,6 +66,7 @@ class Session {
         throw new Error('启动已取消');
       }
       if (child.exitCode !== null && child.exitCode !== undefined) throw new Error('Antigravity 启动后立即退出');
+      this.onStart();
       this.change('running');
       this.cdp.start();
       this.events.log('SYSTEM', 'Antigravity 已启动，增强功能正在连接', 'tag-proxy');
@@ -70,6 +75,7 @@ class Session {
     } catch (error) {
       const recovery = this.permissions.restore();
       this.mode = null;
+      this.protectionLevel = null;
       this.child = null;
       if (!this.closed) this.change('error');
       this.events.log('SYSTEM', error.message, 'tag-alert');
@@ -81,6 +87,7 @@ class Session {
     if (this.closed || this.phase !== 'idle' || this.testMode) return;
     if (!await this.desktop.running() || this.closed || this.phase !== 'idle') return;
     this.mode = 'compatibility';
+    this.onStart();
     this.change('running');
     this.cdp.start();
     this.events.log('SYSTEM', '已连接现有 AG；沿用其原有权限设置', 'tag-proxy');
@@ -103,6 +110,7 @@ class Session {
       await this.cdp.stop();
       this.child = null;
       this.mode = null;
+      this.protectionLevel = null;
       this.change(recovery.ok ? 'idle' : 'error');
       this.events.log(recovery.ok ? 'SYSTEM' : 'SECURITY', recovery.ok ? reason + '，原设置已恢复' : '配置恢复失败: ' + recovery.error, recovery.ok ? 'tag-proxy' : 'tag-alert');
       return recovery;

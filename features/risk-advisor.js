@@ -62,6 +62,23 @@ class RiskAdvisor {
     Object.assign(this, { rules, events, notifications, enabled });
     this.recent = new Map();
     this.hits = 0;
+    this.counts = { high: 0, medium: 0, low: 0 };
+    this.session = 0;
+    this.revision = 0;
+  }
+
+  snapshot() {
+    return { enabled: this.enabled(), session: this.session, revision: this.revision, total: this.hits,
+      counts: { ...this.counts }, highestLevel: this.counts.high ? 'high' : this.counts.medium ? 'medium' : this.counts.low ? 'low' : null };
+  }
+
+  reset() {
+    this.recent.clear();
+    this.hits = 0;
+    this.counts = { high: 0, medium: 0, low: 0 };
+    this.session++;
+    this.revision++;
+    this.events.publish({ counters: true, riskHits: 0, riskSummary: this.snapshot(), blockCount: 0 });
   }
 
   observe(command, metadata = {}) {
@@ -77,6 +94,8 @@ class RiskAdvisor {
     const risk = this.rules.assess(command);
     if (!risk) return;
     this.hits++;
+    this.counts[['high', 'medium', 'low'].includes(risk.level) ? risk.level : 'low']++;
+    this.revision++;
     const cls = risk.level === 'high' ? 'tag-alert' : risk.level === 'medium' ? 'tag-warn' : 'tag-i18n';
     this.events.log('RISK', `[${risk.levelLabel}] ${command.slice(0, 180)}`, cls);
     this.notifications.show({
@@ -85,7 +104,7 @@ class RiskAdvisor {
       detail: risk.primary.destructive_impact || risk.primary.root_cause || '请确认命令的作用范围。',
       solution: risk.primary.safe_alternative || '先确认目标路径和备份，再决定是否执行。'
     });
-    this.events.publish({ counters: true, riskHits: this.hits, blockCount: 0 });
+    this.events.publish({ counters: true, riskHits: this.hits, riskSummary: this.snapshot(), blockCount: 0 });
   }
 }
 

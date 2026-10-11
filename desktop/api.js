@@ -85,7 +85,8 @@ function createApi(app) {
         return json(response, result, result.ok ? 200 : 409);
       }
       if (method === 'POST' && route === '/api/danger-rules/reload') {
-        const summary = app.rules.reload();
+        app.rules.reload();
+        const summary = app.rules.summary(app.session.protectionLevel || app.settings.get().protectionLevel);
         app.events.publish({ dangerRules: true, ...summary });
         return json(response, { ok: true, active: summary.dangerRulesOn, total: summary.dangerRulesTotal });
       }
@@ -100,7 +101,7 @@ function createApi(app) {
         const data = await readBody(request);
         if (data.scope && data.scope !== 'global') throw new Error('当前仅支持桌面端全局权限规则');
         app.rules.reload();
-        const result = app.permissions.apply(app.rules.compile(data.list));
+        const result = app.permissions.apply(app.rules.compile(data.list, app.settings.get().protectionLevel));
         return json(response, result, result.ok ? 200 : 400);
       }
       if (method === 'POST' && route === '/api/danger-rules/cleanup') {

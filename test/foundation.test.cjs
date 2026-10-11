@@ -64,6 +64,8 @@ async function start() {
     assert.equal(status.blockDangerous, true);
     assert.equal(status.launchMode, 'pilot');
     assert.equal(status.riskAdvisor, true);
+    assert.equal(status.protectionLevel, 'standard');
+    assert.equal(status.activeProtectionLevel, null);
     assert.equal(status.enableI18n, true);
     assert.ok(status.dictEntries > 100, '词典应已加载');
     assert.ok(status.dangerRulesTotal >= 10, 'danger-rules 应 >=10');
@@ -80,6 +82,23 @@ async function start() {
     assert.equal(inj.count, 0, '仅启动 EasyAG 不应提前注入规则');
     assert.deepEqual(JSON.parse(fs.readFileSync(app.agConfig, 'utf8')), app.initialConfig,
       '点击启动 AG 前不得改动官方配置');
+
+    for (const protectionLevel of ['strict', 'relaxed', 'standard']) {
+      const saved = await fetch(app.url + '/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ protectionLevel })
+      });
+      assert.equal(saved.status, 200);
+      const next = await (await fetch(app.url + '/api/status')).json();
+      assert.equal(next.protectionLevel, protectionLevel);
+      assert.equal(next.riskAdvisor, true, '防护档位不能关闭 ARES');
+      assert.deepEqual(JSON.parse(fs.readFileSync(app.agConfig, 'utf8')), app.initialConfig,
+        '选择防护档位只保存偏好，不能提前修改 AG 配置');
+    }
+    const invalidLevel = await fetch(app.url + '/api/config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ protectionLevel: 'high' })
+    });
+    assert.equal(invalidLevel.status, 400);
+    assert.equal((await (await fetch(app.url + '/api/status')).json()).protectionLevel, 'standard');
 
     // 权限规则与自动执行策略必须写入并通过校验；文件权限保持用户选择。
     const sync = await fetch(app.url + '/api/danger-rules/sync', {

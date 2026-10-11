@@ -1,13 +1,13 @@
 {
   "pack": "easyag-danger-core",
-  "version": 5,
+  "version": 6,
   "updated_at": "2026-10-11T00:00:00.000Z",
   "rules": [
     {
       "id": "rm-rf",
       "name": "递归强制删除",
       "description": "rm 含递归或强制参数（支持 -rf、-fr、拆分参数和长参数）",
-      "pattern": "\\brm\\b[^\\n|;&]*\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)(?:\\s|$|['\"|;&])",
+      "pattern": "\\brm(?:\\.exe)?\\b(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|(?:\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*'))|-[^-\\s'\"|;&][^\\s'\"|;&]*|--[^\\s'\"|;&]+))*\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)(?:\\s|$|['\"|;&])",
       "flags": "i",
       "enabled": true
     },
@@ -47,7 +47,7 @@
       "id": "git-destructive",
       "name": "Git 破坏性操作",
       "description": "force push / reset --hard / clean -fdx",
-      "pattern": "\\bgit\\s+push\\s+[^\\n|;&]*(?:--?force\\b|-f\\b)|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\b(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*')|-[a-mo-z0-9]+|--(?:[^\\s'\"|;&d][^\\s'\"|;&]*|d|d[^\\s'\"|;&r][^\\s'\"|;&]*|dr|dr[^\\s'\"|;&y][^\\s'\"|;&]*|dry|dry[^\\s'\"|;&-][^\\s'\"|;&]*|dry-|dry-[^\\s'\"|;&r][^\\s'\"|;&]*|dry-r|dry-r[^\\s'\"|;&u][^\\s'\"|;&]*|dry-ru|dry-ru[^\\s'\"|;&n][^\\s'\"|;&]*|dry-run[^\\s'\"|;&]+)))*\\s+(?:--force|-[a-mo-z0-9]*[fxd][a-mo-z0-9]*)(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*')|-[a-mo-z0-9]+|--(?:[^\\s'\"|;&d][^\\s'\"|;&]*|d|d[^\\s'\"|;&r][^\\s'\"|;&]*|dr|dr[^\\s'\"|;&y][^\\s'\"|;&]*|dry|dry[^\\s'\"|;&-][^\\s'\"|;&]*|dry-|dry-[^\\s'\"|;&r][^\\s'\"|;&]*|dry-r|dry-r[^\\s'\"|;&u][^\\s'\"|;&]*|dry-ru|dry-ru[^\\s'\"|;&n][^\\s'\"|;&]*|dry-run[^\\s'\"|;&]+)))*\\s*(?:$|[|;&]|['\"]\\s*(?:$|[|;&]))|\\bgit\\s+filter-branch\\b",
+      "pattern": "\\bgit(?:\\.exe)?\\s+(?:(?:(?:-C|-c|--git-dir|--work-tree)\\s+(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:git-dir|work-tree)=(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:no-pager|bare|literal-pathspecs))\\s+)*push\\s+[^\\n|;&]*(?:--?force\\b|-f\\b)|\\bgit(?:\\.exe)?\\s+(?:(?:(?:-C|-c|--git-dir|--work-tree)\\s+(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:git-dir|work-tree)=(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:no-pager|bare|literal-pathspecs))\\s+)*reset\\s+--hard\\b|\\bgit(?:\\.exe)?\\s+(?:(?:(?:-C|-c|--git-dir|--work-tree)\\s+(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:git-dir|work-tree)=(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:no-pager|bare|literal-pathspecs))\\s+)*clean\\b(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|(?:\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*'))|-[a-mo-z0-9]+|--(?:[^\\s'\"|;&d][^\\s'\"|;&]*|d|d[^\\s'\"|;&r][^\\s'\"|;&]*|dr|dr[^\\s'\"|;&y][^\\s'\"|;&]*|dry|dry[^\\s'\"|;&-][^\\s'\"|;&]*|dry-|dry-[^\\s'\"|;&r][^\\s'\"|;&]*|dry-r|dry-r[^\\s'\"|;&u][^\\s'\"|;&]*|dry-ru|dry-ru[^\\s'\"|;&n][^\\s'\"|;&]*|dry-run[^\\s'\"|;&]+)))*\\s+(?:--force|-[a-mo-z0-9]*[fxd][a-mo-z0-9]*)(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|(?:\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*'))|-[a-mo-z0-9]+|--(?:[^\\s'\"|;&d][^\\s'\"|;&]*|d|d[^\\s'\"|;&r][^\\s'\"|;&]*|dr|dr[^\\s'\"|;&y][^\\s'\"|;&]*|dry|dry[^\\s'\"|;&-][^\\s'\"|;&]*|dry-|dry-[^\\s'\"|;&r][^\\s'\"|;&]*|dry-r|dry-r[^\\s'\"|;&u][^\\s'\"|;&]*|dry-ru|dry-ru[^\\s'\"|;&n][^\\s'\"|;&]*|dry-run[^\\s'\"|;&]+)))*\\s*(?:$|[|;&]|['\"]\\s*(?:$|[|;&]))|\\bgit(?:\\.exe)?\\s+(?:(?:(?:-C|-c|--git-dir|--work-tree)\\s+(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:git-dir|work-tree)=(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:no-pager|bare|literal-pathspecs))\\s+)*filter-branch\\b",
       "flags": "i",
       "enabled": true
     },
@@ -463,7 +463,7 @@
       "id": "git-force",
       "name": "git 破坏性",
       "description": "git 破坏性",
-      "pattern": "\\bgit\\s+push\\s+[^\\n]*(--force|-f)\\b|\\bgit\\s+reset\\s+--hard\\b|\\bgit\\s+clean\\s+-[a-zA-Z]*[fxd]|\\bgit\\s+checkout\\s+--\\s+\\.",
+      "pattern": "\\bgit(?:\\.exe)?\\s+(?:(?:(?:-C|-c|--git-dir|--work-tree)\\s+(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:git-dir|work-tree)=(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:no-pager|bare|literal-pathspecs))\\s+)*push\\s+[^\\n|;&]*(?:--?force\\b|-f\\b)|\\bgit(?:\\.exe)?\\s+(?:(?:(?:-C|-c|--git-dir|--work-tree)\\s+(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:git-dir|work-tree)=(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:no-pager|bare|literal-pathspecs))\\s+)*reset\\s+--hard\\b|\\bgit(?:\\.exe)?\\s+(?:(?:(?:-C|-c|--git-dir|--work-tree)\\s+(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:git-dir|work-tree)=(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:no-pager|bare|literal-pathspecs))\\s+)*clean\\b(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|(?:\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*'))|-[a-mo-z0-9]+|--(?:[^\\s'\"|;&d][^\\s'\"|;&]*|d|d[^\\s'\"|;&r][^\\s'\"|;&]*|dr|dr[^\\s'\"|;&y][^\\s'\"|;&]*|dry|dry[^\\s'\"|;&-][^\\s'\"|;&]*|dry-|dry-[^\\s'\"|;&r][^\\s'\"|;&]*|dry-r|dry-r[^\\s'\"|;&u][^\\s'\"|;&]*|dry-ru|dry-ru[^\\s'\"|;&n][^\\s'\"|;&]*|dry-run[^\\s'\"|;&]+)))*\\s+(?:--force|-[a-mo-z0-9]*[fxd][a-mo-z0-9]*)(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|(?:\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*'))|-[a-mo-z0-9]+|--(?:[^\\s'\"|;&d][^\\s'\"|;&]*|d|d[^\\s'\"|;&r][^\\s'\"|;&]*|dr|dr[^\\s'\"|;&y][^\\s'\"|;&]*|dry|dry[^\\s'\"|;&-][^\\s'\"|;&]*|dry-|dry-[^\\s'\"|;&r][^\\s'\"|;&]*|dry-r|dry-r[^\\s'\"|;&u][^\\s'\"|;&]*|dry-ru|dry-ru[^\\s'\"|;&n][^\\s'\"|;&]*|dry-run[^\\s'\"|;&]+)))*\\s*(?:$|[|;&]|['\"]\\s*(?:$|[|;&]))|\\bgit(?:\\.exe)?\\s+(?:(?:(?:-C|-c|--git-dir|--work-tree)\\s+(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:git-dir|work-tree)=(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:no-pager|bare|literal-pathspecs))\\s+)*filter-branch\\b",
       "flags": "i",
       "enabled": true
     },

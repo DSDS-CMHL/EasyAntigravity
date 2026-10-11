@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { readJson, writeJson } = require('../core/storage');
 const { compileJsPatternToOfficialTarget, toResource } = require('../scripts/rule-compile.cjs');
+const { protectionRules } = require('./protection');
 
 const ACTIONS = ['allow', 'deny', 'ask'];
 const WEIGHT = { high: 3, medium: 2, low: 1 };
@@ -60,18 +61,19 @@ class RuleEngine {
     });
     // A failed reload must leave the previous working engine intact.
     if (migrated) writeJson(this.file, document);
-    Object.assign(this, { document, active, patterns, knowledge, signatures });
+    Object.assign(this, { bundled, document, active, patterns, knowledge, signatures });
     return this.summary();
   }
 
-  summary() {
-    return { dangerRulesTotal: this.document.rules.length, dangerRulesOn: this.active.length, kbRules: this.knowledge.length };
+  summary(protectionLevel = 'standard') {
+    return { dangerRulesTotal: this.document.rules.length,
+      dangerRulesOn: protectionRules(this.active, this.bundled, protectionLevel).length, kbRules: this.knowledge.length };
   }
 
-  compile(action) {
+  compile(action, protectionLevel = 'standard') {
     if (action !== undefined && !ACTIONS.includes(action)) throw new Error('权限动作必须是 Allow / Deny / Ask');
     const lists = { allow: [], deny: [], ask: [] };
-    for (const rule of this.active) {
+    for (const rule of protectionRules(this.active, this.bundled, protectionLevel)) {
       const list = action || rule.action || 'ask';
       lists[list].push(toResource(compileJsPatternToOfficialTarget(rule.pattern, rule.flags === undefined ? 'i' : rule.flags)));
     }

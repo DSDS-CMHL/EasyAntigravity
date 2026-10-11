@@ -19,6 +19,7 @@ safety-e2e-followup.txt
 # Local dependencies, research copies and release staging
 node_modules/
 upstream-antigravity-proxy/
+.reference/
 EasyAntigravity-dist/
 EasyAntigravity-v*-win-x64/
 Agentguard-dev/*

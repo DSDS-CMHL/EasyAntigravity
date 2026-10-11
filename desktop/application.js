@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { createSettings } = require('../core/settings');
+const { createSettings, assertLaunchSettingsMutable } = require('../core/settings');
 const { Events } = require('../core/events');
 const { Session } = require('../core/session');
 const { writeJson } = require('../core/storage');
@@ -15,6 +15,9 @@ const { createDesktopAdapter } = require('../adapters/desktop');
 const { removeLegacyHooks } = require('../adapters/desktop/legacy-hooks');
 const { createHost } = require('./host');
 const { createApi } = require('./api');
+const { LABELS } = require('../features/protection');
+const { LanguageService } = require('../adapters/desktop/language-service');
+const { ContextMonitor } = require('../features/context-monitor');
 
 function createApplication({ rootDir, dataDir, native = false, testMode = false, onClose = () => {} }) {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -29,6 +32,7 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
   const dictionary = loadDictionary(rootDir);
   const host = createHost({ native, testMode, events });
   const notifications = new Notifications({ host, events });
+  const contextMonitor = new ContextMonitor(new LanguageService({ profile: desktop.profile }));
   let session;
   const advisorEnabled = () => (session?.mode || settings.get().launchMode) === 'pilot';
   const advisor = new RiskAdvisor({ rules, events, notifications, enabled: advisorEnabled });
@@ -37,6 +41,10 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
     profile: desktop.profile,
     source: binding => rendererSource(dictionary, { ...settings.get(), riskAdvisor: advisorEnabled() }, binding),
     onRisk: (command, metadata) => advisor.observe(command, metadata),
+    onRiskStats: () => advisor.snapshot(),
+    onMetrics: id => settings.get().enableContextMonitor && session?.phase === 'running' && !testMode
+      ? contextMonitor.sample(id) : Promise.resolve({ conversationId: id, state: 'unavailable', context: null, speed: null }),
+    onStop: () => contextMonitor.reset(),
     onStatus: status => {
       const key = JSON.stringify([status.cdpSockets, status.cdpTargets, status.cdpError]);
       if (key === lastStatus) return;
@@ -44,31 +52,29 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
       events.publish({ status: status.cdpSockets ? '增强功能已连接' : '等待连接', ...session.snapshot(), ...status });
     }
   });
-  session = new Session({ settings, permissions, rules, desktop, cdp, events, host, testMode });
+  session = new Session({ settings, permissions, rules, desktop, cdp, events, host, testMode, onStart: () => advisor.reset() });
   let closing;
   const app = {
-    rootDir, dataDir, events, settings, rules, desktop, permissions, host, notifications, cdp, session,
+    rootDir, dataDir, events, settings, rules, desktop, permissions, host, notifications, cdp, session, contextMonitor,
     status() {
       return {
-        ...settings.get(), ...session.snapshot(), ...rules.summary(), ...cdp.status,
+        ...settings.get(), ...session.snapshot(), ...rules.summary(session.protectionLevel || settings.get().protectionLevel), ...cdp.status,
         riskAdvisor: advisorEnabled(),
         blockDangerous: (session.mode || settings.get().launchMode) === 'pilot',
-        dictEntries: Object.keys(dictionary).length, riskHits: advisor.hits, blockCount: 0,
+        dictEntries: Object.keys(dictionary).length, riskHits: advisor.hits, riskSummary: advisor.snapshot(), blockCount: 0,
         injectedCount: permissions.status().count, capabilities: desktop.capabilities
       };
     },
     async configure(input) {
       const previous = settings.get();
-      const busy = ['running', 'preparing', 'launching'].includes(session.phase);
-      if (busy && ((input.launchMode !== undefined && input.launchMode !== previous.launchMode)
-        || (input.port !== undefined && Number(input.port) !== previous.port)
-        || (input.blockDangerous !== undefined && input.blockDangerous !== (previous.launchMode === 'pilot')))) {
-        throw new Error('启动模式和代理端口将在 AG 退出后才能修改');
-      }
+      assertLaunchSettingsMutable(input, previous, session.phase);
       const next = settings.update(input);
+      if (next.enableContextMonitor !== previous.enableContextMonitor) contextMonitor.reset();
       await cdp.refresh();
       if (next.enableI18n !== previous.enableI18n) events.log('I18N', next.enableI18n ? '汉化已开启' : '汉化已关闭，原文已恢复', 'tag-i18n');
+      if (next.enableContextMonitor !== previous.enableContextMonitor) events.log('SYSTEM', next.enableContextMonitor ? '上下文监控已开启（只读）' : '上下文监控已关闭，上下文圆环已移除', 'tag-proxy');
       if (next.riskAdvisor !== previous.riskAdvisor) events.log('SECURITY', next.riskAdvisor ? '风险提示已开启' : '风险提示已关闭', 'tag-proxy');
+      if (next.protectionLevel !== previous.protectionLevel) events.log('SECURITY', `防护强度已设为${LABELS[next.protectionLevel]}，下次启动时应用；ARES 风险提示不受档位影响`, 'tag-proxy');
       return next;
     },
     async start() {

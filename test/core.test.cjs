@@ -157,20 +157,41 @@ test('Legacy Hook migration leaves unrelated registrations intact', t => {
   assert.deepEqual(readJson(file), { mine: { enabled: true } });
 });
 
-function sessionFixture({ spawnError = false, applyError = false, alreadyRunning = false, mode = 'pilot' } = {}) {
+function sessionFixture({ spawnError = false, applyError = false, alreadyRunning = false, mode = 'pilot', protectionLevel = 'standard' } = {}) {
   const calls = [];
+  const compiled = [];
   const child = new EventEmitter();
   child.pid = 123; child.exitCode = null; child.kill = () => calls.push('kill');
   const session = new Session({
-    settings: { get: () => ({ port: 7890, launchMode: mode }) },
+    settings: { get: () => ({ port: 7890, launchMode: mode, protectionLevel }) },
     permissions: { restore() { calls.push('restore'); return { ok: true }; }, apply() { calls.push('apply'); return { ok: !applyError, error: 'apply failed' }; } },
-    rules: { reload() {}, compile: () => lists }, desktop: { locate: () => ({ exists: true, appExe: 'test' }), running: async () => alreadyRunning },
+    rules: { reload() {}, compile(action, level) { compiled.push({ action, level }); return lists; } }, desktop: { locate: () => ({ exists: true, appExe: 'test' }), running: async () => alreadyRunning },
     cdp: { port: 9333, start: () => calls.push('cdp'), stop: async () => calls.push('stop-cdp') },
     events: { log() {}, publish() {} }, host: { hide() {} },
     spawnProcess() { calls.push('spawn'); process.nextTick(() => child.emit(spawnError ? 'error' : 'spawn', new Error('spawn failed'))); return child; }
   });
-  return { session, child, calls };
+  return { session, child, calls, compiled };
 }
+
+test('launch captures the selected profile before spawn and clears it on exit/error/compatibility', async () => {
+  for (const protectionLevel of ['strict', 'standard', 'relaxed']) {
+    const { session, compiled } = sessionFixture({ protectionLevel });
+    assert.equal((await session.launch()).ok, true);
+    assert.deepEqual(compiled, [{ action: undefined, level: protectionLevel }]);
+    assert.equal(session.snapshot().activeProtectionLevel, protectionLevel);
+    await session.finish('test');
+    assert.equal(session.snapshot().activeProtectionLevel, null);
+  }
+  const failure = sessionFixture({ protectionLevel: 'invalid' });
+  assert.equal((await failure.session.launch()).ok, false);
+  assert.equal(failure.calls.includes('spawn'), false);
+  assert.equal(failure.session.snapshot().activeProtectionLevel, null);
+  const compatible = sessionFixture({ mode: 'compatibility', protectionLevel: 'strict' });
+  await compatible.session.launch();
+  assert.equal(compatible.compiled.length, 0);
+  assert.equal(compatible.session.snapshot().activeProtectionLevel, null);
+  await compatible.session.finish('test');
+});
 
 test('Session validates enhancement before spawn and serializes duplicate launch requests', async () => {
   const { session, child, calls } = sessionFixture();
@@ -191,6 +212,20 @@ test('Failed apply never launches; failed spawn restores the original settings',
   const spawn = sessionFixture({ spawnError: true });
   assert.equal((await spawn.session.launch()).ok, false);
   assert.equal(spawn.calls.at(-1), 'restore');
+});
+
+test('risk-session initialization runs once per successful AG launch, not on duplicate launch or failure', async () => {
+  const { session } = sessionFixture();
+  let starts = 0;
+  session.onStart = () => { starts++; };
+  await session.launch(); await session.launch();
+  assert.equal(starts, 1);
+  await session.finish('test'); await session.launch();
+  assert.equal(starts, 2);
+  await session.finish('test');
+  const failed = sessionFixture({ spawnError: true });
+  failed.session.onStart = () => { starts++; };
+  await failed.session.launch(); assert.equal(starts, 2);
 });
 
 test('Host shutdown restores config before a slow renderer cleanup', async () => {

@@ -9,7 +9,7 @@ function createDesktopAdapter(testMode = false) {
     : path.join(process.env.APPDATA || path.join(os.homedir(), '.config'), 'Antigravity');
   return {
     kind: 'desktop', profile, configFile: globalConfig(testMode),
-    capabilities: { cdp: true, permissionRules: true, hooks: false, metrics: false },
+    capabilities: { cdp: true, permissionRules: true, hooks: false, metrics: true },
     locate() {
       const target = discoverDesktop();
       return { ...target, exists: fs.existsSync(target.appExe) };

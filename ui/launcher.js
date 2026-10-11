@@ -3,6 +3,7 @@ import { api } from './api.js';
 const element = id => document.getElementById(id);
 const consoleBox = element('consoleBox');
 let mode = 'pilot';
+let protectionLevel = 'standard';
 let activeMode = null;
 let phase = 'idle';
 let settingsQueue = Promise.resolve();
@@ -31,6 +32,25 @@ function appendLog(category, message, cls = '', at) {
 
 function report(error) { appendLog('SYSTEM', error.message || String(error), 'tag-alert'); }
 
+function renderProtection() {
+  const pilot = (activeMode || mode) === 'pilot';
+  const locked = ['preparing', 'launching', 'running'].includes(phase);
+  document.querySelectorAll('.protection-option').forEach(control => {
+    const selected = control.dataset.protection === protectionLevel;
+    control.classList.toggle('selected', selected);
+    control.setAttribute('aria-pressed', String(selected));
+    control.disabled = locked || !pilot;
+  });
+  element('protectionSection').dataset.level = pilot ? protectionLevel : 'inactive';
+  element('protectionHint').textContent = !pilot
+    ? '兼容模式沿用用户默认审批设置，不应用防护档位；已保留你的选择。'
+    : {
+      strict: '扩大删除、Git 危险文本匹配；预演、引用或文件名也可能要求审批。',
+      standard: '识别常见危险命令与参数，减少明确的查询、预演误报。',
+      relaxed: '仅保留部分明确高危操作的审批，漏报风险更高；ARES 提示仍开启。'
+    }[protectionLevel] + (locked ? ' AG 退出后可调整。' : ' 启动时应用。');
+}
+
 function renderPhase(next) {
   phase = next;
   document.body.dataset.uiState = next;
@@ -41,6 +61,7 @@ function renderPhase(next) {
   button.classList.toggle('busy', busy);
   document.querySelectorAll('.mode-option,[data-port]').forEach(control => { control.disabled = locked; });
   element('proxyPortInput').disabled = locked;
+  renderProtection();
   element('launchIcon').textContent = busy ? '◌' : next === 'running' ? '●' : next === 'error' ? '↻' : '🚀';
   element('launchText').textContent = {
     preparing: '正在准备增强环境…', launching: '正在启动 Antigravity…',
@@ -55,9 +76,6 @@ function renderMode() {
     control.classList.toggle('selected', selected);
     control.setAttribute('aria-pressed', String(selected));
   });
-  element('riskAdvisorToggle').checked = (activeMode || mode) === 'pilot';
-  element('riskAdvisorToggle').disabled = true;
-  element('advisorRow').classList.add('disabled');
   renderPhase(phase);
 }
 
@@ -69,7 +87,7 @@ function renderStatus(status) {
   if (status.phase && !(launchPending && status.phase === 'idle')) renderPhase(status.phase);
   if (status.riskHits !== undefined) element('approveCountBadge').textContent = `风险 ${status.riskHits}`;
   if (status.dangerRulesTotal !== undefined) {
-    element('rulesCountBadge').textContent = `${status.dangerRulesOn}/${status.dangerRulesTotal} 条生效`;
+    element('rulesCountBadge').textContent = `${status.dangerRulesOn}/${status.dangerRulesTotal} 条规则`;
   }
   if (status.clientRunning !== undefined) {
     const badge = element('clientStatusBadge');
@@ -83,9 +101,10 @@ function renderStatus(status) {
 
 function loadSettings(status) {
   mode = status.launchMode;
+  protectionLevel = status.protectionLevel || 'standard';
   element('proxyPortInput').value = status.port;
-  element('riskAdvisorToggle').checked = status.riskAdvisor;
   element('i18nToggle').checked = status.enableI18n;
+  element('contextMonitorToggle').checked = status.enableContextMonitor;
   element('dictCountBadge').textContent = `已载入 ${status.dictEntries} 条汉化词条`;
   element('patchStatusBadge').textContent = '● 原生代理已就绪';
   renderMode();
@@ -94,8 +113,9 @@ function loadSettings(status) {
 
 function persistSettings() {
   const payload = {
-    port: Number(element('proxyPortInput').value), launchMode: mode,
-    enableI18n: element('i18nToggle').checked
+    port: Number(element('proxyPortInput').value), launchMode: mode, protectionLevel,
+    enableI18n: element('i18nToggle').checked,
+    enableContextMonitor: element('contextMonitorToggle').checked
   };
   settingsQueue = settingsQueue.catch(() => {}).then(() => api.configure(payload));
   return settingsQueue;
@@ -135,6 +155,12 @@ const actions = {
   launch,
   hide: () => api.hide(),
   async mode(control) { mode = control.dataset.mode; renderMode(); await persistSettings(); },
+  async protection(control) {
+    protectionLevel = control.dataset.protection;
+    renderProtection();
+    try { await persistSettings(); renderStatus(await api.status()); }
+    catch (error) { loadSettings(await api.status()); throw error; }
+  },
   async 'open-rules'() {
     const result = await api.openRules();
     appendLog('SECURITY', `已打开权限规则：${result.path}`, 'tag-proxy');
@@ -163,7 +189,7 @@ document.addEventListener('click', event => {
 });
 
 element('proxyPortInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, ''); });
-for (const id of ['proxyPortInput', 'i18nToggle']) {
+for (const id of ['proxyPortInput', 'i18nToggle', 'contextMonitorToggle']) {
   element(id).addEventListener('change', () => { persistSettings().catch(report); });
 }
 

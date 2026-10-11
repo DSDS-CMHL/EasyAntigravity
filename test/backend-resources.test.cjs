@@ -13,6 +13,7 @@ test('The packaged backend runs with its own modules, dictionary and risk knowle
   copyBackendResources(path.resolve(__dirname, '..'), backend);
   assert.deepEqual(fs.readdirSync(path.join(backend, 'scripts')), ['rule-compile.cjs']);
   assert.equal(fs.existsSync(path.join(backend, 'assets/EasyAG-Resident.exe')), false);
+  assert.equal(fs.existsSync(path.join(backend, 'THIRD-PARTY-NOTICES.md')), true);
   const { createApplication } = require(path.join(backend, 'desktop/application'));
   const app = createApplication({ rootDir: backend, dataDir, native: true, testMode: true });
   t.after(() => app.close('test resource cleanup'));

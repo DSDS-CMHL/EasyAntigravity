@@ -4,7 +4,7 @@ const path = require('node:path');
 /** Explicit runtime resources; development tools and the legacy C# host are not shipped. */
 function copyBackendResources(root, destination) {
   fs.mkdirSync(destination, { recursive: true });
-  for (const name of ['server.js', 'index.html', 'danger-rules.json', 'dicts', 'core', 'features', 'adapters', 'desktop', 'ui']) {
+  for (const name of ['server.js', 'index.html', 'danger-rules.json', 'THIRD-PARTY-NOTICES.md', 'dicts', 'core', 'features', 'adapters', 'desktop', 'ui']) {
     fs.cpSync(path.join(root, name), path.join(destination, name), { recursive: true });
   }
   for (const directory of ['scripts', 'src', 'knowledge', 'assets']) {

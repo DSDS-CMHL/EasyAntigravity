@@ -1,10 +1,12 @@
 const { readJson, writeJson } = require('./storage');
+const { validateProtectionLevel } = require('../features/protection');
 
-const DEFAULTS = Object.freeze({ port: 7890, launchMode: 'pilot', riskAdvisor: true, enableI18n: true });
+const DEFAULTS = Object.freeze({ port: 7890, launchMode: 'pilot', protectionLevel: 'standard', riskAdvisor: true, enableI18n: true, enableContextMonitor: true });
 
 function normalizeSettings(input = {}, previous = DEFAULTS) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('设置必须是对象');
-  const result = { ...previous };
+  const result = { ...DEFAULTS, ...previous };
+  if (input.protectionLevel !== undefined) result.protectionLevel = validateProtectionLevel(input.protectionLevel);
   if (input.port !== undefined) {
     const port = Number(input.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('代理端口必须是 1–65535 的整数');
@@ -16,7 +18,7 @@ function normalizeSettings(input = {}, previous = DEFAULTS) {
   } else if (typeof input.blockDangerous === 'boolean') {
     result.launchMode = input.blockDangerous ? 'pilot' : 'compatibility';
   }
-  for (const key of ['riskAdvisor', 'enableI18n']) {
+  for (const key of ['riskAdvisor', 'enableI18n', 'enableContextMonitor']) {
     if (input[key] !== undefined) {
       if (typeof input[key] !== 'boolean') throw new Error(`${key} 必须是布尔值`);
       result[key] = input[key];
@@ -41,4 +43,14 @@ function createSettings(file) {
   };
 }
 
-module.exports = { DEFAULTS, normalizeSettings, createSettings };
+function assertLaunchSettingsMutable(input, previous, phase) {
+  if (!['running', 'preparing', 'launching'].includes(phase)) return;
+  if ((input.launchMode !== undefined && input.launchMode !== previous.launchMode)
+    || (input.port !== undefined && Number(input.port) !== previous.port)
+    || (input.protectionLevel !== undefined && input.protectionLevel !== previous.protectionLevel)
+    || (input.blockDangerous !== undefined && input.blockDangerous !== (previous.launchMode === 'pilot'))) {
+    throw new Error('启动模式、防护强度和代理端口将在 AG 退出后才能修改');
+  }
+}
+
+module.exports = { DEFAULTS, normalizeSettings, createSettings, assertLaunchSettingsMutable };

@@ -1,7 +1,7 @@
 {
   "pack": "ares-signatures",
   "schema_version": 1,
-  "version": "3.0.1",
+  "version": "3.0.2",
   "updated_at": "2026-10-11T00:00:00.000Z",
   "namespace": "ARES",
   "description": "Agent Risk Execution Signatures：命令风险解释知识库，不代替 AG 的 Allow / Deny / Ask 权限执行。",
@@ -5399,7 +5399,7 @@
         "all"
       ],
       "category": "destructive_vcs",
-      "pattern": "\\bgit\\s+push\\b[^\\n]*(?:--?force(?!-with-lease)(?=\\s|$)|-f(?=\\s|$))",
+      "pattern": "\\bgit(?:\\.exe)?\\s+(?:(?:(?:-C|-c|--git-dir|--work-tree)\\s+(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:git-dir|work-tree)=(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:no-pager|bare|literal-pathspecs))\\s+)*push\\b[^\\n]*(?:--?force(?!-with-lease)(?=\\s|$)|-f(?=\\s|$))",
       "flags": "i",
       "root_cause": "git push 使用强制更新选项，允许非快进更新远端引用。",
       "destructive_impact": "远端分支可能被本地历史覆盖，其他人的提交可能不再出现在该分支上；提交对象是否仍可恢复取决于其他引用、保留期和备份。",
@@ -5444,7 +5444,7 @@
         "all"
       ],
       "category": "destructive_vcs",
-      "pattern": "\\bgit\\s+reset\\s+--hard\\b",
+      "pattern": "\\bgit(?:\\.exe)?\\s+(?:(?:(?:-C|-c|--git-dir|--work-tree)\\s+(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:git-dir|work-tree)=(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:no-pager|bare|literal-pathspecs))\\s+)*reset\\s+--hard\\b",
       "flags": "i",
       "root_cause": "git reset --hard 将索引与工作区中的已跟踪文件重置为目标提交。",
       "destructive_impact": "已跟踪文件的未提交改动可能被丢弃；指定旧提交还可能移动分支指针，妨碍写入的未追踪文件也可能被删除。",
@@ -5494,7 +5494,7 @@
         "all"
       ],
       "category": "destructive_vcs",
-      "pattern": "\\bgit\\s+clean\\s+(?=[^\\n]*(?:-[a-zA-Z]*f|--force\\b))(?![^\\n]*(?:-[a-zA-Z]*[nN]|--dry-run\\b))[^\\n]*",
+      "pattern": "\\bgit(?:\\.exe)?\\s+(?:(?:(?:-C|-c|--git-dir|--work-tree)\\s+(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:git-dir|work-tree)=(?:[^\\s'\"|;&]+|\"[^\"\\r\\n]*\"|'[^'\\r\\n]*')|--(?:no-pager|bare|literal-pathspecs))\\s+)*clean\\b(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|(?:\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*'))|-[a-mo-z0-9]+|--(?:[^\\s'\"|;&d][^\\s'\"|;&]*|d|d[^\\s'\"|;&r][^\\s'\"|;&]*|dr|dr[^\\s'\"|;&y][^\\s'\"|;&]*|dry|dry[^\\s'\"|;&-][^\\s'\"|;&]*|dry-|dry-[^\\s'\"|;&r][^\\s'\"|;&]*|dry-r|dry-r[^\\s'\"|;&u][^\\s'\"|;&]*|dry-ru|dry-ru[^\\s'\"|;&n][^\\s'\"|;&]*|dry-run[^\\s'\"|;&]+)))*\\s+(?:--force|-[a-mo-z0-9]*[fxd][a-mo-z0-9]*)(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|(?:\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*'))|-[a-mo-z0-9]+|--(?:[^\\s'\"|;&d][^\\s'\"|;&]*|d|d[^\\s'\"|;&r][^\\s'\"|;&]*|dr|dr[^\\s'\"|;&y][^\\s'\"|;&]*|dry|dry[^\\s'\"|;&-][^\\s'\"|;&]*|dry-|dry-[^\\s'\"|;&r][^\\s'\"|;&]*|dry-r|dry-r[^\\s'\"|;&u][^\\s'\"|;&]*|dry-ru|dry-ru[^\\s'\"|;&n][^\\s'\"|;&]*|dry-run[^\\s'\"|;&]+)))*\\s*(?:$|[|;&]|['\"]\\s*(?:$|[|;&]))",
       "flags": "i",
       "root_cause": "git clean 请求删除未追踪文件；目录和忽略文件是否包括在内分别取决于 -d、-x 等选项。",
       "destructive_impact": "尚未纳入版本控制的源文件、本地配置或产物可能被删除；Git 通常无法恢复从未记录的内容，外部备份或编辑器历史仍可能有副本。",
@@ -5753,7 +5753,7 @@
       "flags": "i",
       "priority": 30,
       "review_status": "curated",
-      "pattern": "\\brm\\b[^\\n|;&]*\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)(?=\\s|$|['\"])|\\bRemove-Item\\b[^\\n]*-(?:Recurse|Force)\\b|\\b(?:del|rd|rmdir|erase)\\s+[^\\n]*\\/[sqf]",
+      "pattern": "\\brm(?:\\.exe)?\\b(?:\\s+(?:(?:[^-\\s'\"|;&][^\\s'\"|;&]*|(?:\"[^-\"\\r\\n][^\"\\r\\n]*\"|'[^-'\\r\\n][^'\\r\\n]*'))|-[^-\\s'\"|;&][^\\s'\"|;&]*|--[^\\s'\"|;&]+))*\\s+(?:--(?:recursive|force)|-[a-zA-Z]*[rf][a-zA-Z]*)(?:\\s|$|['\"|;&])|\\bRemove-Item\\b[^\\n]*-(?:Recurse|Force)\\b|\\b(?:del|rd|rmdir|erase)\\s+[^\\n]*\\/[sqf]",
       "trigger_conditions": "命令包含递归删除、强制删除或省略部分确认的选项；具体行为由工具和参数决定。",
       "root_cause": "删除范围由目标路径、通配符和递归参数决定，强制选项可能减少确认或忽略部分错误。",
       "destructive_impact": "指定文件或目录内容可能不经回收站被删除；若路径、变量或通配符展开有误，可能影响非预期文件，未备份内容可能难以恢复。",

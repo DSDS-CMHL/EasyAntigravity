@@ -4,6 +4,7 @@ const http = require('node:http');
 const { randomUUID } = require('node:crypto');
 const WebSocket = require('ws');
 const { disposeSource } = require('./renderer');
+const { GUID } = require('./language-service');
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
 function getJson(url) {
@@ -103,8 +104,8 @@ class CdpConnection {
 }
 
 class CdpHub {
-  constructor({ port = 9333, profile, source, onRisk = () => {}, onStatus = () => {}, discover }) {
-    Object.assign(this, { port, profile, source, onRisk, onStatus });
+  constructor({ port = 9333, profile, source, onRisk = () => {}, onStatus = () => {}, onMetrics, onRiskStats, onStop = () => {}, discover }) {
+    Object.assign(this, { port, profile, source, onRisk, onStatus, onMetrics, onRiskStats, onStop });
     this.binding = '__easyagReport_' + randomUUID().replaceAll('-', '');
     this.discover = discover || (() => this.findTargets());
     this.sessions = new Map();
@@ -147,14 +148,44 @@ class CdpHub {
           const invocationId = typeof event.invocationId === 'string' && event.invocationId.length <= 17000
             ? event.invocationId : undefined;
           this.onRisk(event.command, { invocationId });
+        } else if (((event.type === 'context-metrics' && this.onMetrics) || (event.type === 'risk-stats' && this.onRiskStats)) && GUID.test(event.conversationId)
+          && typeof event.requestId === 'string' && /^\d{1,10}$/.test(event.requestId)) {
+          void this.metrics(connection, params.executionContextId, event);
         }
       } catch { /* The bridge accepts only bounded command observations. */ }
     }
   }
 
+  async metrics(connection, contextId, event) {
+    const riskOnly = event.type === 'risk-stats';
+    const busyKey = riskOnly ? 'riskStatsBusy' : 'metricsBusy';
+    const timeKey = riskOnly ? 'riskStatsAt' : 'metricsAt';
+    if (connection[busyKey] || Date.now() - (connection[timeKey] || 0) < (riskOnly ? 500 : 1200)) return;
+    connection[busyKey] = true;
+    connection[timeKey] = Date.now();
+    const generation = connection.injectGeneration;
+    try {
+      const location = await connection.command('Runtime.evaluate', { expression: 'location.href', contextId, returnByValue: true });
+      const href = location.result?.value;
+      if (!this.running || !connection.contexts.has(contextId) || !validTarget({ type: 'page', url: href,
+        webSocketDebuggerUrl: connection.url }, Number(new URL(connection.url).port))) return;
+      const page = new URL(href), initial = new URL(connection.pageUrl);
+      if (page.origin !== initial.origin || page.protocol !== initial.protocol
+        || page.pathname.match(/\/c\/([^/]+)/)?.[1]?.toLowerCase() !== event.conversationId.toLowerCase()) return;
+      const result = await (riskOnly ? this.onRiskStats() : this.onMetrics(event.conversationId.toLowerCase()));
+      if (!this.running || generation !== connection.injectGeneration || !connection.contexts.has(contextId)) return;
+      const payload = JSON.stringify(result);
+      if (payload.length > 8192) return;
+      await connection.command('Runtime.evaluate', { contextId,
+        expression: `if (location.href === ${JSON.stringify(href)}) window.__easyagContext?.${riskOnly ? 'receiveRisk' : 'receive'}(${JSON.stringify(event.requestId)}, ${payload});` });
+    } catch { /* Stats are optional; never interrupt localization or security observation. */ }
+    finally { connection[busyKey] = false; }
+  }
+
   async inject(connection) {
     if (!this.running) throw new Error('CDP 已停止');
     const source = this.source(this.binding);
+    connection.injectGeneration = (connection.injectGeneration || 0) + 1;
     if (connection.script) await connection.command('Page.removeScriptToEvaluateOnNewDocument', { identifier: connection.script });
     connection.script = (await connection.command('Page.addScriptToEvaluateOnNewDocument', { source })).identifier;
     if (!this.running) throw new Error('CDP 已停止');
@@ -166,6 +197,7 @@ class CdpHub {
 
   async attach(target) {
     const connection = new CdpConnection(target.webSocketDebuggerUrl, (event, socket) => this.event(event, socket));
+    connection.pageUrl = target.url;
     this.pendingConnections.add(connection);
     try {
       await connection.open();
@@ -267,6 +299,7 @@ class CdpHub {
 
   async stop() {
     this.running = false;
+    this.onStop();
     clearInterval(this.timer);
     for (const connection of this.pendingConnections) if (!connection.connected) connection.close();
     await this.tickPromise;
