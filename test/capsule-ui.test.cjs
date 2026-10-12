@@ -52,11 +52,21 @@ const document = {
 };
 const context = {
   window: { __TAURI__: { window: { getCurrentWindow: () => ({ hide() { hidden++; return Promise.resolve(); } }) } }, close() {} },
-  document, location: { protocol: 'http:', origin: 'http://127.0.0.1:1234' }, navigator: {},
+  document, location: { protocol: 'http:', hostname: '127.0.0.1', origin: 'http://127.0.0.1:1234' }, navigator: {},
   setTimeout(callback, delay) { const id = ++sequence; timers.set(id, { callback, delay }); return id; },
   clearTimeout(id) { timers.delete(id); }, fetch: async () => ({ ok: true })
 };
 vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
+assert.equal(context.backendOrigin(), 'http://127.0.0.1:1234');
+context.location = { protocol: 'http:', hostname: 'tauri.localhost', origin: 'http://tauri.localhost' };
+assert.equal(context.backendOrigin(), '', 'The bundled Windows origin cannot serve backend API requests');
+context.window.__ea_port = 4280;
+assert.equal(context.backendOrigin(), 'http://127.0.0.1:4280', 'Injected backend port takes precedence over the HTTP asset origin');
+for (const port of [0, -1, 65536, 'invalid']) {
+  context.window.__ea_port = port;
+  assert.equal(context.backendOrigin(), '', 'Invalid backend ports must not fall back to Tauri assets');
+}
+context.window.__ea_port = 4280;
 context.window.__ea_capsule('risk_high', 'First', 'Impact');
 assert.ok([...timers.values()].some(timer => timer.delay === 18000));
 elements.notice.events.mouseenter();
@@ -76,7 +86,8 @@ console.log('PASS: capsule close, hover/timers, notification race and work-area 
 
 (async () => {
   let requests = 0, finishRequest;
-  context.fetch = () => {
+  context.fetch = (url) => {
+    assert.equal(url, 'http://127.0.0.1:4280/api/focus-ag', 'Review must reach the backend even from bundled Tauri pages');
     requests++;
     return new Promise(resolve => { finishRequest = resolve; });
   };

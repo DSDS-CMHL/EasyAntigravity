@@ -106,6 +106,19 @@
     let closeTimer = 0;
     let generation = 0;
 
+    function backendOrigin() {
+      const port = Number(window.__ea_port);
+      if (Number.isInteger(port) && port > 0 && port <= 65535) {
+        return 'http://127.0.0.1:' + port;
+      }
+      // Tauri's asset origin also uses HTTP on Windows, but serves no API.
+      if ((location.protocol === 'http:' || location.protocol === 'https:') &&
+          (location.hostname === '127.0.0.1' || location.hostname === 'localhost')) {
+        return location.origin;
+      }
+      return '';
+    }
+
     function hideWindow() {
       clearTimeout(hideTimer);
       hideTimer = 0;
@@ -125,8 +138,7 @@
         } catch (e) {}
         // External capsule pages may lack Tauri privileges; ask the local host instead.
         try {
-          const origin = location.protocol === 'http:' || location.protocol === 'https:'
-            ? location.origin : window.__ea_port ? 'http://127.0.0.1:' + window.__ea_port : '';
+          const origin = backendOrigin();
           if (origin) {
             await fetch(origin + '/api/capsule/hide', { method: 'POST', mode: 'no-cors', keepalive: true });
             return;
@@ -183,10 +195,7 @@
       // must be an explicit pointer action, never the user's unrelated typing.
       if (event.detail === 0) return;
       if (reviewPending) return;
-      const port = Number(window.__ea_port);
-      const origin = location.protocol === 'http:' || location.protocol === 'https:'
-        ? location.origin : Number.isInteger(port) && port > 0 && port <= 65535
-          ? 'http://127.0.0.1:' + port : '';
+      const origin = backendOrigin();
       if (!origin) return;
       reviewPending = true;
       reviewButton.disabled = true;
