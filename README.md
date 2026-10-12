@@ -26,7 +26,7 @@ EasyAG 是 **Antigravity 桌面端的增强启动器**：启动前准备连接�
 
 选择代理端口、汉化和启动模式，一键进入 AG。不需要在 EasyAG 里维护另一套聊天或任务列表。
 
-截图来自当前前端源码的隔离渲染，使用演示状态，不包含账号或工作区数据。下方指标图为真实组件在模拟宿主中的展示，不是 AG 实机截图。圆润盾牌与 `99+` 上限从 v3.2.4 起提供。
+上方启动器与下方胶囊图来自当前前端源码的隔离演示。上下文与风险统计部分使用用户提供的 AG 桌面端实机截图。圆润盾牌与 `99+` 上限从 v3.2.4 起提供。
 
 ## 一个启动器，两种用法
 
@@ -66,7 +66,13 @@ Pilot 把“开启命令自动执行、写入危险命令审批规则”变成�
 
 ## 有用的信息，留在 AG 输入区
 
-![圆环与风险盾牌组件演示](docs/images/inline-metrics-demo.png)
+### 风险统计 · AG 实机截图
+
+![AG 输入区的风险盾牌与分级统计](docs/images/risk-stats-live.png)
+
+### 上下文详情 · AG 实机截图
+
+![AG 输入区的上下文圆环与请求详情](docs/images/context-stats-live.png)
 
 不用打开启动器看一排仪表。两个小标识就够：
 
@@ -150,7 +156,9 @@ node scripts/capture-readme.cjs "<Chromium 可执行文件路径>"
 
 ## 致谢
 
-汉化词典主要来源：[nicktan @ linux.do](https://linux.do/t/topic/2896116)。部分桌面发现与组件布局适配参考了 [Antigrative Dashboard](https://github.com/YOU-SHOULD-KNOW-ME/antigrative-dashboard)，第三方声明见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+汉化词典主要来源：[nicktan @ linux.do](https://linux.do/t/topic/2896116)。
+
+上下文指标的接入与输入区展示思路借鉴了 [Antigrative Dashboard / AG Pulse](https://github.com/YOU-SHOULD-KNOW-ME/antigrative-dashboard)。其中进程／端口解析及输入区局部布局检测代码基于其 MIT 授权实现进行了改编，并非只有概念参考；EasyAG 未整体合并其安装器、SDK 或插件运行时。原作者版权、完整许可证与参考提交见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)，相关源码及分发包保留声明。
 
 账号相关社区资料：[社区文档](https://zcn91ppq6ur7.feishu.cn/wiki/L748wAHTriwwGVkc7TSc3TSennb)。友链：[linux.do](https://linux.do)。
 
