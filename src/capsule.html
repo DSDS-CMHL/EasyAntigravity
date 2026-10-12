@@ -93,7 +93,7 @@
     </div>
     <div class="footer">
       <span class="hint">EasyAG ARES · 悬停暂停</span>
-      <button class="review" type="button" id="reviewBtn">前往审查 ↵</button>
+      <button class="review" type="button" id="reviewBtn">前往审查</button>
     </div>
     <div class="timer"></div>
   </article>
@@ -169,29 +169,43 @@
     document.querySelector('.close').addEventListener('click', hideWindow);
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideWindow(); });
 
-    // 前往审查：唤起 Antigravity（多通道投递，避免 app:// 跨源被拦）
-    document.getElementById('reviewBtn').addEventListener('click', function () {
-      var urls = [];
+    // One user click, one request. The backend hides the capsule before native activation.
+    const reviewButton = document.getElementById('reviewBtn');
+    let reviewPending = false;
+    reviewButton.addEventListener('keydown', function (event) {
+      if (event.key === ' ' || event.key === 'Enter') {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
+    reviewButton.addEventListener('click', async function (event) {
+      // Keyboard/default and programmatic clicks carry detail=0. Reviewing
+      // must be an explicit pointer action, never the user's unrelated typing.
+      if (event.detail === 0) return;
+      if (reviewPending) return;
+      const port = Number(window.__ea_port);
+      const origin = location.protocol === 'http:' || location.protocol === 'https:'
+        ? location.origin : Number.isInteger(port) && port > 0 && port <= 65535
+          ? 'http://127.0.0.1:' + port : '';
+      if (!origin) return;
+      reviewPending = true;
+      reviewButton.disabled = true;
+      clearTimeout(hideTimer);
+      clearTimeout(closeTimer);
+      hideTimer = 0;
+      closeTimer = 0;
+      notice.classList.add('leaving');
       try {
-        if (location.protocol === 'http:' || location.protocol === 'https:') {
-          urls.push(location.origin + '/api/focus-ag');
-        }
-      } catch (e) {}
-      var port = window.__ea_port;
-      if (port && port !== '0') urls.push('http://127.0.0.1:' + port + '/api/focus-ag');
-      urls.push('http://127.0.0.1:19823/api/focus-ag');
-      urls.push('/api/focus-ag');
-
-      var sent = false;
-      urls.forEach(function (u) {
-        try {
-          if (navigator.sendBeacon && navigator.sendBeacon(u)) sent = true;
-        } catch (e) {}
-        try {
-          fetch(u, { method: 'POST', mode: 'no-cors', keepalive: true }).then(function () { sent = true; }).catch(function () {});
-        } catch (e) {}
-      });
-      setTimeout(function () { hideWindow(); }, 80);
+        const response = await fetch(origin + '/api/focus-ag', {
+          method: 'POST', mode: 'no-cors', keepalive: true
+        });
+        if (response.type !== 'opaque' && !response.ok) throw new Error('AG 窗口激活失败');
+      } catch (error) {
+        reviewButton.title = '未能唤起 AG，请手动切回审查';
+      } finally {
+        reviewPending = false;
+        reviewButton.disabled = false;
+      }
     });
 
     window.__ea_capsule = function (type, title, impact) {
@@ -208,7 +222,8 @@
       document.getElementById('level').textContent = labels[level];
       document.getElementById('title').textContent = title || (isReady ? '本轮任务已完成' : '命令需要人工确认');
       document.getElementById('impact').textContent = impact || (isReady ? 'Agent 已空闲，可以检查结果。' : '该命令可能改变当前环境，请确认作用范围。');
-      document.getElementById('reviewBtn').textContent = isReady ? '前往查看 ↵' : '前往审查 ↵';
+      document.getElementById('reviewBtn').textContent = isReady ? '前往查看' : '前往审查';
+      reviewButton.blur?.();
       var duration = isReady ? 8000 : level === 'high' ? 18000 : level === 'medium' ? 15000 : 12000;
       var timer = document.querySelector('.timer');
       timer.replaceWith(timer.cloneNode(true));

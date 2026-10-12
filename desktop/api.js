@@ -29,6 +29,7 @@ function serveFile(response, base, relative) {
 
 function createApi(app) {
   const streams = new Map();
+  let reviewFocus;
   const server = http.createServer(async (request, response) => {
     try {
       const host = request.headers.host || '';
@@ -109,10 +110,30 @@ function createApi(app) {
       if (method === 'POST' && route === '/api/hide') { app.host.hide(); return json(response, { ok: true }); }
       if (method === 'POST' && route === '/api/capsule/hide') { app.notifications.hide(); return json(response, { ok: true }); }
       if (method === 'POST' && route === '/api/focus-ag') {
-        await app.cdp.focus();
-        app.host.focus(app.session.child?.pid);
-        app.notifications.hide();
-        return json(response, { ok: true });
+        if (!reviewFocus) reviewFocus = (async () => {
+          app.notifications.hide();
+          // Native hide is delivered asynchronously over stdout. Let the
+          // capsule release foreground before activating AG, never synthesize input.
+          await new Promise(resolve => setTimeout(resolve, 180));
+          if (app.session.closed) return { ok: false, error: 'EasyAG 正在退出' };
+          let focused;
+          if (process.platform === 'win32' || process.platform === 'darwin') {
+            focused = await app.host.focus(app.session.child?.pid);
+          } else {
+            await app.cdp.focus();
+            focused = true;
+          }
+          app.events.log('SYSTEM', focused ? '胶囊已隐藏，已请求激活 AG 原生窗口'
+            : 'AG 窗口激活失败，请手动切回 AG 审查；未执行任何审批', focused ? 'tag-proxy' : 'tag-warn');
+          return focused ? { ok: true } : { ok: false, error: '无法激活 AG 窗口，请手动切回 AG' };
+        })();
+        const pending = reviewFocus;
+        try {
+          const result = await pending;
+          return json(response, result, result.ok ? 200 : 409);
+        } finally {
+          if (reviewFocus === pending) reviewFocus = null;
+        }
       }
       if (method === 'POST' && route === '/api/quit') {
         json(response, { ok: true });

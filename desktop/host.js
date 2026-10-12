@@ -26,13 +26,17 @@ function createHost({ native, testMode, events }) {
     },
     hideCapsule() { clearTimeout(timer); send({ cmd: 'hide_capsule' }); },
     focus(pid) {
-      if (testMode) return;
+      if (testMode) return Promise.resolve(true);
       if (process.platform === 'darwin') {
-        execFile('osascript', ['-e', 'tell application "Antigravity" to activate'], { timeout: 3000 }, () => {});
+        return new Promise(resolve => execFile('osascript', ['-e', 'tell application "Antigravity" to activate'],
+          { timeout: 3000 }, error => resolve(!error)));
       } else if (process.platform === 'win32') {
         const target = Number.isInteger(pid) && pid > 0 ? String(pid) : "'Antigravity'";
-        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$shell = New-Object -ComObject WScript.Shell; $shell.AppActivate(${target})`], { windowsHide: true, timeout: 3000 }, () => {});
+        return new Promise(resolve => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+          `$shell = New-Object -ComObject WScript.Shell; $shell.AppActivate(${target})`],
+          { windowsHide: true, timeout: 3000 }, (error, output) => resolve(!error && output.trim().toLowerCase() === 'true')));
       }
+      return Promise.resolve(false);
     },
     dispose() { clearTimeout(timer); }
   };

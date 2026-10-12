@@ -105,6 +105,9 @@ fn ensure_capsule(app: &tauri::AppHandle) {
         .resizable(false)
         .inner_size(400.0, 200.0)
         .focused(false)
+        // A notification is mouse-interactive but must never become the
+        // keyboard destination when it appears over another application.
+        .focusable(false)
         .visible(false)
         .build();
 }
@@ -138,7 +141,11 @@ fn show_capsule(app: &tauri::AppHandle, kind: &str, title: &str, detail: &str, s
         serde_json::to_string(solution).unwrap_or_default()
     );
     let _ = window.eval(&script);
-    let _ = window.show();
+    // focused(false) only covers creation, not subsequent show operations.
+    // Refuse to show if the non-focusable setting could not be applied.
+    if window.set_focusable(false).is_ok() {
+        let _ = window.show();
+    }
     let _ = window.set_always_on_top(true);
     // The backend owns a resettable failsafe timer. An older notification must
     // never hide a newer one through an independent native timer.

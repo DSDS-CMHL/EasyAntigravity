@@ -24,6 +24,10 @@ assert.match(rust, /work_area\(\)/, '定位必须使用显示器工作区，避�
 assert.match(rust, /get_webview_window\("main"\)/, '定位应优先跟随主窗口所在显示器');
 assert.match(rust, /solution: &str/, '风险建议必须传入胶囊');
 assert.match(rust, /capsule\.html/, '胶囊页可从本地服务加载以便热更新');
+assert.match(rust, /\.focusable\(false\)/, '胶囊创建时不得接收输入焦点');
+assert.match(rust, /set_focusable\(false\)/, '胶囊再次显示时也不得接收输入焦点');
+assert.doesNotMatch(html, /sendBeacon|urls\.forEach/, '前往审查不得并行重复发送唤起请求');
+assert.match(html, /event\.detail === 0/, '键盘产生的 click 不得触发审查');
 assert.match(resident, /RestartAutoHide/, '旧便携 Resident 胶囊也必须自动消失');
 assert.match(resident, /Screen\.FromHandle\(agHwnd\)/, 'Resident 胶囊应跟随 AG 所在显示器');
 assert.equal(config.app.withGlobalTauri, true);
@@ -69,3 +73,24 @@ const close = [...timers.values()].find(timer => timer.delay === 140).callback;
 close();
 assert.equal(hidden, 1, 'The close button must call the native hide API');
 console.log('PASS: capsule close, hover/timers, notification race and work-area positioning');
+
+(async () => {
+  let requests = 0, finishRequest;
+  context.fetch = () => {
+    requests++;
+    return new Promise(resolve => { finishRequest = resolve; });
+  };
+  const review = elements.reviewBtn.events;
+  let prevented = 0;
+  for (const key of [' ', 'Enter']) review.keydown({ key, preventDefault() { prevented++; }, stopPropagation() {} });
+  assert.equal(prevented, 2);
+  await review.click({ detail: 0 });
+  assert.equal(requests, 0, 'Keyboard/default activation cannot jump to AG');
+  const first = review.click({ detail: 1 });
+  await review.click({ detail: 1 });
+  assert.equal(requests, 1, 'Repeated clicks while pending send one request');
+  assert.equal(elements.reviewBtn.disabled, true);
+  finishRequest({ ok: true }); await first;
+  assert.equal(elements.reviewBtn.disabled, false);
+  console.log('PASS: capsule explicit pointer review, keyboard rejection and request deduplication');
+})().catch(error => { console.error(error); process.exitCode = 1; });
