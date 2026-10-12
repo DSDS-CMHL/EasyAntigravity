@@ -110,6 +110,47 @@ class PermissionAdapter {
     }
   }
 
+  // Replace only this session's overlay; never reset the original policy or
+  // claim pre-existing user rules as ours. A durable superset journal covers
+  // both sides of the write if the process dies midway through a reload.
+  refresh(lists) {
+    try {
+      if (!lists || ACTIONS.some(action => !Array.isArray(lists[action])
+        || lists[action].some(resource => typeof resource !== 'string'))) throw new Error('无效的权限规则列表');
+      const previous = this.journal();
+      if (!previous || path.resolve(previous.file) !== path.resolve(this.configFile)) throw new Error('当前没有可重载的 Pilot 权限会话');
+      const object = readJson(this.configFile);
+      if (!isObject(object?.userSettings)) throw new Error('userSettings 格式不正确');
+      const pending = JSON.parse(JSON.stringify(previous));
+      const grants = normalizePermissionGrants(object.userSettings, pending);
+      const next = JSON.parse(JSON.stringify(pending));
+      for (const action of ACTIONS) {
+        const owned = new Set(previous.injections.filter(item => item.file === this.configFile && item.list === action)
+          .flatMap(item => item.resources));
+        const wanted = new Set(lists[action]);
+        const retained = grants[action].filter(resource => !owned.has(resource) || wanted.has(resource));
+        const additions = [...wanted].filter(resource => !retained.includes(resource));
+        grants[action] = [...retained, ...additions];
+        pending.injections = pending.injections.filter(item => item.file !== this.configFile || item.list !== action);
+        next.injections = next.injections.filter(item => item.file !== this.configFile || item.list !== action);
+        pending.injections.push({ file: this.configFile, list: action, resources: [...new Set([...owned, ...additions])] });
+        next.injections.push({ file: this.configFile, list: action,
+          resources: [...new Set([...owned].filter(resource => wanted.has(resource)).concat(additions))] });
+      }
+      writeJson(this.journalFile, pending);
+      this.write(this.configFile, object);
+      if (JSON.stringify(readJson(this.configFile)) !== JSON.stringify(object)
+        || !verifyPermissionGrants(object.userSettings, lists)) throw new Error('重载权限规则写后校验失败');
+      writeJson(this.journalFile, next);
+      return { ok: true, count: ACTIONS.reduce((sum, action) => sum + new Set(lists[action]).size, 0),
+        nativeRulesWritten: true, runtimeVerified: false };
+    } catch (error) {
+      // Do not restore/disable Turbo on a reload failure. Keep the recovery
+      // journal so shutdown or the next startup can remove either overlay.
+      return { ok: false, error: error.message };
+    }
+  }
+
   restore() {
     try {
       const journal = this.journal();

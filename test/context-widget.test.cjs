@@ -130,13 +130,13 @@ const riskResult = (counts = { high: 2, medium: 4, low: 1 }, revision = 7, sessi
   highestLevel: counts.high ? 'high' : counts.medium ? 'medium' : counts.low ? 'low' : null
 });
 
-test('risk triangle expands exact severity counts, survives navigation and does not depend on context replies', () => {
+test('neutral risk shield expands exact severity counts, survives navigation and does not depend on context replies', () => {
   const f = fixture(); f.install(true, true);
   const request = f.sent.find(event => event.type === 'risk-stats');
   assert.ok(request);
   f.win.__easyagContext.receiveRisk(request.requestId, riskResult());
   assert.equal(f.shadow.getElementById('risk-value').textContent, '7');
-  assert.equal(f.shadow.getElementById('risk-trigger').dataset.tone, 'high');
+  assert.equal(f.shadow.getElementById('risk-trigger').dataset.tone, 'normal', 'Historical risk count stays neutral');
   assert.equal(f.shadow.getElementById('risk-high').textContent, '2');
   assert.equal(f.shadow.getElementById('risk-medium').textContent, '4');
   assert.equal(f.shadow.getElementById('risk-low').textContent, '1');

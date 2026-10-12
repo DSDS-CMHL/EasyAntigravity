@@ -100,7 +100,8 @@ function installContextWidget(win, doc, enabled, report, riskEnabled = false) {
     const total = riskData?.total;
     const count = Number.isSafeInteger(total) && total >= 0 ? total : null;
     shadow.getElementById('risk-value').textContent = count === null ? '—' : count > 999 ? compact(count) : String(count);
-    riskButton.dataset.tone = count ? riskData.highestLevel || 'low' : 'normal';
+    // This is a session counter, not an active warning; severity stays in the details.
+    riskButton.dataset.tone = 'normal';
     riskButton.title = count === null ? 'EasyAG 本次风险提醒 · 正在同步' : `EasyAG 本次风险提醒 ${count} 次 · 点击查看分级`;
     riskButton.setAttribute('aria-label', riskButton.title);
     for (const level of ['high', 'medium', 'low']) shadow.getElementById('risk-' + level).textContent = riskData ? String(riskData.counts[level]) : '—';
@@ -115,15 +116,15 @@ function installContextWidget(win, doc, enabled, report, riskEnabled = false) {
     shadow = node.attachShadow({ mode: 'open' });
     shadow.innerHTML = `<style>
       :host{font:11px system-ui,sans-serif;color:inherit}.strip{display:flex;align-items:center;gap:3px;min-width:0}button{font:inherit;color:inherit;cursor:pointer;border:0;border-radius:5px;background:transparent;padding:3px;white-space:nowrap}
-      .indicator{display:flex;align-items:center;justify-content:center;gap:3px;height:28px;box-sizing:border-box;min-width:28px;font-variant-numeric:tabular-nums}.indicator svg{width:24px;height:24px;flex:none}.ring-track{opacity:.17}.ring-fill{transform:rotate(-90deg);transform-origin:12px 12px}.ring-number{font:7px system-ui,sans-serif;fill:currentColor}.risk-value{font-size:11px;font-weight:600;padding-right:2px}.indicator[data-tone=normal]{color:inherit}.indicator[data-tone=low]{color:#6faec7}
-      #risk-trigger[data-tone=normal]{color:#969da7}
+      .indicator{display:flex;align-items:center;justify-content:center;gap:3px;height:28px;box-sizing:border-box;min-width:28px;font-variant-numeric:tabular-nums}.indicator svg{width:24px;height:24px;flex:none}.ring-track{opacity:.17}.ring-fill{transform:rotate(-90deg);transform-origin:12px 12px}.ring-number{font:700 7px system-ui,sans-serif;fill:currentColor}.risk-value{font-size:11px;font-weight:700;padding-right:2px}.indicator[data-tone=normal]{color:inherit}.indicator[data-tone=low]{color:#6faec7}
+      #risk-trigger{color:inherit}.risk-shield{opacity:.75}
       button:hover,button:focus-visible{background:color-mix(in srgb,currentColor 10%,transparent)}button:focus-visible{outline:1px solid currentColor}button[data-tone=medium]{color:#c69026}button[data-tone=high]{color:#e16e65}
       .card{box-sizing:border-box;position:fixed;inset:auto;margin:0;z-index:2147483000;max-height:calc(100vh - 16px);overflow:auto;padding:14px;border-radius:10px;border:1px solid var(--vscode-widget-border,#7776);background:var(--vscode-editorWidget-background,Canvas);color:var(--vscode-editor-foreground,CanvasText);box-shadow:0 8px 24px #0003;font:12px system-ui,sans-serif}
       [hidden]{display:none!important}.head{display:flex;justify-content:space-between;align-items:center}.head button{font-size:16px}dl{margin:10px 0}dl div{display:flex;gap:12px;justify-content:space-between;margin:8px 0}dt{opacity:.7}dd{margin:0;max-width:65%;text-align:right;overflow-wrap:anywhere}.note{font-size:11px;line-height:1.6;opacity:.7;margin:8px 0 0}
       .risk-high{color:#e16e65}.risk-medium{color:#c69026}.risk-low{color:#6faec7}
     </style><div id="strip" class="strip"><button id="trigger" class="indicator" type="button" aria-expanded="false" aria-controls="details" aria-label="上下文估算">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="ring-track" cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><circle id="context-fill" class="ring-fill" cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="62.832" stroke-dashoffset="62.832"/><text id="context-value" class="ring-number" x="12" y="12" text-anchor="middle" dominant-baseline="central">—</text></svg></button>
-    <button id="risk-trigger" class="indicator" type="button" aria-expanded="false" aria-controls="risk-details" aria-label="本次风险提醒"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3 22 21H2Z" stroke-linejoin="round"/><path d="M12 9v5" stroke-linecap="round"/><circle cx="12" cy="17.5" r=".8" fill="currentColor" stroke="none"/></svg><span id="risk-value" class="risk-value">—</span></button></div>
+    <button id="risk-trigger" class="indicator" type="button" aria-expanded="false" aria-controls="risk-details" aria-label="本次风险提醒"><svg class="risk-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.2 8-8 10-4.8-2-8-5-8-10V6Z" stroke-linejoin="round"/></svg><span id="risk-value" class="risk-value">—</span></button></div>
     <section id="details" class="card" role="region" aria-label="EasyAG 上下文详情" hidden><div class="head"><strong>上下文估算</strong><button id="close" type="button" aria-label="关闭详情">×</button></div>
     <dl><div><dt>占用 / 容量</dt><dd id="usage"></dd></div><div><dt>采样模型</dt><dd id="model"></dd></div><div><dt>最近有效请求速度</dt><dd id="speed"></dd></div><div><dt>该请求首 token 等待</dt><dd id="ttft"></dd></div></dl>
     <p class="note" id="speedNote"></p><p class="note" id="updated"></p><p class="note">占用可能在压缩后下降；百分比不代表模型能记住多少内容。</p></section>

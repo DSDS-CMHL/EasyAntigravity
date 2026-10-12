@@ -65,6 +65,32 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
         injectedCount: permissions.status().count, capabilities: desktop.capabilities
       };
     },
+    reloadRules() {
+      if (session.closed || ['preparing', 'launching'].includes(session.phase)) {
+        return { ok: false, error: '正在启动或退出，请稍后重载规则' };
+      }
+      const previous = Object.fromEntries(['bundled', 'document', 'active', 'patterns', 'knowledge', 'signatures']
+        .map(key => [key, rules[key]]));
+      try {
+        rules.reload();
+        const level = session.protectionLevel || settings.get().protectionLevel;
+        let result = { ok: true, nativeRulesWritten: false, runtimeVerified: false };
+        if (session.phase === 'running' && session.mode === 'pilot') {
+          result = permissions.refresh(rules.compile(undefined, level));
+          if (!result.ok) throw new Error(result.error);
+        }
+        const summary = rules.summary(level);
+        events.publish({ dangerRules: true, ...summary, injectedCount: permissions.status().count });
+        events.log('SECURITY', result.nativeRulesWritten
+          ? `规则已重载，${result.count} 条原生权限规则已写入；AG 即时生效仍需实机确认`
+          : '规则已重载；未修改 AG 权限，Pilot 下次启动时应用', 'tag-proxy');
+        return { ...result, active: summary.dangerRulesOn, total: summary.dangerRulesTotal };
+      } catch (error) {
+        Object.assign(rules, previous);
+        events.log('SECURITY', '规则重载失败: ' + error.message, 'tag-alert');
+        return { ok: false, error: error.message };
+      }
+    },
     async configure(input) {
       const previous = settings.get();
       assertLaunchSettingsMutable(input, previous, session.phase);

@@ -38,7 +38,8 @@ function fixture(original, { failOnce = false } = {}) {
     } });
   }
   return { create, read: () => readJson(configFile), write: object => writeJson(configFile, object),
-    journal: () => readJson(journalFile), hasJournal: () => documents.has(journalFile) };
+    journal: () => readJson(journalFile), hasJournal: () => documents.has(journalFile),
+    failNextWrite: () => { failOnce = true; } };
 }
 
 test('issue #7: empty, missing, partial and null grants apply and restore exactly', () => {
@@ -63,6 +64,55 @@ test('issue #7: empty, missing, partial and null grants apply and restore exactl
     assert.deepEqual(context.read(), original, 'Restore the original structure, not a preset');
     assert.equal(context.hasJournal(), false);
   }
+});
+
+test('reload replaces owned rules, preserves user additions and recovers the original policy after restart', () => {
+  const original = { userSettings: { autoExecutionPolicy: 'original', globalPermissionGrants: {
+    ask: ['command(user-rule)'] }, unrelated: true } };
+  const context = fixture(original), adapter = context.create();
+  assert.equal(adapter.apply(lists).ok, true);
+  const edited = context.read();
+  edited.userSettings.globalPermissionGrants.ask.push('command(user-added)');
+  edited.userSettings.autoExecutionPolicy = 'user-edited-policy';
+  context.write(edited);
+  const replacement = { allow: [], deny: ['command(new-deny)'], ask: ['command(user-rule)', 'command(reload-probe)'] };
+  assert.equal(adapter.refresh(replacement).ok, true);
+  assert.deepEqual(context.read().userSettings.globalPermissionGrants.ask,
+    ['command(user-rule)', 'command(user-added)', 'command(reload-probe)']);
+  assert.equal(context.read().userSettings.autoExecutionPolicy, 'user-edited-policy');
+  assert.equal(adapter.status().count, 2);
+  assert.equal(context.create().restore().ok, true);
+  assert.deepEqual(context.read(), { userSettings: { ...original.userSettings,
+    autoExecutionPolicy: 'user-edited-policy', globalPermissionGrants: { ask: ['command(user-rule)', 'command(user-added)'] } } });
+});
+
+test('reload supports zero enabled rules without losing the original recovery journal', () => {
+  const original = { userSettings: { autoExecutionPolicy: 'original', globalPermissionGrants: {} } };
+  const context = fixture(original), adapter = context.create();
+  assert.equal(adapter.apply(lists).ok, true);
+  assert.equal(adapter.refresh({ allow: [], deny: [], ask: [] }).ok, true);
+  assert.equal(adapter.status().count, 0);
+  assert.equal(adapter.restore().ok, true);
+  assert.deepEqual(context.read(), original);
+});
+
+test('failed reload keeps a durable recovery journal covering old and new overlays', () => {
+  const original = { userSettings: { autoExecutionPolicy: 'original', globalPermissionGrants: {} } };
+  const context = fixture(original), adapter = context.create();
+  assert.equal(adapter.apply(lists).ok, true);
+  context.failNextWrite();
+  assert.equal(adapter.refresh({ allow: [], deny: [], ask: ['command(new-rule)'] }).ok, false);
+  assert.equal(context.hasJournal(), true);
+  assert.equal(context.read().userSettings.autoExecutionPolicy, 'CASCADE_COMMANDS_AUTO_EXECUTION_EAGER');
+  assert.equal(context.create().restore().ok, true);
+  assert.deepEqual(context.read(), original);
+});
+
+test('reload without an active journal cannot mutate user permissions', () => {
+  const original = { userSettings: { globalPermissionGrants: {} } };
+  const context = fixture(original);
+  assert.equal(context.create().refresh(lists).ok, false);
+  assert.deepEqual(context.read(), original);
 });
 
 test('all three actions preserve existing resources and unrelated settings', () => {

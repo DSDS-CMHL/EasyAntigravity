@@ -85,10 +85,8 @@ function createApi(app) {
         return json(response, result, result.ok ? 200 : 409);
       }
       if (method === 'POST' && route === '/api/danger-rules/reload') {
-        app.rules.reload();
-        const summary = app.rules.summary(app.session.protectionLevel || app.settings.get().protectionLevel);
-        app.events.publish({ dangerRules: true, ...summary });
-        return json(response, { ok: true, active: summary.dangerRulesOn, total: summary.dangerRulesTotal });
+        const result = app.reloadRules();
+        return json(response, result, result.ok ? 200 : 409);
       }
       if (method === 'POST' && route === '/api/danger-rules/open') {
         app.host.open(app.rules.file, { text: true });

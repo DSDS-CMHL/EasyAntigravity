@@ -168,7 +168,9 @@ const actions = {
   async 'reload-rules'() {
     const result = await api.reloadRules();
     renderStatus({ dangerRulesOn: result.active, dangerRulesTotal: result.total });
-    appendLog('SECURITY', '规则已重载，下次启动时应用', 'tag-proxy');
+    appendLog('SECURITY', result.nativeRulesWritten
+      ? '规则已重载并写入 AG 权限；即时生效请用无害命令确认'
+      : '规则已重载，Pilot 下次启动时应用', 'tag-proxy');
   },
   async restore() {
     const result = await api.restore();

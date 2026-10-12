@@ -1,6 +1,6 @@
 {
   "name": "easyantigravity",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "Antigravity desktop launcher: process proxy, reversible localization and native permission rules",
   "main": "server.js",
   "bin": "server.js",
