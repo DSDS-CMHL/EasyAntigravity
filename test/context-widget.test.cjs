@@ -159,8 +159,9 @@ test('shield number shrinks by digits and latest risk changes without a timed ro
   const cases = [
     { counts: { high: 1, medium: 0, low: 0 }, level: 'high', text: '1', size: '11px' },
     { counts: { high: 1, medium: 12, low: 0 }, level: 'medium', text: '12', size: '9px' },
-    { counts: { high: 1, medium: 12, low: 123 }, level: 'low', text: '123', size: '7px' },
-    { counts: { high: 1, medium: 12, low: 1234 }, level: 'low', text: '999+', size: '6px' }
+    { counts: { high: 1, medium: 99, low: 0 }, level: 'medium', text: '99', size: '9px' },
+    { counts: { high: 1, medium: 99, low: 100 }, level: 'low', text: '99+', size: '7px' },
+    { counts: { high: 1, medium: 99, low: 1234 }, level: 'low', text: '99+', size: '7px' }
   ];
   for (const [index, example] of cases.entries()) {
     if (index) { f.win.location.pathname = '/c/' + (index % 2 ? nextId : id); f.tick(); }
@@ -170,7 +171,7 @@ test('shield number shrinks by digits and latest risk changes without a timed ro
     assert.equal(f.shadow.getElementById('risk-trigger').dataset.tone, example.level);
   }
   assert.equal(f.shadow.getElementById('risk-low').textContent, '1234', 'Details preserve the exact count');
-  assert.equal(f.shadow.getElementById('risk-total').textContent, '1247');
+  assert.equal(f.shadow.getElementById('risk-total').textContent, '1334');
   const value = f.shadow.getElementById('risk-value').textContent;
   f.tick(); assert.equal(f.shadow.getElementById('risk-value').textContent, value, 'No rotation without a new result');
   f.win.__easyagContext.dispose();

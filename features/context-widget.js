@@ -100,9 +100,9 @@ function installContextWidget(win, doc, enabled, report, riskEnabled = false) {
     const level = riskData?.latestLevel;
     const count = riskData ? level ? riskData.counts[level] : 0 : null;
     const value = shadow.getElementById('risk-value');
-    const label = count === null ? '—' : count > 999 ? '999+' : String(count);
+    const label = count === null ? '—' : count > 99 ? '99+' : String(count);
     value.textContent = label;
-    value.style.fontSize = (label.length >= 4 ? 6 : label.length === 3 ? 7 : label.length === 2 ? 9 : 11) + 'px';
+    value.style.fontSize = (label.length === 3 ? 7 : label.length === 2 ? 9 : 11) + 'px';
     // Latest observed risk, never the historical maximum or a timed rotation.
     riskButton.dataset.tone = level || 'normal';
     const levelLabel = { high: '高风险', medium: '中风险', low: '低风险' }[level];
@@ -132,7 +132,7 @@ function installContextWidget(win, doc, enabled, report, riskEnabled = false) {
       #risk-details{padding:12px}#risk-details dl{margin:8px 0}#risk-details dl div{margin:6px 0}#risk-details dd{font-weight:700;font-variant-numeric:tabular-nums}#risk-note{white-space:pre-line}
     </style><div id="strip" class="strip"><button id="trigger" class="indicator" type="button" aria-expanded="false" aria-controls="details" aria-label="上下文估算">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="ring-track" cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><circle id="context-fill" class="ring-fill" cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="62.832" stroke-dashoffset="62.832"/><text id="context-value" class="ring-number" x="12" y="12" text-anchor="middle" dominant-baseline="central">—</text></svg></button>
-    <button id="risk-trigger" class="indicator" type="button" aria-expanded="false" aria-controls="risk-details" aria-label="本次风险提醒"><svg class="risk-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M12 2 22 6v5c0 5-4 8-10 11C6 19 2 16 2 11V6Z" stroke-linejoin="round"/><text id="risk-value" class="risk-value" x="12" y="11" text-anchor="middle" dominant-baseline="central">—</text></svg></button></div>
+    <button id="risk-trigger" class="indicator" type="button" aria-expanded="false" aria-controls="risk-details" aria-label="本次风险提醒"><svg class="risk-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 2.8c2.8 1.7 5.4 2.5 8 3.1v5.3c0 4.5-2.7 7.5-8 10-5.3-2.5-8-5.5-8-10V5.9c2.6-.6 5.2-1.4 8-3.1Z" stroke-linejoin="round" stroke-linecap="round"/><text id="risk-value" class="risk-value" x="12" y="11" text-anchor="middle" dominant-baseline="central">—</text></svg></button></div>
     <section id="details" class="card" role="region" aria-label="EasyAG 上下文详情" hidden><div class="head"><strong>上下文估算</strong><button id="close" type="button" aria-label="关闭详情">×</button></div>
     <dl><div><dt>占用 / 容量</dt><dd id="usage"></dd></div><div><dt>采样模型</dt><dd id="model"></dd></div><div><dt>最近有效请求速度</dt><dd id="speed"></dd></div><div><dt>该请求首 token 等待</dt><dd id="ttft"></dd></div></dl>
     <p class="note" id="speedNote"></p><p class="note" id="updated"></p><p class="note">占用可能在压缩后下降；百分比不代表模型能记住多少内容。</p></section>
