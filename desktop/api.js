@@ -1,6 +1,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const { compilePilotPermissions } = require('../features/pilot-permissions');
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webp': 'image/webp', '.jpg': 'image/jpeg' };
 function json(response, value, status = 200) {
@@ -100,7 +101,7 @@ function createApi(app) {
         const data = await readBody(request);
         if (data.scope && data.scope !== 'global') throw new Error('当前仅支持桌面端全局权限规则');
         app.rules.reload();
-        const result = app.permissions.apply(app.rules.compile(data.list, app.settings.get().protectionLevel));
+        const result = app.permissions.apply(compilePilotPermissions(app.rules, app.settings.get().protectionLevel, data.list));
         return json(response, result, result.ok ? 200 : 400);
       }
       if (method === 'POST' && route === '/api/danger-rules/cleanup') {

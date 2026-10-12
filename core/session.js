@@ -1,5 +1,6 @@
 const { spawn } = require('node:child_process');
 const { buildProxyLaunch } = require('../features/proxy');
+const { compilePilotPermissions } = require('../features/pilot-permissions');
 const { LABELS, validateProtectionLevel } = require('../features/protection');
 
 class Session {
@@ -42,7 +43,7 @@ class Session {
       if (this.mode === 'pilot') {
         this.protectionLevel = validateProtectionLevel(settings.protectionLevel || 'standard');
         this.rules.reload();
-        pilot = this.permissions.apply(this.rules.compile(undefined, this.protectionLevel));
+        pilot = this.permissions.apply(compilePilotPermissions(this.rules, this.protectionLevel));
         if (!pilot.ok) throw new Error('增强配置失败: ' + pilot.error);
         this.events.log('SECURITY', `启动前校验通过：${LABELS[this.protectionLevel]}防护 + 自动审批 + ${pilot.count} 条原生权限规则`, 'tag-proxy');
       }

@@ -11,6 +11,22 @@ const { readJson, writeJson } = require('../core/storage');
 const { normalizeSettings } = require('../core/settings');
 const { removeLegacyHooks } = require('../adapters/desktop/legacy-hooks');
 const { RiskAdvisor } = require('../features/risk-advisor');
+const { compilePilotPermissions } = require('../features/pilot-permissions');
+
+test('Pilot allows URL reads in all levels without mutating command rules or granting browser actuation', () => {
+  const commandLists = { allow: [], deny: ['command(deny)'], ask: ['command(ask)'] };
+  for (const level of ['strict', 'standard', 'relaxed']) {
+    const rules = { compile(action, receivedLevel) { assert.equal(receivedLevel, level); return commandLists; } };
+    const compiled = compilePilotPermissions(rules, level);
+    assert.deepEqual(compiled.allow, ['read_url(*)']);
+    assert.deepEqual(compiled.ask, commandLists.ask);
+    assert.deepEqual(compiled.deny, commandLists.deny);
+    assert.equal(compiled.allow.some(rule => rule.startsWith('execute_url(')), false);
+    assert.deepEqual(commandLists.allow, []);
+  }
+  const compiled = compilePilotPermissions({ compile: () => ({ ...commandLists, allow: ['read_url(*)'] }) });
+  assert.deepEqual(compiled.allow, ['read_url(*)']);
+});
 
 function fixture(t, config = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'easyag-core-'));

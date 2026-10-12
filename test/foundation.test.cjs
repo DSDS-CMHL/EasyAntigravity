@@ -114,7 +114,8 @@ async function start() {
     assert.equal(applied.userSettings.fileAccessPolicy, app.initialConfig.userSettings.fileAccessPolicy);
     assert.equal(applied.userSettings.nonWorkspaceFileAccessPolicy, app.initialConfig.userSettings.nonWorkspaceFileAccessPolicy);
     assert.equal(applied.userSettings.sandboxMode, undefined);
-    assert.equal(applied.userSettings.globalPermissionGrants.ask.length, syncBody.count);
+    assert.equal(applied.userSettings.globalPermissionGrants.ask.length + applied.userSettings.globalPermissionGrants.allow.length, syncBody.count);
+    assert.deepEqual(applied.userSettings.globalPermissionGrants.allow, ['read_url(*)']);
     const owned = await (await fetch(app.url + '/api/injected')).json();
     assert.equal(owned.count, syncBody.count - 1,
       '只应登记 EasyAG 实际新增的规则，不得认领用户已有规则');

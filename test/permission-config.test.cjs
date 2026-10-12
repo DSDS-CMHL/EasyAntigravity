@@ -115,6 +115,21 @@ test('reload without an active journal cannot mutate user permissions', () => {
   assert.deepEqual(context.read(), original);
 });
 
+test('Pilot URL default restores only its own grant and preserves preexisting URL exceptions', () => {
+  for (const alreadyAllowed of [false, true]) {
+    const original = { userSettings: { autoExecutionPolicy: 'original', globalPermissionGrants: {
+      allow: alreadyAllowed ? ['read_url(*)'] : [], ask: ['read_url(example.com)'], deny: ['read_url(example.org)'] } } };
+    const context = fixture(original), adapter = context.create();
+    const pilot = { allow: ['read_url(*)'], deny: [], ask: ['command(probe)'] };
+    assert.equal(adapter.apply(pilot).ok, true);
+    assert.equal(adapter.refresh(pilot).ok, true);
+    const ownsUrl = context.journal().injections.some(item => item.list === 'allow' && item.resources.includes('read_url(*)'));
+    assert.equal(ownsUrl, !alreadyAllowed);
+    assert.equal(adapter.restore().ok, true);
+    assert.deepEqual(context.read(), original);
+  }
+});
+
 test('all three actions preserve existing resources and unrelated settings', () => {
   const original = { userSettings: { globalPermissionGrants: {
     allow: ['command(user-allow)'], deny: ['command(user-deny)'], ask: ['command(regex:danger)'], custom: true

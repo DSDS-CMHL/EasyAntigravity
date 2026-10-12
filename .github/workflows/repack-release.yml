@@ -1,0 +1,103 @@
+name: Repack existing release (no compilation)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Successful v3.2.4 native build run
+        required: true
+        default: '38231379632'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  repack:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            name: windows-x64
+            artifact: EasyAntigravity-3.2.4-windows-x64
+          - runner: macos-14
+            name: macos-arm64
+            artifact: EasyAntigravity-3.2.4-macos-arm64-beta
+          - runner: macos-15-intel
+            name: macos-x64
+            artifact: EasyAntigravity-3.2.4-macos-x64-beta
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check source regressions (no native build)
+        run: |
+          npm ci
+          npm run check
+          npm test
+      - name: Download existing native package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: original
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run }}
+      - name: Patch and package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'EasyAntigravity-3.2.4-windows-x64'
+          New-Item -ItemType Directory -Path "package/$name" -Force | Out-Null
+          Copy-Item -Path 'original/*' -Destination "package/$name" -Recurse
+          $exeBefore = (Get-FileHash -LiteralPath "package/$name/EasyAntigravity.exe").Hash
+          $nodeBefore = (Get-FileHash -LiteralPath "package/$name/easyag-node.exe").Hash
+          node scripts/repack-backend.cjs "package/$name/backend"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:EASYAG_TEST_NODE = (Resolve-Path "package/$name/easyag-node.exe").Path
+          $env:EASYAG_TEST_SERVER = (Resolve-Path "package/$name/backend/server.js").Path
+          node test/tauri-lifecycle.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-FileHash -LiteralPath "package/$name/EasyAntigravity.exe").Hash -ne $exeBefore) { throw 'Native EXE changed' }
+          if ((Get-FileHash -LiteralPath "package/$name/easyag-node.exe").Hash -ne $nodeBefore) { throw 'Node runtime changed' }
+          New-Item -ItemType Directory -Path outgoing -Force | Out-Null
+          Compress-Archive -LiteralPath "package/$name" -DestinationPath "outgoing/$name.zip"
+          Expand-Archive -LiteralPath "outgoing/$name.zip" -DestinationPath verified
+          if (!(Test-Path -LiteralPath "verified/$name/backend/features/pilot-permissions.js")) { throw 'Missing URL overlay' }
+          (Get-FileHash -LiteralPath "outgoing/$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Set-Content -LiteralPath "outgoing/$name.sha256" -Encoding utf8
+      - name: Patch, re-sign and package macOS (no compilation)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          original_zip="original/EasyAntigravity-3.2.4-${{ matrix.name }}-beta.zip"
+          unzip -t "$original_zip"
+          mkdir -p package outgoing
+          ditto -x -k "$original_zip" package
+          app="package/EasyAntigravity.app"
+          node scripts/repack-backend.cjs "$app/Contents/Resources/backend"
+          codesign --force --options runtime --deep --sign - --entitlements src-tauri/Entitlements.plist "$app"
+          codesign --verify --deep --strict "$app"
+          "$app/Contents/MacOS/easyag-node" -e "console.log('Packaged V8 runtime OK:', process.versions.v8)"
+          export EASYAG_TEST_NODE="$PWD/$app/Contents/MacOS/easyag-node"
+          export EASYAG_TEST_SERVER="$PWD/$app/Contents/Resources/backend/server.js"
+          node test/tauri-lifecycle.test.cjs
+          name="EasyAntigravity-3.2.4-${{ matrix.name }}-beta.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "outgoing/$name"
+          unzip -t "outgoing/$name"
+          mkdir verified
+          ditto -x -k "outgoing/$name" verified
+          codesign --verify --deep --strict verified/EasyAntigravity.app
+          test -x verified/EasyAntigravity.app/Contents/MacOS/EasyAntigravity
+          test -f verified/EasyAntigravity.app/Contents/Resources/backend/features/pilot-permissions.js
+          cd outgoing
+          shasum -a 256 "$name" > "$name.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repacked-3.2.4-${{ matrix.name }}
+          path: outgoing/*
+          if-no-files-found: error

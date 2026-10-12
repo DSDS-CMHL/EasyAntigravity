@@ -16,6 +16,7 @@ const { removeLegacyHooks } = require('../adapters/desktop/legacy-hooks');
 const { createHost } = require('./host');
 const { createApi } = require('./api');
 const { LABELS } = require('../features/protection');
+const { compilePilotPermissions } = require('../features/pilot-permissions');
 const { LanguageService } = require('../adapters/desktop/language-service');
 const { ContextMonitor } = require('../features/context-monitor');
 
@@ -76,7 +77,7 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
         const level = session.protectionLevel || settings.get().protectionLevel;
         let result = { ok: true, nativeRulesWritten: false, runtimeVerified: false };
         if (session.phase === 'running' && session.mode === 'pilot') {
-          result = permissions.refresh(rules.compile(undefined, level));
+          result = permissions.refresh(compilePilotPermissions(rules, level));
           if (!result.ok) throw new Error(result.error);
         }
         const summary = rules.summary(level);
