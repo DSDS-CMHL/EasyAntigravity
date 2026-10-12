@@ -162,11 +162,15 @@ test('ARES exposes deduplicated session counts from actual observations, without
   advisor.observe('safe', { invocationId: 'four' });
   assert.deepEqual(advisor.snapshot().counts, { high: 1, medium: 1, low: 1 });
   assert.equal(advisor.snapshot().total, 3); assert.equal(advisor.snapshot().highestLevel, 'high');
+  assert.equal(advisor.snapshot().latestLevel, 'low', 'Safe commands do not replace the latest risk');
+  advisor.observe('high', { invocationId: 'one' });
+  assert.equal(advisor.snapshot().latestLevel, 'low', 'A repeated old invocation does not replace the latest risk');
   assert.equal(published.at(-1).riskSummary.total, 3);
   const snapshot = advisor.snapshot(); snapshot.counts.high = 100;
   assert.equal(advisor.snapshot().counts.high, 1, 'Snapshot is not mutable internal state');
   enabled = false; advisor.observe('high', { invocationId: 'five' }); assert.equal(advisor.hits, 3);
   enabled = true; advisor.reset(); assert.equal(advisor.snapshot().session, 2); assert.equal(advisor.hits, 0);
+  assert.equal(advisor.snapshot().latestLevel, null);
   advisor.observe('high', { invocationId: 'one' }); assert.equal(advisor.hits, 1, 'A new session has its own deduplication scope');
 });
 

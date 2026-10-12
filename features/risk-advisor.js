@@ -63,19 +63,22 @@ class RiskAdvisor {
     this.recent = new Map();
     this.hits = 0;
     this.counts = { high: 0, medium: 0, low: 0 };
+    this.latestLevel = null;
     this.session = 0;
     this.revision = 0;
   }
 
   snapshot() {
     return { enabled: this.enabled(), session: this.session, revision: this.revision, total: this.hits,
-      counts: { ...this.counts }, highestLevel: this.counts.high ? 'high' : this.counts.medium ? 'medium' : this.counts.low ? 'low' : null };
+      counts: { ...this.counts }, latestLevel: this.latestLevel,
+      highestLevel: this.counts.high ? 'high' : this.counts.medium ? 'medium' : this.counts.low ? 'low' : null };
   }
 
   reset() {
     this.recent.clear();
     this.hits = 0;
     this.counts = { high: 0, medium: 0, low: 0 };
+    this.latestLevel = null;
     this.session++;
     this.revision++;
     this.events.publish({ counters: true, riskHits: 0, riskSummary: this.snapshot(), blockCount: 0 });
@@ -94,7 +97,8 @@ class RiskAdvisor {
     const risk = this.rules.assess(command);
     if (!risk) return;
     this.hits++;
-    this.counts[['high', 'medium', 'low'].includes(risk.level) ? risk.level : 'low']++;
+    this.latestLevel = ['high', 'medium', 'low'].includes(risk.level) ? risk.level : 'low';
+    this.counts[this.latestLevel]++;
     this.revision++;
     const cls = risk.level === 'high' ? 'tag-alert' : risk.level === 'medium' ? 'tag-warn' : 'tag-i18n';
     this.events.log('RISK', `[${risk.levelLabel}] ${command.slice(0, 180)}`, cls);

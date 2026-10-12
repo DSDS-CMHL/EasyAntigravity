@@ -24,7 +24,7 @@ async function main() {
   </style></head><body><div id="composer"><div contenteditable="true" role="textbox">Synthetic host; no real conversation.</div>
   <div id="actions"><button data-testid="model-selector-trigger">Model selection</button><button id="send">Send</button></div></div>
   <script>window.calls=[];window.sample=(event)=>({conversationId:event.conversationId,state:'live',sampledAt:Date.now(),context:{usedTokens:110000,maxTokens:256000,usedFraction:110000/256000,model:'Synthetic model'},speed:{tokensPerSecond:52,ttftSeconds:0.7,basis:'response'}});
-  window.riskSample={enabled:true,session:1,revision:7,total:7,counts:{high:2,medium:4,low:1},highestLevel:'high'};
+  window.riskSample={enabled:true,session:1,revision:7,total:7,counts:{high:2,medium:4,low:1},highestLevel:'high',latestLevel:'medium'};
   (${installContextWidget.toString()})(window,document,true,event=>{calls.push(event);queueMicrotask(()=>{if(event.type==='risk-stats')window.__easyagContext?.receiveRisk(event.requestId,riskSample);else window.__easyagContext?.receive(event.requestId,sample(event));});},true);</script></body></html>`;
   const server = http.createServer((_, response) => { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end(html); });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -54,7 +54,7 @@ async function main() {
     }
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('context-value').textContent"), '43');
     assert.doesNotMatch(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('strip').textContent"), /上下文|风险/);
-    assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('risk-value').textContent"), '7');
+    assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('risk-value').textContent"), '4');
     const layout = await evaluate("(()=>{const n=document.getElementById('easyag-context-monitor');n.style.display='flex';const b=n.shadowRoot.getElementById('trigger');return {hidden:n.hidden,node:n.getBoundingClientRect().toJSON(),button:b.getBoundingClientRect().toJSON(),scroll:b.scrollWidth,controls:[...document.querySelectorAll('#actions button')].map(c=>({rect:c.getBoundingClientRect().toJSON(),scroll:c.scrollWidth,width:c.clientWidth}))};})()");
     assert.equal(layout.hidden, false, JSON.stringify(layout));
     const nativeHit = "(()=>{const b=document.getElementById('send'),r=b.getBoundingClientRect();return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)===b;})()";
@@ -87,14 +87,14 @@ async function main() {
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').hidden"), false);
     await evaluate(`history.pushState({},'', '/c/${otherId}')`); await sleep(1200);
     assert.equal(await evaluate('calls.at(-1).conversationId'), otherId);
-    assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('risk-value').textContent"), '7', 'Conversation switch retains session total');
+    assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('risk-value').textContent"), '4', 'Conversation switch retains latest-level session count');
     await evaluate(`(${installContextWidget.toString()})(window,document,false,event=>{if(event.type==='risk-stats')queueMicrotask(()=>window.__easyagContext?.receiveRisk(event.requestId,riskSample));},true)`);
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('trigger').hidden"), true);
-    assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('risk-value').textContent"), '7', 'Risk entry is independent of context toggle');
+    assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('risk-value').textContent"), '4', 'Risk entry is independent of context toggle');
     await evaluate('window.__easyagContext.dispose()');
     assert.equal(await evaluate("Boolean(document.getElementById('easyag-context-monitor'))"), false);
     assert.equal(await evaluate(nativeHit), true);
-    console.log('PASS: graphical context ring and risk triangle/counts, real Chromium popovers, close/reopen, Escape/outside click, narrow recovery, native hit targets, navigation and cleanup');
+    console.log('PASS: graphical context ring and latest-risk shield/counts, real Chromium popovers, close/reopen, Escape/outside click, narrow recovery, native hit targets, navigation and cleanup');
   } finally {
     if (socket) { try { await socket.command('Browser.close'); } catch { /* Browser may already be closed. */ } socket.close(); }
     if (browser.exitCode === null) browser.kill();

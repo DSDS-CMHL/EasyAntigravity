@@ -42,4 +42,12 @@
 
 ## 测试清理
 
+### GUI 入口类型对照
+
+2026-10-12，网络规则 GUI 输入纯域名 `example.net`，保存为 `read_url(example.net)`；终端命令 Allow GUI 输入 `read_url(example.org)`，保存为 `command(read_url(example.org))`。用户用 read_url_content 读取两者，反馈前者自动放行、后者 Ask；随后只读配置确认两个完整资源。因此终端命令入口与网络规则入口不等价，command 包装的文本不授予网页读取权限。该样例没有验证 execute_url 的 GUI 写入或实际操作行为。
+
+用户最初在网络规则输入完整 `read_url(example.net)` 时保存为嵌套的 `read_url(read_url(example.net))`，后经用户修正为纯域名；嵌套形式不作为有效测试样例。
+
+本轮正常退出后，两条用户新增 Allow 均被保留，尚未清理。详见 [规则重载与恢复验收](规则重载与恢复验收.md)。
+
 2026-10-12，U6 验收后撤回本轮新增的 Allow `read_url(*)`、Ask `read_url(example.com)`、Deny `read_url(example.org)` 和 Deny `read_url(example.com)`。保留用户原有 `read_url(github.com)` 和全部命令权限、其他配置；备份保留供核查。未构建、推送或运行自动化测试。
