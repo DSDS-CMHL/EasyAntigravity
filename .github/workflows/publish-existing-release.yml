@@ -1,0 +1,69 @@
+name: Publish verified existing packages (no build)
+
+on:
+  workflow_dispatch:
+    inputs:
+      repack_run:
+        description: Successful repack workflow run
+        required: true
+        default: '38253249164'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify the repack completed successfully
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPACK_RUN: ${{ inputs.repack_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$REPACK_RUN" =~ ^[0-9]+$ ]]
+          conclusion=$(gh run view "$REPACK_RUN" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)
+          test "$conclusion" = success
+          name=$(gh run view "$REPACK_RUN" --repo "$GITHUB_REPOSITORY" --json workflowName --jq .workflowName)
+          test "$name" = 'Repack existing release (no compilation)'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: repacked-3.2.4-*
+          path: assets
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.repack_run }}
+      - name: Verify all asset SHA256 digests
+        run: |
+          node - <<'NODE'
+          const fs=require('fs'),crypto=require('crypto');
+          const names=['EasyAntigravity-3.2.4-windows-x64.zip','EasyAntigravity-3.2.4-macos-arm64-beta.zip','EasyAntigravity-3.2.4-macos-x64-beta.zip'];
+          for(const name of names){
+            const digest=crypto.createHash('sha256').update(fs.readFileSync('assets/'+name)).digest('hex');
+            const checksum=name.includes('windows')?name.replace(/\.zip$/,'.sha256'):name+'.sha256';
+            const expected=fs.readFileSync('assets/'+checksum,'utf8').replace(/^\uFEFF/,'').trim().split(/\s+/)[0].toLowerCase();
+            if(digest!==expected)throw new Error('Checksum mismatch: '+name);
+            console.log(digest+'  '+name);
+          }
+          NODE
+      - name: Publish v3.2.4 without compiling anything
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPACK_RUN: ${{ inputs.repack_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v3.2.4 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release already exists; refuse to replace its assets automatically.'
+            exit 1
+          fi
+          source_sha=$(gh run view "$REPACK_RUN" --repo "$GITHUB_REPOSITORY" --json headSha --jq .headSha)
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          gh release create v3.2.4 assets/*.zip assets/*.sha256 --repo "$GITHUB_REPOSITORY" --target "$source_sha" --title 'EasyAG v3.2.4' --notes-file docs/RELEASE-v3.2.4.md --latest
