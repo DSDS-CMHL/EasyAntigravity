@@ -104,8 +104,8 @@ class CdpConnection {
 }
 
 class CdpHub {
-  constructor({ port = 9333, profile, source, onRisk = () => {}, onStatus = () => {}, onMetrics, onRiskStats, onStop = () => {}, discover }) {
-    Object.assign(this, { port, profile, source, onRisk, onStatus, onMetrics, onRiskStats, onStop });
+  constructor({ port = 9333, profile, source, onStatus = () => {}, onMetrics, onStop = () => {}, discover }) {
+    Object.assign(this, { port, profile, source, onStatus, onMetrics, onStop });
     this.binding = '__easyagReport_' + randomUUID().replaceAll('-', '');
     this.discover = discover || (() => this.findTargets());
     this.sessions = new Map();
@@ -144,25 +144,18 @@ class CdpHub {
       && connection.contexts.has(params.executionContextId) && this.running && params.payload?.length < 20000) {
       try {
         const event = JSON.parse(params.payload);
-        if (event.type === 'risk-command' && typeof event.command === 'string' && event.command.length <= 16000) {
-          const invocationId = typeof event.invocationId === 'string' && event.invocationId.length <= 17000
-            ? event.invocationId : undefined;
-          this.onRisk(event.command, { invocationId });
-        } else if (((event.type === 'context-metrics' && this.onMetrics) || (event.type === 'risk-stats' && this.onRiskStats)) && GUID.test(event.conversationId)
+        if (event.type === 'context-metrics' && this.onMetrics && GUID.test(event.conversationId)
           && typeof event.requestId === 'string' && /^\d{1,10}$/.test(event.requestId)) {
           void this.metrics(connection, params.executionContextId, event);
         }
-      } catch { /* The bridge accepts only bounded command observations. */ }
+      } catch { /* The bridge accepts only bounded metric requests. */ }
     }
   }
 
   async metrics(connection, contextId, event) {
-    const riskOnly = event.type === 'risk-stats';
-    const busyKey = riskOnly ? 'riskStatsBusy' : 'metricsBusy';
-    const timeKey = riskOnly ? 'riskStatsAt' : 'metricsAt';
-    if (connection[busyKey] || Date.now() - (connection[timeKey] || 0) < (riskOnly ? 500 : 1200)) return;
-    connection[busyKey] = true;
-    connection[timeKey] = Date.now();
+    if (connection.metricsBusy || Date.now() - (connection.metricsAt || 0) < 1200) return;
+    connection.metricsBusy = true;
+    connection.metricsAt = Date.now();
     const generation = connection.injectGeneration;
     try {
       const location = await connection.command('Runtime.evaluate', { expression: 'location.href', contextId, returnByValue: true });
@@ -172,14 +165,14 @@ class CdpHub {
       const page = new URL(href), initial = new URL(connection.pageUrl);
       if (page.origin !== initial.origin || page.protocol !== initial.protocol
         || page.pathname.match(/\/c\/([^/]+)/)?.[1]?.toLowerCase() !== event.conversationId.toLowerCase()) return;
-      const result = await (riskOnly ? this.onRiskStats() : this.onMetrics(event.conversationId.toLowerCase()));
+      const result = await this.onMetrics(event.conversationId.toLowerCase());
       if (!this.running || generation !== connection.injectGeneration || !connection.contexts.has(contextId)) return;
       const payload = JSON.stringify(result);
       if (payload.length > 8192) return;
       await connection.command('Runtime.evaluate', { contextId,
-        expression: `if (location.href === ${JSON.stringify(href)}) window.__easyagContext?.${riskOnly ? 'receiveRisk' : 'receive'}(${JSON.stringify(event.requestId)}, ${payload});` });
-    } catch { /* Stats are optional; never interrupt localization or security observation. */ }
-    finally { connection[busyKey] = false; }
+        expression: `if (location.href === ${JSON.stringify(href)}) window.__easyagContext?.receive(${JSON.stringify(event.requestId)}, ${payload});` });
+    } catch { /* Stats are optional; never interrupt localization. */ }
+    finally { connection.metricsBusy = false; }
   }
 
   async inject(connection) {
@@ -251,7 +244,6 @@ class CdpHub {
       this.status.cdpError = targets.length ? '' : '等待 AG 页面';
     } catch (error) {
       this.status.cdpError = error.message;
-      // Connection loss is not process exit. Session owns process lifetime and restoration.
     } finally {
       this.busy = false;
       this.status.cdpSockets = [...this.sessions.values()].filter(connection => connection.connected).length;
@@ -272,12 +264,6 @@ class CdpHub {
     for (const connection of this.sessions.values()) {
       try { await this.inject(connection); }
       catch (error) { this.status.cdpError = error.message; connection.close(); }
-    }
-  }
-
-  async focus() {
-    for (const connection of this.sessions.values()) {
-      try { await connection.command('Page.bringToFront'); } catch { /* Native focus remains available. */ }
     }
   }
 

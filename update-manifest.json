@@ -1,0 +1,111 @@
+{
+  "version": "4.0.0",
+  "dictVersion": "2026-10-19",
+  "dicts": {
+    "ui_v2.json": {
+      "url": "dicts/ui_v2.json",
+      "sha256": "fc0fc2210de0bf3250f5264c9a195a831c232d18dd313644a3e813702c41fb52"
+    },
+    "common.json": {
+      "url": "dicts/common.json",
+      "sha256": "8e7be1b1ce956dd49cfcd4301ee4af3356056ed75856218b07e064264b4e397c"
+    }
+  },
+  "runtime": {
+    "version": "4.0.0",
+    "files": {
+      "server.js": {
+        "url": "server.js",
+        "sha256": "9f1d93788bcfb85ca99b1983d59cdc0d7c8de5d39490ea1a489e0bb1043c5822"
+      },
+      "index.html": {
+        "url": "index.html",
+        "sha256": "9d8a7af4f12096fe252cbfcbb426af9540c7c108384c9aa15a9b0c564a23d482"
+      },
+      "core/events.js": {
+        "url": "core/events.js",
+        "sha256": "7a72428b044b204ce43bc552ec0785dc38309b7fb9b399ebdd03f18bf8ea8ec2"
+      },
+      "core/session.js": {
+        "url": "core/session.js",
+        "sha256": "9ca42e2986221fce7af1fb8bea119cd49367364b717e349a0c9b67286282bca0"
+      },
+      "core/settings.js": {
+        "url": "core/settings.js",
+        "sha256": "a967d1acf8d5cfd6646a903a9994bd34d2776339bb83a5597e7f3d59c2d0fbc4"
+      },
+      "core/storage.js": {
+        "url": "core/storage.js",
+        "sha256": "e56f092b617cf12e1253fa2d6a37ebb5aedea28e881380cf16beaf141aadaba9"
+      },
+      "features/context-monitor.js": {
+        "url": "features/context-monitor.js",
+        "sha256": "cf7fad0e7cc1d4792f93fbf2d6ea8759dcb27bdf4c8a3b1be1265bfb7321fe66"
+      },
+      "features/context-widget.js": {
+        "url": "features/context-widget.js",
+        "sha256": "4f3c4196042779db8cf1003dff93065ceb5c634aa60797dcdc2c2e960422d77f"
+      },
+      "features/i18n.js": {
+        "url": "features/i18n.js",
+        "sha256": "40941464ab3fab5e631f5e6300326b98ac24b540a69b08edbc449817e5d496ca"
+      },
+      "features/proxy.js": {
+        "url": "features/proxy.js",
+        "sha256": "d5ac22cc30c5849b93eb8529f7e7dd211c38dd723ce8447e63aa47778c7e966e"
+      },
+      "features/updater.js": {
+        "url": "features/updater.js",
+        "sha256": "7fa0bb7fca3922cbbd223cfe9237f31c645c4e210f40691bcc143410c5cafe75"
+      },
+      "adapters/desktop/cdp.js": {
+        "url": "adapters/desktop/cdp.js",
+        "sha256": "f2aee96926ca4617f1c7d9a5c300a93861e6dd50b38f7fe83a06249a34043871"
+      },
+      "adapters/desktop/discovery.js": {
+        "url": "adapters/desktop/discovery.js",
+        "sha256": "9a4228d6af1c801126dbb1de3b2ca9aab3a736f39503a99fe5adfd65c105f4a6"
+      },
+      "adapters/desktop/index.js": {
+        "url": "adapters/desktop/index.js",
+        "sha256": "b5fd7c365acaa5039dbf98465b48835318f522701844db7b3304ffe4a49bf302"
+      },
+      "adapters/desktop/language-service.js": {
+        "url": "adapters/desktop/language-service.js",
+        "sha256": "2f8968de6f4a4af5d34483b31dde1442e3066fc0f6702a1dd5f95ae709af6909"
+      },
+      "adapters/desktop/language-service-discovery.js": {
+        "url": "adapters/desktop/language-service-discovery.js",
+        "sha256": "60bc2bf7d44aa1f149234945efc86c519bae759cf86df0de812611d57d54c2dd"
+      },
+      "adapters/desktop/renderer.js": {
+        "url": "adapters/desktop/renderer.js",
+        "sha256": "cb7feb3ce67f0aeb0715aebbaec465c8052638f64087b3336f9c7bab2a484528"
+      },
+      "desktop/api.js": {
+        "url": "desktop/api.js",
+        "sha256": "1791d5bcc053645812884d7a3a8dacd641156768626c5ade87d386cc19004055"
+      },
+      "desktop/application.js": {
+        "url": "desktop/application.js",
+        "sha256": "bdae16de76c7c6a116c422f6919a1491e141c33e8969307df88c1db963fe615d"
+      },
+      "desktop/host.js": {
+        "url": "desktop/host.js",
+        "sha256": "cc783d9657c18f1ec9ab5aea9f15ebeb61a3a0e668f2e0ee119a31312dccb4e4"
+      },
+      "ui/api.js": {
+        "url": "ui/api.js",
+        "sha256": "c2f4b6fd94344b0ce2b23db4e625baa2eba9545b599565f5f7e753d37e858351"
+      },
+      "ui/launcher.css": {
+        "url": "ui/launcher.css",
+        "sha256": "3be00e49fcee6272d23f11ce76600df8b48a0347971dba41260410dc24ad5534"
+      },
+      "ui/launcher.js": {
+        "url": "ui/launcher.js",
+        "sha256": "9557c6e3ce33c28f43b684b210426ea355ddc0603b775de495c8e1147136eac4"
+      }
+    }
+  }
+}

@@ -1,7 +1,6 @@
-const { spawn, execFile } = require('node:child_process');
+const { spawn } = require('node:child_process');
 
 function createHost({ native, testMode, events }) {
-  let timer;
   function send(command) {
     if (!native || testMode) return;
     process.stdout.write(JSON.stringify(command) + '\n');
@@ -18,27 +17,7 @@ function createHost({ native, testMode, events }) {
     open,
     hide: () => send({ cmd: 'hide_easyag' }),
     show: () => send({ cmd: 'popup' }),
-    showCapsule(message) {
-      clearTimeout(timer);
-      send({ cmd: 'show_capsule', ...message });
-      timer = setTimeout(() => send({ cmd: 'hide_capsule' }), 75000);
-      timer.unref();
-    },
-    hideCapsule() { clearTimeout(timer); send({ cmd: 'hide_capsule' }); },
-    focus(pid) {
-      if (testMode) return Promise.resolve(true);
-      if (process.platform === 'darwin') {
-        return new Promise(resolve => execFile('osascript', ['-e', 'tell application "Antigravity" to activate'],
-          { timeout: 3000 }, error => resolve(!error)));
-      } else if (process.platform === 'win32') {
-        const target = Number.isInteger(pid) && pid > 0 ? String(pid) : "'Antigravity'";
-        return new Promise(resolve => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-          `$shell = New-Object -ComObject WScript.Shell; $shell.AppActivate(${target})`],
-          { windowsHide: true, timeout: 3000 }, (error, output) => resolve(!error && output.trim().toLowerCase() === 'true')));
-      }
-      return Promise.resolve(false);
-    },
-    dispose() { clearTimeout(timer); }
+    dispose() {}
   };
 }
 

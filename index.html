@@ -15,7 +15,7 @@
   <div class="nav-header">
     <div class="brand">
       <div>
-        <div class="brand-title">EasyAG</div>
+        <div class="brand-title">EasyAG <span class="brand-sub" id="versionBadge">v4.0.0</span></div>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
@@ -53,9 +53,9 @@
     </div>
   </div>
 
-  <!-- 卡片 2: 本地化汉化 -->
+  <!-- 卡片 2: 本地化汉化与上下文圆环 -->
   <div class="card">
-    <div class="card-label">界面深度汉化</div>
+    <div class="card-label">界面深度汉化与监控</div>
     <div class="row">
       <span style="font-weight: 500;">实时 DOM 字典翻译:</span>
       <label class="switch">
@@ -64,42 +64,20 @@
       </label>
     </div>
     <div class="row">
-      <span style="font-size: 11.5px; color: var(--text-dark);">词典装载状态</span>
-      <span id="dictCountBadge" style="color: #c084fc; font-size: 11.5px; font-weight: 600;">已载入词条</span>
+      <span style="font-size: 11.5px; color: var(--text-dark);">词典与内核热更新</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="dictCountBadge" style="color: #c084fc; font-size: 11.5px; font-weight: 600;">已载入词条</span>
+        <button type="button" class="quick-tag" id="updateBtn" data-action="check-update" title="通过当前代理拉取最新汉化词典与热补丁，免重装即时生效">
+          ↻ 检查热更新
+        </button>
+      </div>
     </div>
     <div class="row">
-      <span style="font-weight: 500;">AG 内上下文监控 <span style="font-size: 11px; color: var(--text-dark);">· 速度在详情中</span></span>
+      <span style="font-weight: 500;">AG 内上下文圆环 <span style="font-size: 11px; color: var(--text-dark);">· 速度在详情中</span></span>
       <label class="switch" title="只读采集最近请求的上下文估算；关闭后移除 AG 内标记">
-        <input type="checkbox" id="contextMonitorToggle" aria-label="AG 内上下文监控" checked>
+        <input type="checkbox" id="contextMonitorToggle" aria-label="AG 内上下文圆环" checked>
         <span class="slider"></span>
       </label>
-    </div>
-  </div>
-
-  <!-- 卡片 3: 启动模式 -->
-  <div class="card">
-    <div class="card-label">启动模式</div>
-    <div class="mode-options" id="modeOptions">
-      <button type="button" class="mode-option selected" data-mode="pilot" aria-pressed="true" data-action="mode">
-        <span class="mode-title">Turbo Pilot <span class="mode-badge">推荐</span></span>
-        <span class="mode-desc">自动审批 + 高危命令拦截</span>
-      </button>
-      <button type="button" class="mode-option" data-mode="compatibility" aria-pressed="false" data-action="mode">
-        <span class="mode-title">兼容模式</span>
-        <span class="mode-desc">沿用用户默认审批设置</span>
-      </button>
-    </div>
-    <div class="protection-section" id="protectionSection">
-      <div class="row protection-heading">
-        <span id="protectionLabel">防护强度</span>
-        <span class="protection-meta">ARES 风险提示随 Pilot 开启</span>
-      </div>
-      <div class="protection-options" role="group" aria-labelledby="protectionLabel" aria-describedby="protectionHint">
-        <button type="button" class="protection-option" data-protection="strict" data-action="protection" aria-pressed="false">严格</button>
-        <button type="button" class="protection-option selected" data-protection="standard" data-action="protection" aria-pressed="true">标准<span class="protection-recommended">默认</span></button>
-        <button type="button" class="protection-option" data-protection="relaxed" data-action="protection" aria-pressed="false">宽松</button>
-      </div>
-      <p class="protection-hint" id="protectionHint" aria-live="polite">识别常见危险命令与参数，减少明确的查询、预演误报。启动时应用。</p>
     </div>
   </div>
 
@@ -113,20 +91,12 @@
   <div class="advanced" id="advancedPanel">
     <div class="advanced-head">
       <span>运行日志</span>
-      <span class="advanced-meta"><span id="approveCountBadge">风险 0</span> · <span id="rulesCountBadge">--</span> · <span id="kbCountBadge">KB --</span></span>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button type="button" class="clean-btn" data-action="copy-logs">复制日志</button>
+        <button type="button" class="clean-btn" data-action="clear-logs">清空</button>
+      </div>
     </div>
     <div class="advanced-body">
-      <div class="advanced-tools">
-        <div class="port-cluster">
-          <button type="button" class="quick-tag" data-action="open-rules">打开规则</button>
-          <button type="button" class="quick-tag" data-action="reload-rules">重载规则</button>
-          <button type="button" class="quick-tag" data-action="restore">恢复原设置</button>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button type="button" class="clean-btn" data-action="copy-logs">复制日志</button>
-          <button type="button" class="clean-btn" data-action="clear-logs">清空</button>
-        </div>
-      </div>
       <div class="console-pane">
         <div class="console" id="consoleBox">
           <div class="log-line" style="color: var(--text-dark);">[SYSTEM] EasyAG 已就绪。</div>

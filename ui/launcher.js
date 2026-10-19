@@ -2,9 +2,6 @@ import { api } from './api.js';
 
 const element = id => document.getElementById(id);
 const consoleBox = element('consoleBox');
-let mode = 'pilot';
-let protectionLevel = 'standard';
-let activeMode = null;
 let phase = 'idle';
 let settingsQueue = Promise.resolve();
 let refreshing = false;
@@ -32,25 +29,6 @@ function appendLog(category, message, cls = '', at) {
 
 function report(error) { appendLog('SYSTEM', error.message || String(error), 'tag-alert'); }
 
-function renderProtection() {
-  const pilot = (activeMode || mode) === 'pilot';
-  const locked = ['preparing', 'launching', 'running'].includes(phase);
-  document.querySelectorAll('.protection-option').forEach(control => {
-    const selected = control.dataset.protection === protectionLevel;
-    control.classList.toggle('selected', selected);
-    control.setAttribute('aria-pressed', String(selected));
-    control.disabled = locked || !pilot;
-  });
-  element('protectionSection').dataset.level = pilot ? protectionLevel : 'inactive';
-  element('protectionHint').textContent = !pilot
-    ? '兼容模式沿用用户默认审批设置，不应用防护档位；已保留你的选择。'
-    : {
-      strict: '扩大删除、Git 危险文本匹配；预演、引用或文件名也可能要求审批。',
-      standard: '识别常见危险命令与参数，减少明确的查询、预演误报。',
-      relaxed: '仅保留部分明确高危操作的审批，漏报风险更高；ARES 提示仍开启。'
-    }[protectionLevel] + (locked ? ' AG 退出后可调整。' : ' 启动时应用。');
-}
-
 function renderPhase(next) {
   phase = next;
   document.body.dataset.uiState = next;
@@ -59,35 +37,28 @@ function renderPhase(next) {
   const button = element('launchBtn');
   button.disabled = locked;
   button.classList.toggle('busy', busy);
-  document.querySelectorAll('.mode-option,[data-port]').forEach(control => { control.disabled = locked; });
+  document.querySelectorAll('[data-port]').forEach(control => { control.disabled = locked; });
   element('proxyPortInput').disabled = locked;
-  renderProtection();
   element('launchIcon').textContent = busy ? '◌' : next === 'running' ? '●' : next === 'error' ? '↻' : '🚀';
   element('launchText').textContent = {
-    preparing: '正在准备增强环境…', launching: '正在启动 Antigravity…',
-    running: 'Antigravity 运行中', error: '启动失败，点击重试'
-  }[next] || (mode === 'pilot' ? '以 Turbo Pilot 启动' : '以兼容模式启动');
+    preparing: '正在准备代理环境…',
+    launching: '正在启动 Antigravity…',
+    running: 'Antigravity 运行中',
+    error: '启动失败，点击重试'
+  }[next] || '启动 Antigravity';
   button.style.background = next === 'running' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '';
 }
 
-function renderMode() {
-  document.querySelectorAll('.mode-option').forEach(control => {
-    const selected = control.dataset.mode === mode;
-    control.classList.toggle('selected', selected);
-    control.setAttribute('aria-pressed', String(selected));
-  });
-  renderPhase(phase);
-}
-
 function renderStatus(status) {
-  if (Object.prototype.hasOwnProperty.call(status, 'activeLaunchMode')) {
-    activeMode = status.activeLaunchMode;
-    renderMode();
-  }
   if (status.phase && !(launchPending && status.phase === 'idle')) renderPhase(status.phase);
-  if (status.riskHits !== undefined) element('approveCountBadge').textContent = `风险 ${status.riskHits}`;
-  if (status.dangerRulesTotal !== undefined) {
-    element('rulesCountBadge').textContent = `${status.dangerRulesOn}/${status.dangerRulesTotal} 条规则`;
+  if (status.dictEntries !== undefined) {
+    element('dictCountBadge').textContent = `已载入 ${status.dictEntries} 条词条`;
+  }
+  if (status.version) {
+    const versionNode = element('versionBadge');
+    if (versionNode) {
+      versionNode.textContent = `v${status.version}${status.restartRequired ? ' · 待重启生效' : ''}`;
+    }
   }
   if (status.clientRunning !== undefined) {
     const badge = element('clientStatusBadge');
@@ -100,20 +71,16 @@ function renderStatus(status) {
 }
 
 function loadSettings(status) {
-  mode = status.launchMode;
-  protectionLevel = status.protectionLevel || 'standard';
   element('proxyPortInput').value = status.port;
   element('i18nToggle').checked = status.enableI18n;
   element('contextMonitorToggle').checked = status.enableContextMonitor;
-  element('dictCountBadge').textContent = `已载入 ${status.dictEntries} 条汉化词条`;
   element('patchStatusBadge').textContent = '● 原生代理已就绪';
-  renderMode();
   renderStatus(status);
 }
 
 function persistSettings() {
   const payload = {
-    port: Number(element('proxyPortInput').value), launchMode: mode, protectionLevel,
+    port: Number(element('proxyPortInput').value),
     enableI18n: element('i18nToggle').checked,
     enableContextMonitor: element('contextMonitorToggle').checked
   };
@@ -128,13 +95,25 @@ async function launch() {
   try {
     await persistSettings();
     renderPhase('launching');
-    const result = await api.launch();
+    await api.launch();
     renderPhase('running');
-    if (result.pilot && !result.pilot.skipped) {
-      appendLog('SECURITY', `自动审批和 ${result.pilot.count} 条原生权限规则已应用`, 'tag-proxy');
-    }
   } catch (error) { renderPhase('error'); report(error); }
   finally { launchPending = false; }
+}
+
+async function checkUpdate() {
+  const btn = element('updateBtn');
+  if (!btn || btn.disabled) return;
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '正在同步…';
+  try {
+    const result = await api.checkUpdate();
+    renderStatus(result);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 async function copyLogs() {
@@ -154,28 +133,7 @@ async function copyLogs() {
 const actions = {
   launch,
   hide: () => api.hide(),
-  async mode(control) { mode = control.dataset.mode; renderMode(); await persistSettings(); },
-  async protection(control) {
-    protectionLevel = control.dataset.protection;
-    renderProtection();
-    try { await persistSettings(); renderStatus(await api.status()); }
-    catch (error) { loadSettings(await api.status()); throw error; }
-  },
-  async 'open-rules'() {
-    const result = await api.openRules();
-    appendLog('SECURITY', `已打开权限规则：${result.path}`, 'tag-proxy');
-  },
-  async 'reload-rules'() {
-    const result = await api.reloadRules();
-    renderStatus({ dangerRulesOn: result.active, dangerRulesTotal: result.total });
-    appendLog('SECURITY', result.nativeRulesWritten
-      ? '规则已重载并写入 AG 权限；即时生效请用无害命令确认'
-      : '规则已重载，Pilot 下次启动时应用', 'tag-proxy');
-  },
-  async restore() {
-    const result = await api.restore();
-    appendLog('SECURITY', `已移除 ${result.removed} 条 EasyAG 权限规则，保留用户原有配置`, 'tag-proxy');
-  },
+  'check-update': checkUpdate,
   'copy-logs': copyLogs,
   'clear-logs': () => { consoleBox.replaceChildren(); }
 };

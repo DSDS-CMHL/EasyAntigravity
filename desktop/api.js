@@ -1,7 +1,6 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { compilePilotPermissions } = require('../features/pilot-permissions');
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webp': 'image/webp', '.jpg': 'image/jpeg' };
 function json(response, value, status = 200) {
@@ -30,7 +29,6 @@ function serveFile(response, base, relative) {
 
 function createApi(app) {
   const streams = new Map();
-  let reviewFocus;
   const server = http.createServer(async (request, response) => {
     try {
       const host = request.headers.host || '';
@@ -41,13 +39,10 @@ function createApi(app) {
       const route = url.pathname;
       const method = request.method;
       const origin = request.headers.origin;
-      const capsuleRoute = ['/api/focus-ag', '/api/capsule/hide'].includes(route);
-      const nativeOrigin = ['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost'].includes(origin);
-      if (method !== 'GET' && origin && origin !== `http://${host}` && !(capsuleRoute && nativeOrigin)) {
+      if (method !== 'GET' && origin && origin !== `http://${host}`) {
         return json(response, { ok: false, error: '不允许跨站修改设置' }, 403);
       }
       if (method === 'GET' && route === '/') return serveFile(response, app.rootDir, 'index.html');
-      if (method === 'GET' && route === '/capsule.html') return serveFile(response, app.rootDir, 'src/capsule.html');
       if (method === 'GET' && (route.startsWith('/ui/') || route.startsWith('/assets/'))) {
         const directory = route.startsWith('/ui/') ? 'ui' : 'assets';
         return serveFile(response, path.join(app.rootDir, directory), decodeURIComponent(route.slice(directory.length + 2)));
@@ -70,13 +65,6 @@ function createApi(app) {
         response.on('close', () => { app.events.off('message', send); streams.delete(response); });
         return;
       }
-      if (method === 'GET' && route === '/api/danger-rules') {
-        return json(response, { ...app.rules.document, active: app.rules.active.length });
-      }
-      if (method === 'GET' && route === '/api/kb') {
-        return json(response, { count: app.rules.knowledge.length, rules: app.rules.knowledge.map(({ id, name, severity, category, root_cause, destructive_impact, safe_alternative }) => ({ id, name, severity, category, root_cause, destructive_impact, safe_alternative })) });
-      }
-      if (method === 'GET' && route === '/api/injected') return json(response, app.permissions.status());
       if (method === 'POST' && route === '/api/config') {
         const data = await readBody(request);
         await app.configure(data);
@@ -86,56 +74,12 @@ function createApi(app) {
         const result = await app.session.launch();
         return json(response, result, result.ok ? 200 : 409);
       }
-      if (method === 'POST' && route === '/api/danger-rules/reload') {
-        const result = app.reloadRules();
-        return json(response, result, result.ok ? 200 : 409);
-      }
-      if (method === 'POST' && route === '/api/danger-rules/open') {
-        app.host.open(app.rules.file, { text: true });
-        return json(response, { ok: true, path: app.rules.file });
-      }
-      if (method === 'POST' && ['/api/danger-rules/sync', '/api/pilot/global'].includes(route)) {
-        if (['running', 'preparing', 'launching'].includes(app.session.phase)) {
-          return json(response, { ok: false, error: '请先退出 AG，再应用权限规则' }, 409);
-        }
+      if (method === 'POST' && route === '/api/update') {
         const data = await readBody(request);
-        if (data.scope && data.scope !== 'global') throw new Error('当前仅支持桌面端全局权限规则');
-        app.rules.reload();
-        const result = app.permissions.apply(compilePilotPermissions(app.rules, app.settings.get().protectionLevel, data.list));
-        return json(response, result, result.ok ? 200 : 400);
-      }
-      if (method === 'POST' && route === '/api/danger-rules/cleanup') {
-        const result = app.permissions.restore();
-        return json(response, result, result.ok ? 200 : 409);
+        const result = await app.updater.checkAndApply({ manifestUrl: data.manifestUrl });
+        return json(response, result);
       }
       if (method === 'POST' && route === '/api/hide') { app.host.hide(); return json(response, { ok: true }); }
-      if (method === 'POST' && route === '/api/capsule/hide') { app.notifications.hide(); return json(response, { ok: true }); }
-      if (method === 'POST' && route === '/api/focus-ag') {
-        if (!reviewFocus) reviewFocus = (async () => {
-          app.notifications.hide();
-          // Native hide is delivered asynchronously over stdout. Let the
-          // capsule release foreground before activating AG, never synthesize input.
-          await new Promise(resolve => setTimeout(resolve, 180));
-          if (app.session.closed) return { ok: false, error: 'EasyAG 正在退出' };
-          let focused;
-          if (process.platform === 'win32' || process.platform === 'darwin') {
-            focused = await app.host.focus(app.session.child?.pid);
-          } else {
-            await app.cdp.focus();
-            focused = true;
-          }
-          app.events.log('SYSTEM', focused ? '胶囊已隐藏，已请求激活 AG 原生窗口'
-            : 'AG 窗口激活失败，请手动切回 AG 审查；未执行任何审批', focused ? 'tag-proxy' : 'tag-warn');
-          return focused ? { ok: true } : { ok: false, error: '无法激活 AG 窗口，请手动切回 AG' };
-        })();
-        const pending = reviewFocus;
-        try {
-          const result = await pending;
-          return json(response, result, result.ok ? 200 : 409);
-        } finally {
-          if (reviewFocus === pending) reviewFocus = null;
-        }
-      }
       if (method === 'POST' && route === '/api/quit') {
         json(response, { ok: true });
         void app.close('收到退出请求');

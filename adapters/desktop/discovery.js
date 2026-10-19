@@ -40,10 +40,4 @@ async function desktopRunning() {
   } catch { return false; }
 }
 
-function globalConfig(testMode) {
-  return testMode && process.env.EASYAG_TEST_AG_CONFIG
-    ? normalizePath(process.env.EASYAG_TEST_AG_CONFIG)
-    : path.join(os.homedir(), '.gemini/config/config.json');
-}
-
-module.exports = { normalizePath, discoverDesktop, desktopRunning, globalConfig };
+module.exports = { normalizePath, discoverDesktop, desktopRunning };

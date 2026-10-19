@@ -41,8 +41,8 @@ async function stop(child, eof = false) {
     let app = await start(data); child = app.child;
     let status = await (await fetch(app.url + '/api/status')).json();
     assert.ok(status.dictEntries > 3000);
-    assert.ok(status.kbRules >= 20, 'Packaged risk knowledge must not be missing');
-    assert.equal(status.blockDangerous, true);
+    assert.equal(status.enableI18n, true);
+    assert.equal(status.enableContextMonitor, true);
     const html = await (await fetch(app.url)).text();
     assert.ok(!html.includes('sendBeacon'));
     const events = new AbortController();
@@ -53,16 +53,15 @@ async function stop(child, eof = false) {
     assert.equal(child.exitCode, null, 'Background / disconnected UI must not stop backend');
     await fetch(app.url + '/api/config', { method: 'POST', body: JSON.stringify({
       port: 7897,
-      launchMode: 'compatibility',
-      riskAdvisor: false,
-      enableI18n: false
+      enableI18n: false,
+      enableContextMonitor: false
     }) });
     await stop(child);
     app = await start(data); child = app.child;
     status = await (await fetch(app.url + '/api/status')).json();
-    assert.equal(status.port, 7897); assert.equal(status.enableI18n, false);
-    assert.equal(status.launchMode, 'compatibility'); assert.equal(status.riskAdvisor, false);
-    assert.ok(fs.existsSync(path.join(data, 'danger-rules.json')));
+    assert.equal(status.port, 7897);
+    assert.equal(status.enableI18n, false);
+    assert.equal(status.enableContextMonitor, false);
     await stop(child, true);
     assert.ok(fs.readFileSync(path.join(data, 'easyag.log'), 'utf8').includes('原生宿主管道关闭'));
     console.log('PASS: resources, defaults, >30s idle, SSE disconnect, settings, explicit close and owner EOF');

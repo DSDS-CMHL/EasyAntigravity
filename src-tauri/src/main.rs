@@ -10,7 +10,7 @@ use std::{
 };
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 
 struct Backend {
     child: Mutex<Option<Child>>,
@@ -84,81 +84,7 @@ fn open_url(url: &str) {
     }
 }
 
-fn ensure_capsule(app: &tauri::AppHandle) {
-    if app.get_webview_window("capsule").is_some() {
-        return;
-    }
-    // 从本地 backend 加载，便于热更新胶囊页（不嵌入 exe）
-    let port = app.state::<Backend>().port.lock().ok().and_then(|p| *p);
-    let url = match port {
-        Some(p) => match format!("http://127.0.0.1:{p}/capsule.html").parse() {
-            Ok(u) => WebviewUrl::External(u),
-            Err(_) => WebviewUrl::App("capsule.html".into()),
-        },
-        None => WebviewUrl::App("capsule.html".into()),
-    };
-    let _ = WebviewWindowBuilder::new(app, "capsule", url)
-        .title("EasyAG Capsule")
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .resizable(false)
-        .inner_size(400.0, 200.0)
-        .focused(false)
-        // A notification is mouse-interactive but must never become the
-        // keyboard destination when it appears over another application.
-        .focusable(false)
-        .visible(false)
-        .build();
-}
-
-fn show_capsule(app: &tauri::AppHandle, kind: &str, title: &str, detail: &str, solution: &str) {
-    ensure_capsule(app);
-    let Some(window) = app.get_webview_window("capsule") else {
-        return;
-    };
-    let monitor = app
-        .get_webview_window("main")
-        .and_then(|main| main.current_monitor().ok().flatten())
-        .or_else(|| window.current_monitor().ok().flatten())
-        .or_else(|| window.primary_monitor().ok().flatten());
-    if let Some(m) = monitor {
-        let work = m.work_area();
-        let scale = m.scale_factor();
-        let w = 400.0 * scale;
-        let h = 200.0 * scale;
-        let margin = 18.0 * scale;
-        let x = work.position.x as f64 + work.size.width as f64 - w - margin;
-        let y = work.position.y as f64 + work.size.height as f64 - h - margin;
-        let _ = window.set_position(tauri::PhysicalPosition::new(x.round() as i32, y.round() as i32));
-    }
-    let script = format!(
-        "(function(){{ window.__ea_port = {}; var t={}; var a={}; var d={}; var s={}; var delivered=false; var message={{}}; window.__ea_capsuleMessage=message; function go(){{ if(!delivered && window.__ea_capsuleMessage===message && window.__ea_capsule){{ delivered=true; window.__ea_capsule(t,a,d,s); }} }}; if(document.readyState==='complete') go(); else window.addEventListener('load',go,{{once:true}}); setTimeout(go,50); setTimeout(go,200); }})();",
-        app.state::<Backend>().port.lock().ok().and_then(|p| *p).map(|p| p.to_string()).unwrap_or_else(|| "0".into()),
-        serde_json::to_string(kind).unwrap_or_else(|_| "\"danger\"".into()),
-        serde_json::to_string(title).unwrap_or_default(),
-        serde_json::to_string(detail).unwrap_or_default(),
-        serde_json::to_string(solution).unwrap_or_default()
-    );
-    let _ = window.eval(&script);
-    // focused(false) only covers creation, not subsequent show operations.
-    // Refuse to show if the non-focusable setting could not be applied.
-    if window.set_focusable(false).is_ok() {
-        let _ = window.show();
-    }
-    let _ = window.set_always_on_top(true);
-    // The backend owns a resettable failsafe timer. An older notification must
-    // never hide a newer one through an independent native timer.
-}
-
-fn hide_capsule(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("capsule") {
-        let _ = window.hide();
-    }
-}
-
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
-    // 风格对齐 Clash Party：短标签、动作一组、退出单独一组并带 Ctrl+Q
     let show = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
     let web = MenuItem::with_id(app, "web", "浏览器控制台", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出应用", true, Some("Ctrl+Q"))?;
@@ -259,19 +185,10 @@ fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Erro
                     if trimmed.is_empty() {
                         continue;
                     }
-                    // JSON 协议：show_capsule / hide_capsule / exit
                     if trimmed.starts_with('{') {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
                             match v["cmd"].as_str().unwrap_or("") {
                                 "popup" | "focus" => show_main_window(&handle),
-                                "show_capsule" => show_capsule(
-                                    &handle,
-                                    v["type"].as_str().unwrap_or("danger"),
-                                    v["title"].as_str().unwrap_or(""),
-                                    v["detail"].as_str().unwrap_or(""),
-                                    v["solution"].as_str().unwrap_or(""),
-                                ),
-                                "hide_capsule" => hide_capsule(&handle),
                                 "hide_easyag" | "hide" => hide_main_window(&handle),
                                 "exit" | "quit" => {
                                     stop_backend(&handle.state::<Backend>());
@@ -285,7 +202,6 @@ fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Erro
                     match trimmed {
                         "popup" | "focus" => show_main_window(&handle),
                         "hide" | "hide_easyag" => hide_main_window(&handle),
-                        "hide_capsule" => hide_capsule(&handle),
                         "quit" | "exit" => {
                             stop_backend(&handle.state::<Backend>());
                             handle.exit(0);
@@ -343,7 +259,6 @@ fn main() {
         })
         .setup(|app| {
             let _ = setup_tray(app);
-            ensure_capsule(app.handle());
             #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_title("EasyAntigravity (macOS Beta)");

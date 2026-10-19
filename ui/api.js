@@ -19,8 +19,6 @@ export const api = {
   logs: () => request('/api/logs?limit=200'),
   configure: body => request('/api/config', { body }),
   launch: () => request('/api/launch', { method: 'POST' }),
-  openRules: () => request('/api/danger-rules/open', { method: 'POST' }),
-  reloadRules: () => request('/api/danger-rules/reload', { method: 'POST' }),
-  restore: () => request('/api/danger-rules/cleanup', { method: 'POST' }),
+  checkUpdate: body => request('/api/update', { body: body || {}, method: 'POST' }),
   hide: () => request('/api/hide', { method: 'POST' })
 };

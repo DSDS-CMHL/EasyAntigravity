@@ -1,12 +1,11 @@
 // Local composer geometry checks adapted from Antigrative Dashboard (MIT).
 // Copyright (c) 2026 AG Pulse contributors. See THIRD-PARTY-NOTICES.md.
-function installContextWidget(win, doc, enabled, report, riskEnabled = false) {
+function installContextWidget(win, doc, enabled, report) {
   win.__easyagContext?.dispose();
-  if (!enabled && !riskEnabled) return;
+  if (!enabled) return;
   const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   let node, shadow, button, card, composer, data, route = '', pending, lastFetch = 0, sequence = 0, disposed = false;
   let observer, resizeObserver, frame;
-  let riskButton, riskCard, riskData, riskPending, riskFetchedAt = 0, activeCard = null;
   const conversationId = () => {
     const id = win.location.pathname.match(/\/c\/([^/]+)/)?.[1];
     return id && GUID.test(id) ? id.toLowerCase() : null;
@@ -44,33 +43,25 @@ function installContextWidget(win, doc, enabled, report, riskEnabled = false) {
     return pairs.length && (pairs.length === 1 || pairs[0].distance < pairs[1].distance) ? pairs[0] : null;
   }
   function hideCard() {
-    for (const element of [card, riskCard]) {
-      if (!element) continue;
-      if (element.hasAttribute('popover') && element.matches(':popover-open')) element.hidePopover();
-      element.hidden = true;
-    }
+    if (!card) return;
+    if (card.hasAttribute('popover') && card.matches(':popover-open')) card.hidePopover();
+    card.hidden = true;
     button?.setAttribute('aria-expanded', 'false');
-    riskButton?.setAttribute('aria-expanded', 'false');
-    activeCard = null;
   }
   function positionCard() {
-    const element = activeCard === 'risk' ? riskCard : card;
-    const trigger = activeCard === 'risk' ? riskButton : button;
-    if (!element || element.hidden || !node?.isConnected) return;
-    const r = trigger.getBoundingClientRect(), width = Math.min(activeCard === 'risk' ? 208 : 304, win.innerWidth - 16);
-    element.style.width = Math.max(0, width) + 'px';
-    element.style.left = Math.max(8, Math.min(r.left, win.innerWidth - width - 8)) + 'px';
-    const height = element.getBoundingClientRect().height;
-    element.style.top = Math.max(8, Math.min(r.top - height - 8, win.innerHeight - height - 8)) + 'px';
+    if (!card || card.hidden || !node?.isConnected) return;
+    const r = button.getBoundingClientRect(), width = Math.min(304, win.innerWidth - 16);
+    card.style.width = Math.max(0, width) + 'px';
+    card.style.left = Math.max(8, Math.min(r.left, win.innerWidth - width - 8)) + 'px';
+    const height = card.getBoundingClientRect().height;
+    card.style.top = Math.max(8, Math.min(r.top - height - 8, win.innerHeight - height - 8)) + 'px';
   }
-  function showCard(name = 'context') {
+  function showCard() {
     if (!node?.isConnected || node.hidden) return;
     hideCard();
-    activeCard = name;
-    const element = name === 'risk' ? riskCard : card, trigger = name === 'risk' ? riskButton : button;
-    element.hidden = false;
-    if (element.hasAttribute('popover') && !element.matches(':popover-open')) element.showPopover();
-    trigger.setAttribute('aria-expanded', 'true');
+    card.hidden = false;
+    if (card.hasAttribute('popover') && !card.matches(':popover-open')) card.showPopover();
+    button.setAttribute('aria-expanded', 'true');
     positionCard();
   }
   const compact = value => value >= 1000 ? (value / 1000).toFixed(1).replace(/\.0$/, '') + 'K' : String(value);
@@ -95,27 +86,6 @@ function installContextWidget(win, doc, enabled, report, riskEnabled = false) {
       : pending ? '正在读取本地统计…' : '当前统计不可用，将自动重试；不影响其他增强功能。';
     positionCard();
   }
-  function renderRisk() {
-    if (!shadow) return;
-    const level = riskData?.latestLevel;
-    const count = riskData ? level ? riskData.counts[level] : 0 : null;
-    const value = shadow.getElementById('risk-value');
-    const label = count === null ? '—' : count > 99 ? '99+' : String(count);
-    value.textContent = label;
-    value.style.fontSize = (label.length === 3 ? 7 : label.length === 2 ? 9 : 11) + 'px';
-    // Latest observed risk, never the historical maximum or a timed rotation.
-    riskButton.dataset.tone = level || 'normal';
-    const levelLabel = { high: '高风险', medium: '中风险', low: '低风险' }[level];
-    riskButton.title = count === null ? 'EasyAG 风险记录 · 正在同步' : level
-      ? `最近一次命中：${levelLabel} · 本次会话${levelLabel} ${count} 次 · 不代表已阻止执行 · 点击查看全部统计`
-      : 'EasyAG 本次会话暂无风险记录 · 点击查看全部统计';
-    riskButton.setAttribute('aria-label', riskButton.title);
-    for (const level of ['high', 'medium', 'low']) shadow.getElementById('risk-' + level).textContent = riskData ? String(riskData.counts[level]) : '—';
-    shadow.getElementById('risk-total').textContent = riskData ? String(riskData.total) : '—';
-    shadow.getElementById('risk-note').textContent = riskData?.enabled === false ? '当前未启用 ARES 风险提醒。'
-      : '本次会话累计，同一执行去重。\n风险提醒不代表已阻止执行。';
-    positionCard();
-  }
   function createNode() {
     node = doc.createElement('span');
     node.id = 'easyag-context-monitor';
@@ -123,35 +93,23 @@ function installContextWidget(win, doc, enabled, report, riskEnabled = false) {
     shadow = node.attachShadow({ mode: 'open' });
     shadow.innerHTML = `<style>
       :host{font:11px system-ui,sans-serif;color:inherit}.strip{display:flex;align-items:center;gap:3px;min-width:0}button{font:inherit;color:inherit;cursor:pointer;border:0;border-radius:5px;background:transparent;padding:3px;white-space:nowrap}
-      .indicator{display:flex;align-items:center;justify-content:center;gap:3px;height:28px;box-sizing:border-box;min-width:28px;font-variant-numeric:tabular-nums}.indicator svg{width:24px;height:24px;flex:none}.ring-track{opacity:.17}.ring-fill{transform:rotate(-90deg);transform-origin:12px 12px}.ring-number{font:700 7px system-ui,sans-serif;fill:currentColor}.risk-value{font:700 11px system-ui,sans-serif;fill:currentColor;stroke:none}.indicator[data-tone=normal]{color:inherit}.indicator[data-tone=low]{color:#6faec7}
-      .risk-shield path{opacity:.75}
+      .indicator{display:flex;align-items:center;justify-content:center;gap:3px;height:28px;box-sizing:border-box;min-width:28px;font-variant-numeric:tabular-nums}.indicator svg{width:24px;height:24px;flex:none}.ring-track{opacity:.17}.ring-fill{transform:rotate(-90deg);transform-origin:12px 12px}.ring-number{font:700 7px system-ui,sans-serif;fill:currentColor}.indicator[data-tone=normal]{color:inherit}.indicator[data-tone=low]{color:#6faec7}
       button:hover,button:focus-visible{background:color-mix(in srgb,currentColor 10%,transparent)}button:focus-visible{outline:1px solid currentColor}button[data-tone=medium]{color:#c69026}button[data-tone=high]{color:#e16e65}
       .card{box-sizing:border-box;position:fixed;inset:auto;margin:0;z-index:2147483000;max-height:calc(100vh - 16px);overflow:auto;padding:14px;border-radius:10px;border:1px solid var(--vscode-widget-border,#7776);background:var(--vscode-editorWidget-background,Canvas);color:var(--vscode-editor-foreground,CanvasText);box-shadow:0 8px 24px #0003;font:12px system-ui,sans-serif}
       [hidden]{display:none!important}.head{display:flex;justify-content:space-between;align-items:center}.head button{font-size:16px}dl{margin:10px 0}dl div{display:flex;gap:12px;justify-content:space-between;margin:8px 0}dt{opacity:.7}dd{margin:0;max-width:65%;text-align:right;overflow-wrap:anywhere}.note{font-size:11px;line-height:1.6;opacity:.7;margin:8px 0 0}
-      .risk-high{color:#e16e65}.risk-medium{color:#c69026}.risk-low{color:#6faec7}
-      #risk-details{padding:12px}#risk-details dl{margin:8px 0}#risk-details dl div{margin:6px 0}#risk-details dd{font-weight:700;font-variant-numeric:tabular-nums}#risk-note{white-space:pre-line}
     </style><div id="strip" class="strip"><button id="trigger" class="indicator" type="button" aria-expanded="false" aria-controls="details" aria-label="上下文估算">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="ring-track" cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><circle id="context-fill" class="ring-fill" cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="62.832" stroke-dashoffset="62.832"/><text id="context-value" class="ring-number" x="12" y="12" text-anchor="middle" dominant-baseline="central">—</text></svg></button>
-    <button id="risk-trigger" class="indicator" type="button" aria-expanded="false" aria-controls="risk-details" aria-label="本次风险提醒"><svg class="risk-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 2.8c2.8 1.7 5.4 2.5 8 3.1v5.3c0 4.5-2.7 7.5-8 10-5.3-2.5-8-5.5-8-10V5.9c2.6-.6 5.2-1.4 8-3.1Z" stroke-linejoin="round" stroke-linecap="round"/><text id="risk-value" class="risk-value" x="12" y="11" text-anchor="middle" dominant-baseline="central">—</text></svg></button></div>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="ring-track" cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><circle id="context-fill" class="ring-fill" cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="62.832" stroke-dashoffset="62.832"/><text id="context-value" class="ring-number" x="12" y="12" text-anchor="middle" dominant-baseline="central">—</text></svg></button></div>
     <section id="details" class="card" role="region" aria-label="EasyAG 上下文详情" hidden><div class="head"><strong>上下文估算</strong><button id="close" type="button" aria-label="关闭详情">×</button></div>
     <dl><div><dt>占用 / 容量</dt><dd id="usage"></dd></div><div><dt>采样模型</dt><dd id="model"></dd></div><div><dt>最近有效请求速度</dt><dd id="speed"></dd></div><div><dt>该请求首 token 等待</dt><dd id="ttft"></dd></div></dl>
-    <p class="note" id="speedNote"></p><p class="note" id="updated"></p><p class="note">占用可能在压缩后下降；百分比不代表模型能记住多少内容。</p></section>
-    <section id="risk-details" class="card" role="region" aria-label="EasyAG 风险分级统计" hidden><div class="head"><strong>本次风险提醒</strong><button id="risk-close" type="button" aria-label="关闭风险统计">×</button></div>
-    <dl><div><dt class="risk-high">高风险</dt><dd id="risk-high">—</dd></div><div><dt class="risk-medium">中风险</dt><dd id="risk-medium">—</dd></div><div><dt class="risk-low">低风险</dt><dd id="risk-low">—</dd></div><div><dt>总计</dt><dd id="risk-total">—</dd></div></dl><p id="risk-note" class="note"></p></section>`;
+    <p class="note" id="speedNote"></p><p class="note" id="updated"></p><p class="note">占用可能在压缩后下降；百分比不代表模型能记住多少内容。</p></section>`;
     button = shadow.getElementById('trigger');
     card = shadow.getElementById('details');
-    riskButton = shadow.getElementById('risk-trigger');
-    riskCard = shadow.getElementById('risk-details');
-    button.hidden = !enabled;
-    riskButton.hidden = !riskEnabled;
-    for (const element of [card, riskCard]) if (typeof element.showPopover === 'function') element.setAttribute('popover', 'manual');
+    if (typeof card.showPopover === 'function') card.setAttribute('popover', 'manual');
     button.addEventListener('click', () => { if (card.hidden) showCard(); else hideCard(); });
     shadow.getElementById('close').addEventListener('click', () => { hideCard(); button.focus({ preventScroll: true }); });
-    riskButton.addEventListener('click', () => { if (riskCard.hidden) showCard('risk'); else hideCard(); });
-    shadow.getElementById('risk-close').addEventListener('click', () => { hideCard(); riskButton.focus({ preventScroll: true }); });
     // Keep host focus handlers from swallowing our clicks, without cancelling keyboard defaults.
     for (const type of ['pointerdown', 'mousedown', 'click']) node.addEventListener(type, event => event.stopPropagation());
-    render(); renderRisk();
+    render();
   }
   function fit() {
     if (!node?.isConnected || !composer) return;
@@ -185,15 +143,15 @@ function installContextWidget(win, doc, enabled, report, riskEnabled = false) {
       const value = win.getComputedStyle(element).backgroundColor;
       if (value && value !== 'transparent' && value !== 'rgba(0, 0, 0, 0)') { background = value; break; }
     }
-    for (const element of [card, riskCard]) {
-      if (background) element.style.background = background;
-      if (node.style.color) element.style.color = node.style.color;
+    if (card) {
+      if (background) card.style.background = background;
+      if (node.style.color) card.style.color = node.style.color;
     }
   }
   function syncRoute() {
     const next = conversationId();
     if (next === route) return;
-    route = next; pending = null; riskPending = null; data = null; lastFetch = 0; riskFetchedAt = 0;
+    route = next; pending = null; data = null; lastFetch = 0;
     hideCard(); render();
   }
   function mount() {
@@ -229,32 +187,12 @@ function installContextWidget(win, doc, enabled, report, riskEnabled = false) {
       || result?.conversationId !== pending.conversationId) return;
     pending = null; data = result; render(); fit();
   }
-  function refreshRisk() {
-    if (!riskEnabled || disposed || doc.hidden || !route || !node?.isConnected || node.hidden) return;
-    if (riskPending && Date.now() - riskPending.at < 5000) return;
-    if (Date.now() - riskFetchedAt < 1000) return;
-    const requestId = String(++sequence);
-    riskPending = { requestId, conversationId: route, at: Date.now() }; riskFetchedAt = Date.now();
-    try { report({ type: 'risk-stats', requestId, conversationId: route }); } catch { riskPending = null; }
-  }
-  function receiveRisk(requestId, result) {
-    if (disposed || !riskPending || riskPending.requestId !== requestId || riskPending.conversationId !== conversationId()) return;
-    riskPending = null;
-    if (!result || !Number.isSafeInteger(result.session) || !Number.isSafeInteger(result.revision)
-      || !Number.isSafeInteger(result.total) || result.total < 0
-      || !['high', 'medium', 'low'].every(level => Number.isSafeInteger(result.counts?.[level]) && result.counts[level] >= 0)
-      || result.total !== result.counts.high + result.counts.medium + result.counts.low
-      || (result.total === 0 ? result.latestLevel !== null
-        : !['high', 'medium', 'low'].includes(result.latestLevel) || result.counts[result.latestLevel] < 1)) return;
-    if (riskData && (result.session < riskData.session || (result.session === riskData.session && result.revision < riskData.revision))) return;
-    riskData = result; renderRisk(); fit();
-  }
   function schedule() {
     if (disposed || frame !== undefined) return;
-    frame = win.requestAnimationFrame(() => { frame = undefined; if (!disposed) { mount(); refresh(); refreshRisk(); } });
+    frame = win.requestAnimationFrame(() => { frame = undefined; if (!disposed) { mount(); refresh(); } });
   }
   const onPointer = event => { if (!event.composedPath().includes(node)) hideCard(); };
-  const onKey = event => { if (event.key === 'Escape') { const focused = Boolean(shadow?.activeElement), trigger = activeCard === 'risk' ? riskButton : button; hideCard(); if (focused) trigger?.focus({ preventScroll: true }); } };
+  const onKey = event => { if (event.key === 'Escape') { const focused = Boolean(shadow?.activeElement); hideCard(); if (focused) button?.focus({ preventScroll: true }); } };
   doc.addEventListener('pointerdown', onPointer);
   doc.addEventListener('keydown', onKey);
   doc.addEventListener('scroll', schedule, true);
@@ -263,16 +201,16 @@ function installContextWidget(win, doc, enabled, report, riskEnabled = false) {
     if (records.some(record => record.target !== node && !node?.contains(record.target))) schedule();
   });
   observer.observe(doc.documentElement, { childList: true, subtree: true });
-  const timer = win.setInterval(() => { mount(); refresh(); refreshRisk(); }, 1000);
-  win.__easyagContext = { receive, receiveRisk, dispose() {
-    disposed = true; pending = null; riskPending = null; data = null; riskData = null; hideCard(); node?.remove();
+  const timer = win.setInterval(() => { mount(); refresh(); }, 1000);
+  win.__easyagContext = { receive, dispose() {
+    disposed = true; pending = null; data = null; hideCard(); node?.remove();
     win.clearInterval(timer); if (frame !== undefined) win.cancelAnimationFrame(frame);
     observer.disconnect(); resizeObserver?.disconnect();
     doc.removeEventListener('pointerdown', onPointer); doc.removeEventListener('keydown', onKey);
     doc.removeEventListener('scroll', schedule, true); win.removeEventListener('resize', schedule);
     delete win.__easyagContext;
   } };
-  mount(); refresh(); refreshRisk();
+  mount(); refresh();
 }
 
 module.exports = { installContextWidget };

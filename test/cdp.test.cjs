@@ -13,14 +13,15 @@ test('Target discovery accepts local pages only and checks the debugger endpoint
   assert.equal(validTarget(local, 4000), false);
 });
 
-test('CDP attaches, validates main-frame events, reconnects and removes owned scripts', async t => {
+test('CDP attaches, serves context-metrics in main-frame, reconnects and removes owned scripts', async t => {
   const server = new WebSocket.Server({ host: '127.0.0.1', port: 0 });
   await once(server, 'listening');
   const calls = [];
-  const commands = [];
-  const metadata = [];
+  const sampled = [];
   let current;
   let connections = 0;
+  const conversationId = '11111111-1111-1111-1111-111111111111';
+  const pageUrl = `http://127.0.0.1:${server.address().port}/c/${conversationId}`;
   server.on('connection', socket => {
     current = socket;
     connections++;
@@ -31,13 +32,15 @@ test('CDP attaches, validates main-frame events, reconnects and removes owned sc
       if (request.method === 'Page.getFrameTree') result = { frameTree: { frame: { id: 'main' } } };
       if (request.method === 'Runtime.enable') socket.send(JSON.stringify({ method: 'Runtime.executionContextCreated', params: { context: { id: 7, auxData: { isDefault: true, frameId: 'main' } } } }));
       if (request.method === 'Page.addScriptToEvaluateOnNewDocument') result = { identifier: 'owned-' + connections };
+      if (request.method === 'Runtime.evaluate' && request.params.expression === 'location.href') result = { result: { value: pageUrl } };
       socket.send(JSON.stringify({ id: request.id, result }));
     });
   });
-  const target = { type: 'page', url: 'http://127.0.0.1/chat', webSocketDebuggerUrl: `ws://127.0.0.1:${server.address().port}/page` };
+  const target = { type: 'page', url: pageUrl, webSocketDebuggerUrl: `ws://127.0.0.1:${server.address().port}/page` };
   let discoveryError = false;
   const hub = new CdpHub({
-    source: () => 'void 0', onRisk: (command, event) => { commands.push(command); metadata.push(event); },
+    source: () => 'void 0',
+    onMetrics: async id => { sampled.push(id); return { conversationId: id, state: 'live' }; },
     discover: async () => { if (discoveryError) throw new Error('temporary outage'); return [target]; }
   });
   t.after(async () => {
@@ -48,14 +51,12 @@ test('CDP attaches, validates main-frame events, reconnects and removes owned sc
   hub.running = true;
   await hub.tick();
   assert.equal(hub.status.cdpSockets, 1);
-  const command = 'echo ' + 'x'.repeat(500);
   const send = (context, payload) => current.send(JSON.stringify({ method: 'Runtime.bindingCalled', params: { name: hub.binding, executionContextId: context, payload: JSON.stringify(payload) } }));
-  send(8, { type: 'risk-command', command: 'wrong-frame' });
-  send(7, { type: 'unknown', command: 'wrong-event' });
-  send(7, { type: 'risk-command', command, invocationId: 'command-step-one' });
-  await new Promise(resolve => setTimeout(resolve, 30));
-  assert.deepEqual(commands, [command], 'Analyze the complete command, not a truncated log preview');
-  assert.deepEqual(metadata, [{ invocationId: 'command-step-one' }], 'Keep invocation identity across the CDP boundary');
+  send(8, { type: 'context-metrics', requestId: '1', conversationId });
+  send(7, { type: 'unknown', requestId: '2', conversationId });
+  send(7, { type: 'context-metrics', requestId: '3', conversationId });
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.deepEqual(sampled, [conversationId], 'Only valid main-frame context-metrics requests are processed');
   discoveryError = true;
   await hub.tick();
   assert.equal(hub.running, true, 'Temporary discovery failure must not end the session');

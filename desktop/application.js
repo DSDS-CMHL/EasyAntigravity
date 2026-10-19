@@ -4,45 +4,29 @@ const { createSettings, assertLaunchSettingsMutable } = require('../core/setting
 const { Events } = require('../core/events');
 const { Session } = require('../core/session');
 const { writeJson } = require('../core/storage');
-const { RuleEngine } = require('../features/rules');
 const { loadDictionary } = require('../features/i18n');
-const { RiskAdvisor } = require('../features/risk-advisor');
-const { Notifications } = require('../features/notifications');
-const { PermissionAdapter } = require('../adapters/desktop/permissions');
+const { Updater } = require('../features/updater');
 const { CdpHub } = require('../adapters/desktop/cdp');
 const { rendererSource } = require('../adapters/desktop/renderer');
 const { createDesktopAdapter } = require('../adapters/desktop');
-const { removeLegacyHooks } = require('../adapters/desktop/legacy-hooks');
 const { createHost } = require('./host');
 const { createApi } = require('./api');
-const { LABELS } = require('../features/protection');
-const { compilePilotPermissions } = require('../features/pilot-permissions');
 const { LanguageService } = require('../adapters/desktop/language-service');
 const { ContextMonitor } = require('../features/context-monitor');
 
-function createApplication({ rootDir, dataDir, native = false, testMode = false, onClose = () => {} }) {
+function createApplication({ rootDir, dataDir, native = false, testMode = false, fetchBytes, onClose = () => {} }) {
   fs.mkdirSync(dataDir, { recursive: true });
   const events = new Events(dataDir);
   const settings = createSettings(path.join(dataDir, 'settings.json'));
   const desktop = createDesktopAdapter(testMode);
-  const permissions = new PermissionAdapter({ configFile: desktop.configFile, dataDir });
-  // Recovery precedes feature initialization, including user-editable rule files.
-  const startupRecovery = permissions.restore();
-  if (!startupRecovery.ok) events.log('SECURITY', '上次会话恢复失败: ' + startupRecovery.error, 'tag-alert');
-  const rules = new RuleEngine({ rootDir, dataDir });
-  const dictionary = loadDictionary(rootDir);
+  let dictionary = loadDictionary(rootDir, dataDir);
   const host = createHost({ native, testMode, events });
-  const notifications = new Notifications({ host, events });
   const contextMonitor = new ContextMonitor(new LanguageService({ profile: desktop.profile }));
   let session;
-  const advisorEnabled = () => (session?.mode || settings.get().launchMode) === 'pilot';
-  const advisor = new RiskAdvisor({ rules, events, notifications, enabled: advisorEnabled });
   let lastStatus = '';
   const cdp = new CdpHub({
     profile: desktop.profile,
-    source: binding => rendererSource(dictionary, { ...settings.get(), riskAdvisor: advisorEnabled() }, binding),
-    onRisk: (command, metadata) => advisor.observe(command, metadata),
-    onRiskStats: () => advisor.snapshot(),
+    source: binding => rendererSource(dictionary, settings.get(), binding),
     onMetrics: id => settings.get().enableContextMonitor && session?.phase === 'running' && !testMode
       ? contextMonitor.sample(id) : Promise.resolve({ conversationId: id, state: 'unavailable', context: null, speed: null }),
     onStop: () => contextMonitor.reset(),
@@ -53,44 +37,33 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
       events.publish({ status: status.cdpSockets ? '增强功能已连接' : '等待连接', ...session.snapshot(), ...status });
     }
   });
-  session = new Session({ settings, permissions, rules, desktop, cdp, events, host, testMode, onStart: () => advisor.reset() });
+  session = new Session({ settings, desktop, cdp, events, host, testMode, onStart: () => contextMonitor.reset() });
+  const updater = new Updater({
+    rootDir, dataDir, settings, events,
+    ...(fetchBytes ? { fetchBytes } : {}),
+    onDictionaryUpdated: async () => {
+      dictionary = loadDictionary(rootDir, dataDir);
+      await cdp.refresh();
+      const count = Object.keys(dictionary).length;
+      events.publish({ dictEntries: count, ...updater.currentState() });
+      return count;
+    }
+  });
   let closing;
   const app = {
-    rootDir, dataDir, events, settings, rules, desktop, permissions, host, notifications, cdp, session, contextMonitor,
+    rootDir, dataDir, events, settings, desktop, host, cdp, session, contextMonitor, updater,
     status() {
       return {
-        ...settings.get(), ...session.snapshot(), ...rules.summary(session.protectionLevel || settings.get().protectionLevel), ...cdp.status,
-        riskAdvisor: advisorEnabled(),
-        blockDangerous: (session.mode || settings.get().launchMode) === 'pilot',
-        dictEntries: Object.keys(dictionary).length, riskHits: advisor.hits, riskSummary: advisor.snapshot(), blockCount: 0,
-        injectedCount: permissions.status().count, capabilities: desktop.capabilities
+        ...settings.get(), ...session.snapshot(), ...cdp.status, ...updater.currentState(),
+        dictEntries: Object.keys(dictionary).length, capabilities: desktop.capabilities
       };
     },
-    reloadRules() {
-      if (session.closed || ['preparing', 'launching'].includes(session.phase)) {
-        return { ok: false, error: '正在启动或退出，请稍后重载规则' };
-      }
-      const previous = Object.fromEntries(['bundled', 'document', 'active', 'patterns', 'knowledge', 'signatures']
-        .map(key => [key, rules[key]]));
-      try {
-        rules.reload();
-        const level = session.protectionLevel || settings.get().protectionLevel;
-        let result = { ok: true, nativeRulesWritten: false, runtimeVerified: false };
-        if (session.phase === 'running' && session.mode === 'pilot') {
-          result = permissions.refresh(compilePilotPermissions(rules, level));
-          if (!result.ok) throw new Error(result.error);
-        }
-        const summary = rules.summary(level);
-        events.publish({ dangerRules: true, ...summary, injectedCount: permissions.status().count });
-        events.log('SECURITY', result.nativeRulesWritten
-          ? `规则已重载，${result.count} 条原生权限规则已写入；AG 即时生效仍需实机确认`
-          : '规则已重载；未修改 AG 权限，Pilot 下次启动时应用', 'tag-proxy');
-        return { ...result, active: summary.dangerRulesOn, total: summary.dangerRulesTotal };
-      } catch (error) {
-        Object.assign(rules, previous);
-        events.log('SECURITY', '规则重载失败: ' + error.message, 'tag-alert');
-        return { ok: false, error: error.message };
-      }
+    async reloadDictionary() {
+      dictionary = loadDictionary(rootDir, dataDir);
+      await cdp.refresh();
+      const count = Object.keys(dictionary).length;
+      events.publish({ dictEntries: count });
+      return { ok: true, dictEntries: count };
     },
     async configure(input) {
       const previous = settings.get();
@@ -100,19 +73,11 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
       await cdp.refresh();
       if (next.enableI18n !== previous.enableI18n) events.log('I18N', next.enableI18n ? '汉化已开启' : '汉化已关闭，原文已恢复', 'tag-i18n');
       if (next.enableContextMonitor !== previous.enableContextMonitor) events.log('SYSTEM', next.enableContextMonitor ? '上下文监控已开启（只读）' : '上下文监控已关闭，上下文圆环已移除', 'tag-proxy');
-      if (next.riskAdvisor !== previous.riskAdvisor) events.log('SECURITY', next.riskAdvisor ? '风险提示已开启' : '风险提示已关闭', 'tag-proxy');
-      if (next.protectionLevel !== previous.protectionLevel) events.log('SECURITY', `防护强度已设为${LABELS[next.protectionLevel]}，下次启动时应用；ARES 风险提示不受档位影响`, 'tag-proxy');
       return next;
     },
     async start() {
-      if (!testMode) {
-        try {
-          const result = removeLegacyHooks();
-          if (result.removed) events.log('SYSTEM', `已移除 ${result.removed} 个旧版 EasyAG Hook 注册`, 'tag-proxy');
-        } catch (error) { events.log('SYSTEM', '旧 Hook 清理失败: ' + error.message, 'tag-warn'); }
-      }
       const port = await api.listen(native ? 0 : 19823);
-      events.log('SYSTEM', `EasyAG 桌面内核就绪，${rules.active.length} 条权限规则`, 'tag-proxy');
+      events.log('SYSTEM', `EasyAG 桌面内核就绪，已载入 ${Object.keys(dictionary).length} 条汉化词条`, 'tag-proxy');
       if (process.env.EASYAG_READY_FILE) writeJson(process.env.EASYAG_READY_FILE, { port, pid: process.pid });
       if (!native && !testMode) host.open(`http://127.0.0.1:${port}`);
       void session.attachExisting().catch(error => events.log('SYSTEM', error.message, 'tag-warn'));
@@ -122,12 +87,11 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
       if (closing) return closing;
       closing = (async () => {
         events.log('SYSTEM', '正在退出: ' + reason, 'tag-warn');
-        const recovery = await session.close(reason);
-        notifications.hide();
+        const result = await session.close(reason);
         host.dispose();
         api.close();
-        onClose(recovery);
-        return recovery;
+        onClose(result);
+        return result;
       })();
       return closing;
     }

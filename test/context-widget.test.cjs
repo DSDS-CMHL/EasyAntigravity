@@ -31,7 +31,6 @@ function fixture() {
       this.shadow = { activeElement: null, set innerHTML(html) {
         for (const match of html.matchAll(/id="([^"]+)"/g)) elements[match[1]] = new Element();
         elements.details.hidden = true;
-        elements['risk-details'].hidden = true;
       }, getElementById: key => elements[key] };
       return this.shadow;
     }
@@ -62,7 +61,7 @@ function fixture() {
   return { win, doc, timers, frames, sent, row,
     get node() { return mounted; }, get shadow() { return mounted?.shadow; },
     tick() { for (const callback of timers.values()) callback(); },
-    setAnchors(value) { anchors = value; }, install(enabled = true, riskEnabled = false) { installContextWidget(win, doc, enabled, event => sent.push(event), riskEnabled); }
+    setAnchors(value) { anchors = value; }, install(enabled = true) { installContextWidget(win, doc, enabled, event => sent.push(event)); }
   };
 }
 
@@ -120,80 +119,9 @@ test('reinjection disposes the previous widget and pending work rather than stac
 });
 
 test('serialized renderer and cleanup are valid JavaScript', () => {
-  new vm.Script(rendererSource({}, { enableI18n: false, riskAdvisor: false, enableContextMonitor: true }, '__binding'));
+  new vm.Script(rendererSource({}, { enableI18n: false, enableContextMonitor: true }, '__binding'));
   new vm.Script(disposeSource);
   assert.match(disposeSource, /__easyagContext.*dispose/);
-});
-
-const riskResult = (counts = { high: 2, medium: 4, low: 1 }, revision = 7, session = 1,
-  latestLevel = counts.medium ? 'medium' : counts.low ? 'low' : counts.high ? 'high' : null) => ({
-  enabled: true, session, revision, total: counts.high + counts.medium + counts.low, counts,
-  highestLevel: counts.high ? 'high' : counts.medium ? 'medium' : counts.low ? 'low' : null, latestLevel
-});
-
-test('latest-risk shield expands exact severity counts, survives navigation and does not depend on context replies', () => {
-  const f = fixture(); f.install(true, true);
-  const request = f.sent.find(event => event.type === 'risk-stats');
-  assert.ok(request);
-  f.win.__easyagContext.receiveRisk(request.requestId, riskResult());
-  assert.equal(f.shadow.getElementById('risk-value').textContent, '4');
-  assert.equal(f.shadow.getElementById('risk-trigger').dataset.tone, 'medium', 'Latest risk wins over historical highest severity');
-  assert.equal(f.shadow.getElementById('risk-total').textContent, '7');
-  assert.equal(f.shadow.getElementById('risk-high').textContent, '2');
-  assert.equal(f.shadow.getElementById('risk-medium').textContent, '4');
-  assert.equal(f.shadow.getElementById('risk-low').textContent, '1');
-  const trigger = f.shadow.getElementById('risk-trigger'), card = f.shadow.getElementById('risk-details');
-  trigger.events.click(); assert.equal(card.hidden, false);
-  f.shadow.getElementById('trigger').events.click();
-  assert.equal(card.hidden, true, 'Only one details card is open');
-  trigger.events.click(); f.shadow.getElementById('risk-close').events.click(); assert.equal(card.hidden, true);
-  trigger.events.click(); assert.equal(card.hidden, false, 'Risk card reopens');
-  f.win.location.pathname = '/c/' + nextId; f.tick();
-  assert.equal(card.hidden, true);
-  assert.equal(f.shadow.getElementById('risk-value').textContent, '4', 'Latest-level session count survives conversation changes');
-  f.win.__easyagContext.dispose();
-});
-
-test('shield number shrinks by digits and latest risk changes without a timed rotation', () => {
-  const f = fixture(); f.install(false, true);
-  const cases = [
-    { counts: { high: 1, medium: 0, low: 0 }, level: 'high', text: '1', size: '11px' },
-    { counts: { high: 1, medium: 12, low: 0 }, level: 'medium', text: '12', size: '9px' },
-    { counts: { high: 1, medium: 99, low: 0 }, level: 'medium', text: '99', size: '9px' },
-    { counts: { high: 1, medium: 99, low: 100 }, level: 'low', text: '99+', size: '7px' },
-    { counts: { high: 1, medium: 99, low: 1234 }, level: 'low', text: '99+', size: '7px' }
-  ];
-  for (const [index, example] of cases.entries()) {
-    if (index) { f.win.location.pathname = '/c/' + (index % 2 ? nextId : id); f.tick(); }
-    f.win.__easyagContext.receiveRisk(f.sent.at(-1).requestId, riskResult(example.counts, index + 1, 1, example.level));
-    assert.equal(f.shadow.getElementById('risk-value').textContent, example.text);
-    assert.equal(f.shadow.getElementById('risk-value').style.fontSize, example.size);
-    assert.equal(f.shadow.getElementById('risk-trigger').dataset.tone, example.level);
-  }
-  assert.equal(f.shadow.getElementById('risk-low').textContent, '1234', 'Details preserve the exact count');
-  assert.equal(f.shadow.getElementById('risk-total').textContent, '1334');
-  const value = f.shadow.getElementById('risk-value').textContent;
-  f.tick(); assert.equal(f.shadow.getElementById('risk-value').textContent, value, 'No rotation without a new result');
-  f.win.__easyagContext.dispose();
-});
-
-test('risk-only mode works with context switched off, malformed or old counters cannot replace it', () => {
-  const f = fixture(); f.install(false, true);
-  assert.equal(f.sent.length, 1); assert.equal(f.sent[0].type, 'risk-stats');
-  assert.equal(f.shadow.getElementById('trigger').hidden, true);
-  assert.equal(f.shadow.getElementById('risk-trigger').hidden, false);
-  f.win.__easyagContext.receiveRisk(f.sent[0].requestId, riskResult());
-  f.win.location.pathname = '/c/' + nextId; f.tick();
-  f.win.__easyagContext.receiveRisk(f.sent.at(-1).requestId, riskResult({ high: 0, medium: 1, low: 0 }, 1));
-  assert.equal(f.shadow.getElementById('risk-value').textContent, '4', 'Older revision is ignored');
-  f.win.location.pathname = '/c/' + id; f.tick();
-  f.win.__easyagContext.receiveRisk(f.sent.at(-1).requestId, { ...riskResult(), total: 100 });
-  assert.equal(f.shadow.getElementById('risk-value').textContent, '4', 'Invalid totals are rejected');
-  f.win.location.pathname = '/c/' + nextId; f.tick();
-  f.win.__easyagContext.receiveRisk(f.sent.at(-1).requestId, riskResult({ high: 0, medium: 0, low: 0 }, 8, 2));
-  assert.equal(f.shadow.getElementById('risk-value').textContent, '0');
-  assert.equal(f.shadow.getElementById('risk-trigger').dataset.tone, 'normal');
-  f.install(false, false); assert.equal(f.timers.size, 0); assert.equal(f.win.__easyagContext, undefined);
 });
 
 test('a full context fills the circle and unknown capacity never invents a percentage', () => {

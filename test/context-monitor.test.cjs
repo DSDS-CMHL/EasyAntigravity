@@ -7,7 +7,6 @@ const { LanguageService } = require('../adapters/desktop/language-service');
 const { serverFromDiscovery, parseNetstat, parsePs, parseLsof } = require('../adapters/desktop/language-service-discovery');
 const { CdpHub } = require('../adapters/desktop/cdp');
 const { normalizeSettings, assertLaunchSettingsMutable } = require('../core/settings');
-const { RiskAdvisor } = require('../features/risk-advisor');
 
 const id = '11111111-1111-1111-1111-111111111111';
 const otherId = '22222222-2222-2222-2222-222222222222';
@@ -121,8 +120,8 @@ test('account switches, backend restarts, missing identity and reset reject old 
   }
 });
 
-test('context monitoring remains optional and independent of mode; can be toggled while running', () => {
-  assert.equal(normalizeSettings({ launchMode: 'compatibility' }).enableContextMonitor, true);
+test('context monitoring remains optional and can be toggled while running', () => {
+  assert.equal(normalizeSettings({}).enableContextMonitor, true);
   assert.equal(normalizeSettings({ enableContextMonitor: false }).enableContextMonitor, false);
   assert.throws(() => normalizeSettings({ enableContextMonitor: 'false' }));
   assert.doesNotThrow(() => assertLaunchSettingsMutable({ enableContextMonitor: false }, normalizeSettings(), 'running'));
@@ -148,47 +147,4 @@ test('CDP statistics reject remote origins, wrong conversations, iframe contexts
   await new Promise(done => setImmediate(done));
   connection.injectGeneration++; resolve({ conversationId: id }); await pending;
   assert.equal(outputs.length, 1);
-});
-
-test('ARES exposes deduplicated session counts from actual observations, without parsing logs', () => {
-  let enabled = true;
-  const published = [];
-  const advisor = new RiskAdvisor({ enabled: () => enabled,
-    rules: { assess: command => command === 'safe' ? null : { level: command, levelLabel: command, primary: { name: command } } },
-    events: { log() {}, publish: value => published.push(value) }, notifications: { show() {} } });
-  advisor.reset();
-  advisor.observe('high', { invocationId: 'one' }); advisor.observe('high', { invocationId: 'one' });
-  advisor.observe('medium', { invocationId: 'two' }); advisor.observe('low', { invocationId: 'three' });
-  advisor.observe('safe', { invocationId: 'four' });
-  assert.deepEqual(advisor.snapshot().counts, { high: 1, medium: 1, low: 1 });
-  assert.equal(advisor.snapshot().total, 3); assert.equal(advisor.snapshot().highestLevel, 'high');
-  assert.equal(advisor.snapshot().latestLevel, 'low', 'Safe commands do not replace the latest risk');
-  advisor.observe('high', { invocationId: 'one' });
-  assert.equal(advisor.snapshot().latestLevel, 'low', 'A repeated old invocation does not replace the latest risk');
-  assert.equal(published.at(-1).riskSummary.total, 3);
-  const snapshot = advisor.snapshot(); snapshot.counts.high = 100;
-  assert.equal(advisor.snapshot().counts.high, 1, 'Snapshot is not mutable internal state');
-  enabled = false; advisor.observe('high', { invocationId: 'five' }); assert.equal(advisor.hits, 3);
-  enabled = true; advisor.reset(); assert.equal(advisor.snapshot().session, 2); assert.equal(advisor.hits, 0);
-  assert.equal(advisor.snapshot().latestLevel, null);
-  advisor.observe('high', { invocationId: 'one' }); assert.equal(advisor.hits, 1, 'A new session has its own deduplication scope');
-});
-
-test('risk statistics are delivered while a context RPC is pending, with the same frame/origin guards', async () => {
-  const outputs = [];
-  let finishContext, reads = 0;
-  const href = `http://127.0.0.1:4000/c/${id}`;
-  const hub = new CdpHub({ source: () => '', onMetrics: () => new Promise(done => { finishContext = done; }),
-    onRiskStats: () => { reads++; return { total: 3, counts: { high: 1, medium: 1, low: 1 } }; } });
-  hub.running = true;
-  const connection = { url: 'ws://127.0.0.1:9333/page', pageUrl: href, contexts: new Set([7]), injectGeneration: 1,
-    command: async (_, params) => params.expression === 'location.href' ? { result: { value: href } } : outputs.push(params) };
-  const pending = hub.metrics(connection, 7, { type: 'context-metrics', conversationId: id, requestId: '1' });
-  await new Promise(done => setImmediate(done));
-  await hub.metrics(connection, 7, { type: 'risk-stats', conversationId: id, requestId: '2' });
-  assert.equal(reads, 1); assert.match(outputs[0].expression, /receiveRisk/);
-  connection.riskStatsAt = 0;
-  await hub.metrics(connection, 8, { type: 'risk-stats', conversationId: id, requestId: '3' });
-  assert.equal(reads, 1, 'Iframe context cannot retrieve even aggregate counters');
-  finishContext({ conversationId: id }); await pending;
 });

@@ -42,8 +42,8 @@ body {
   color: var(--text-main);
   width: 100%;
   height: 100%;
-  min-width: 400px;
-  min-height: 640px;
+  min-width: 380px;
+  min-height: 520px;
   padding: clamp(12px, 2.5vw, 22px) clamp(14px, 3vw, 24px);
   display: flex;
   flex-direction: column;
@@ -181,72 +181,6 @@ body {
   min-width: 0;
   flex: 1 1 auto;
 }
-
-.mode-options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.mode-option {
-  appearance: none;
-  text-align: left;
-  background: #111319;
-  border: 1px solid var(--card-border);
-  border-radius: 10px;
-  color: var(--text-main);
-  padding: 10px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, transform 0.15s;
-}
-.mode-option:hover {
-  border-color: #4b5060;
-  transform: translateY(-1px);
-}
-.mode-option.selected {
-  border-color: var(--primary);
-  background: rgba(124, 58, 237, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.18);
-}
-.mode-option:disabled {
-  cursor: default;
-  opacity: 0.65;
-  transform: none;
-}
-.mode-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  font-size: 12.5px;
-  font-weight: 700;
-}
-.mode-badge {
-  color: #c4b5fd;
-  font-size: 9px;
-  font-weight: 700;
-}
-.mode-desc {
-  display: block;
-  margin-top: 5px;
-  color: var(--text-dark);
-  font-size: 10.5px;
-  line-height: 1.4;
-}
-.protection-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--card-border); }
-.protection-heading { margin-bottom: 8px; }
-.protection-meta { color: var(--text-dark); font-size: 10px; }
-.protection-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.protection-option {
-  appearance: none; padding: 7px 6px; border: 1px solid var(--card-border);
-  border-radius: 7px; background: #111319; color: var(--text-muted); font: inherit;
-  font-size: 12px; cursor: pointer; transition: background 0.15s, border-color 0.15s;
-}
-.protection-option:hover:not(:disabled) { border-color: #77708e; }
-.protection-option.selected { background: rgba(124, 58, 237, 0.12); border-color: var(--primary); color: #e9ddff; }
-.protection-recommended { margin-left: 5px; font-size: 9px; color: var(--text-dark); }
-.protection-option:disabled { cursor: default; opacity: 0.55; }
-.protection-hint { margin: 8px 0 0; min-height: 30px; font-size: 10.5px; line-height: 1.5; color: var(--text-dark); }
-.protection-section[data-level="relaxed"] .protection-hint { color: #fbbf24; }
 
 /* 端口与选项控件 */
 .port-cluster {

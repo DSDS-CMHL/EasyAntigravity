@@ -2,11 +2,34 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { readJson } = require('../core/storage');
 
-function loadDictionary(rootDir) {
+const DICT_FILES = ['ui_v2.json', 'common.json'];
+
+function sanitizeEntries(source) {
+  const clean = {};
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return clean;
+  for (const [key, value] of Object.entries(source)) {
+    if (typeof key === 'string' && typeof value === 'string' && key.length <= 2000 && value.length <= 2000) {
+      clean[key] = value;
+    }
+  }
+  return clean;
+}
+
+function loadDictionary(rootDir, dataDir) {
   const dictionary = {};
-  for (const name of ['ui_v2.json', 'common.json']) {
+  for (const name of DICT_FILES) {
     const file = path.join(rootDir, 'dicts', name);
-    if (fs.existsSync(file)) Object.assign(dictionary, readJson(file));
+    if (fs.existsSync(file)) Object.assign(dictionary, sanitizeEntries(readJson(file, {})));
+  }
+  if (dataDir) {
+    for (const name of DICT_FILES) {
+      const hotfixFile = path.join(dataDir, 'hotfix', 'dicts', name);
+      if (fs.existsSync(hotfixFile)) {
+        try {
+          Object.assign(dictionary, sanitizeEntries(readJson(hotfixFile, {})));
+        } catch { /* Corrupted hotfix dictionary must never break bundled startup. */ }
+      }
+    }
   }
   return dictionary;
 }
@@ -84,4 +107,4 @@ function installI18n(window, document, dictionary, enabled) {
   return runtime;
 }
 
-module.exports = { loadDictionary, installI18n };
+module.exports = { DICT_FILES, loadDictionary, installI18n };
