@@ -190,6 +190,16 @@ fn start_backend(app: &tauri::AppHandle) -> Result<u16, Box<dyn std::error::Erro
                             match v["cmd"].as_str().unwrap_or("") {
                                 "popup" | "focus" => show_main_window(&handle),
                                 "hide_easyag" | "hide" => hide_main_window(&handle),
+                                "theme" => {
+                                    if let Some(window) = handle.get_webview_window("main") {
+                                        let theme = match v["value"].as_str() {
+                                            Some("light") => Some(tauri::Theme::Light),
+                                            Some("dark") => Some(tauri::Theme::Dark),
+                                            _ => None,
+                                        };
+                                        let _ = window.set_theme(theme);
+                                    }
+                                }
                                 "exit" | "quit" => {
                                     stop_backend(&handle.state::<Backend>());
                                     handle.exit(0);

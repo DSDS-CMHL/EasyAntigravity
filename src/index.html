@@ -5,11 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>EasyAntigravity</title>
   <style>
-    html, body { margin: 0; height: 100%; background: #0f1115; color: #e2e8f0;
-      font: 14px/1.5 system-ui, "Segoe UI", sans-serif; display: grid; place-items: center; }
+    :root { background: #f8fafc; color: #334155; }
+    @media (prefers-color-scheme: dark) {
+      :root { background: #0f1115; color: #e2e8f0; }
+    }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: inherit;
+      color: inherit;
+      font: 13.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      display: grid;
+      place-items: center;
+    }
   </style>
 </head>
 <body>
-  <div>EasyAntigravity 启动中…</div>
+  <div>EasyAntigravity 正在启动…</div>
 </body>
 </html>

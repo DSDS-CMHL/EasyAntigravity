@@ -9,6 +9,13 @@ const native = process.env.EASYAG_TAURI === '1';
 const bundledRoot = process.pkg ? path.dirname(process.execPath) : __dirname;
 const dataDir = normalizePath(process.env.EASYAG_DATA_DIR) || bundledRoot;
 
+// Ensure runtime overlays stored in dataDir can always resolve bundled dependencies (e.g. 'ws')
+const bundledNodeModules = path.join(bundledRoot, 'node_modules');
+process.env.NODE_PATH = process.env.NODE_PATH
+  ? `${bundledNodeModules}${path.delimiter}${process.env.NODE_PATH}`
+  : bundledNodeModules;
+require('node:module').Module._initPaths();
+
 let rootDir = bundledRoot;
 let createApplication;
 const candidateRoot = resolveRuntimeRoot(bundledRoot, dataDir);

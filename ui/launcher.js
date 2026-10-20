@@ -52,12 +52,12 @@ function renderPhase(next) {
 function renderStatus(status) {
   if (status.phase && !(launchPending && status.phase === 'idle')) renderPhase(status.phase);
   if (status.dictEntries !== undefined) {
-    element('dictCountBadge').textContent = `已载入 ${status.dictEntries} 条词条`;
+    element('dictCountBadge').textContent = `· 已载入 ${status.dictEntries} 词条`;
   }
   if (status.version) {
     const versionNode = element('versionBadge');
     if (versionNode) {
-      versionNode.textContent = `v${status.version}${status.restartRequired ? ' · 待重启生效' : ''}`;
+      versionNode.textContent = `v${status.version}`;
     }
   }
   if (status.clientRunning !== undefined) {
@@ -103,19 +103,24 @@ async function launch() {
 
 async function checkUpdate() {
   const btn = element('updateBtn');
+  const actionLabel = element('updateActionText') || btn;
   if (!btn || btn.disabled) return;
-  const originalText = btn.textContent;
   btn.disabled = true;
-  btn.textContent = '正在同步…';
+  if (actionLabel) actionLabel.textContent = '↻ 检查中…';
   try {
     const result = await api.checkUpdate();
     renderStatus(result);
+    if (actionLabel) actionLabel.textContent = result.updated ? '✨ 已更新' : '✓ 已是最新';
     if (result.runtimeFilesUpdated > 0) {
-      setTimeout(() => location.reload(), 500);
+      setTimeout(() => location.reload(), 400);
+      return;
     }
+    setTimeout(() => { if (actionLabel) actionLabel.textContent = '↻ 检查更新'; }, 2500);
+  } catch (error) {
+    if (actionLabel) actionLabel.textContent = '↻ 检查更新';
+    throw error;
   } finally {
     btn.disabled = false;
-    btn.textContent = originalText;
   }
 }
 
@@ -134,6 +139,7 @@ function applyTheme(theme, persist = false) {
   if (textNode) {
     textNode.textContent = theme === 'dark' ? '🌙 深色' : '☀️ 浅色';
   }
+  api.setTheme?.(theme).catch(() => {});
 }
 
 function toggleTheme() {

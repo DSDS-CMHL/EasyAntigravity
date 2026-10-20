@@ -17,6 +17,7 @@ function createHost({ native, testMode, events }) {
     open,
     hide: () => send({ cmd: 'hide_easyag' }),
     show: () => send({ cmd: 'popup' }),
+    setTheme: value => send({ cmd: 'theme', value }),
     dispose() {}
   };
 }

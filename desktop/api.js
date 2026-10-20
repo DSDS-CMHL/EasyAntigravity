@@ -21,7 +21,7 @@ function serveFile(response, base, relative) {
   const target = path.resolve(base, relative);
   if (!target.startsWith(path.resolve(base) + path.sep)) return json(response, { ok: false, error: '无效路径' }, 403);
   if (!fs.existsSync(target) || !fs.statSync(target).isFile()) return json(response, { ok: false, error: '文件不存在' }, 404);
-  response.writeHead(200, { 'Content-Type': TYPES[path.extname(target)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' });
+  response.writeHead(200, { 'Content-Type': TYPES[path.extname(target)] || 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   const stream = fs.createReadStream(target);
   stream.on('error', () => response.destroy());
   stream.pipe(response);
@@ -78,6 +78,11 @@ function createApi(app) {
         const data = await readBody(request);
         const result = await app.updater.checkAndApply({ manifestUrl: data.manifestUrl });
         return json(response, result);
+      }
+      if (method === 'POST' && route === '/api/theme') {
+        const data = await readBody(request);
+        if (data.theme === 'light' || data.theme === 'dark') app.host.setTheme?.(data.theme);
+        return json(response, { ok: true });
       }
       if (method === 'POST' && route === '/api/hide') { app.host.hide(); return json(response, { ok: true }); }
       if (method === 'POST' && route === '/api/quit') {

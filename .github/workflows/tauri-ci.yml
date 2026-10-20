@@ -63,7 +63,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $name = 'EasyAntigravity-4.0.0-lite-windows-x64'
+          $name = 'EasyAntigravity-4.0.1-lite-windows-x64'
           $stage = Join-Path 'dist-tauri' $name
           New-Item -ItemType Directory -Path $stage | Out-Null
           $release = 'src-tauri/target/${{ matrix.target }}/release'
@@ -107,7 +107,7 @@ jobs:
 
           # 5. 打包分发 ZIP 包（保持 macOS 扩展属性、代码签名与完整 App 外壳）
           mkdir -p dist-tauri
-          zip_name="EasyAntigravity-4.0.0-lite-${{ matrix.name }}-beta.zip"
+          zip_name="EasyAntigravity-4.0.1-lite-${{ matrix.name }}-beta.zip"
           zip_path="dist-tauri/$zip_name"
           ditto -c -k --sequesterRsrc --keepParent "$app" "$zip_path"
 
@@ -130,23 +130,23 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: EasyAntigravity-4.0.0-lite-${{ matrix.name }}
-          path: dist-tauri/EasyAntigravity-4.0.0-lite-windows-x64
+          name: EasyAntigravity-4.0.1-lite-${{ matrix.name }}
+          path: dist-tauri/EasyAntigravity-4.0.1-lite-windows-x64
           if-no-files-found: error
           retention-days: 14
       - name: Upload macOS app (Beta)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: EasyAntigravity-4.0.0-lite-${{ matrix.name }}-beta
-          path: dist-tauri/EasyAntigravity-4.0.0-lite-${{ matrix.name }}-beta.zip
+          name: EasyAntigravity-4.0.1-lite-${{ matrix.name }}-beta
+          path: dist-tauri/EasyAntigravity-4.0.1-lite-${{ matrix.name }}-beta.zip
           if-no-files-found: error
           retention-days: 14
       - name: Upload Standard Workflow Test Suite
         if: matrix.name == 'windows-x64'
         uses: actions/upload-artifact@v4
         with:
-          name: EasyAntigravity-4.0.0-lite-standard-workflow-test-suite
+          name: EasyAntigravity-4.0.1-lite-standard-workflow-test-suite
           path: |
             test/
             core/

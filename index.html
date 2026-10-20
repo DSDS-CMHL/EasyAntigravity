@@ -23,16 +23,16 @@
   <!-- 顶部状态栏 -->
   <div class="nav-header">
     <div class="brand">
-      <div>
-        <div class="brand-title">EasyAG <span class="brand-sub" id="versionBadge">v4.0.1</span></div>
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:6px;">
-      <button type="button" class="tray-btn" id="themeToggleBtn" data-action="toggle-theme" title="切换浅色 / 深色主题（默认自适应系统顶栏颜色）">
-        <span id="themeToggleText">☀️ 浅色</span>
+      <span class="brand-title">EasyAG</span>
+      <button type="button" class="version-pill" id="updateBtn" data-action="check-update" title="检查并拉取最新内核与汉化词典，免重装直接生效">
+        <span id="versionBadge">v4.0.1</span>
+        <span class="version-sep">·</span>
+        <span id="updateActionText">↻ 检查更新</span>
       </button>
-      <button type="button" class="tray-btn" data-action="hide" title="收起至系统托盘，后台静默运行">
-        <span>📥 托盘静默</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button type="button" class="tray-btn" id="themeToggleBtn" data-action="toggle-theme" title="切换浅色 / 深色外观（顶栏与面板同步变色）">
+        <span id="themeToggleText">☀️ 浅色</span>
       </button>
       <div class="status-capsule" id="clientStatusBadge">
         <div class="dot"></div>
@@ -69,20 +69,11 @@
   <div class="card">
     <div class="card-label">界面深度汉化与监控</div>
     <div class="row">
-      <span style="font-weight: 500;">实时 DOM 字典翻译:</span>
+      <span style="font-weight: 500;">实时 DOM 字典翻译 <span id="dictCountBadge" class="dict-badge">· 已载入词条</span></span>
       <label class="switch">
         <input type="checkbox" id="i18nToggle" checked>
         <span class="slider"></span>
       </label>
-    </div>
-    <div class="row">
-      <span style="font-size: 11.5px; color: var(--text-dark);">词典与内核热更新</span>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span id="dictCountBadge" style="color: var(--purple); font-size: 11.5px; font-weight: 600;">已载入词条</span>
-        <button type="button" class="quick-tag" id="updateBtn" data-action="check-update" title="通过当前代理拉取最新汉化词典与热补丁，免重装即时生效">
-          ↻ 检查热更新
-        </button>
-      </div>
     </div>
     <div class="row">
       <span style="font-weight: 500;">AG 内上下文圆环 <span style="font-size: 11px; color: var(--text-dark);">· 速度在详情中</span></span>
@@ -102,7 +93,7 @@
   <!-- 运行日志：常显卡片，不折叠 -->
   <div class="advanced" id="advancedPanel">
     <div class="advanced-head">
-      <span>运行日志</span>
+      <span>运行日志 <span style="font-weight: 400; font-size: 10.5px; color: var(--text-dark);">· 点右上角 × 自动最小化至托盘</span></span>
       <div style="display:flex;gap:10px;align-items:center;">
         <button type="button" class="clean-btn" data-action="copy-logs">复制日志</button>
         <button type="button" class="clean-btn" data-action="clear-logs">清空</button>

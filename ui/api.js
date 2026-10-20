@@ -20,5 +20,6 @@ export const api = {
   configure: body => request('/api/config', { body }),
   launch: () => request('/api/launch', { method: 'POST' }),
   checkUpdate: body => request('/api/update', { body: body || {}, method: 'POST' }),
+  setTheme: theme => request('/api/theme', { body: { theme }, method: 'POST' }),
   hide: () => request('/api/hide', { method: 'POST' })
 };

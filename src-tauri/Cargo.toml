@@ -1,8 +1,8 @@
 [package]
 name = "easyantigravity"
-version = "3.2.4"
+version = "4.0.1"
 edition = "2021"
-description = "EasyAntigravity - Antigravity copilot: no-TUN proxy, i18n, ASK risk gate"
+description = "EasyAntigravity Lite - TUN-free process proxy, reversible DOM localization and context ring"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

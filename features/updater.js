@@ -249,7 +249,9 @@ class Updater {
           const expectedHash = entry.sha256.trim().toLowerCase();
           if (!/^[0-9a-f]{64}$/.test(expectedHash)) throw new Error(`词典 ${name} 校验摘要格式无效`);
           const targetFile = path.join(dictDir, name);
-          if (fs.existsSync(targetFile) && sha256Hex(fs.readFileSync(targetFile)) === expectedHash) continue;
+          const bundledFile = path.join(this.rootDir, 'dicts', name);
+          const currentFile = fs.existsSync(targetFile) ? targetFile : (fs.existsSync(bundledFile) ? bundledFile : null);
+          if (currentFile && sha256Hex(fs.readFileSync(currentFile)) === expectedHash) continue;
           const fileUrl = new URL(entry.url, url).toString();
           const bytes = await this.fetchBytes(fileUrl, port);
           if (sha256Hex(bytes) !== expectedHash) throw new Error(`词典 ${name} SHA-256 校验未通过，已拒绝写入`);
@@ -270,7 +272,7 @@ class Updater {
         fs.rmSync(stagingDir, { recursive: true, force: true });
         try {
           // Seed staging from current rootDir so overlay is a complete runnable backend
-          for (const item of ['server.js', 'index.html', 'package.json', 'THIRD-PARTY-NOTICES.md', 'dicts', 'core', 'features', 'adapters', 'desktop', 'ui', 'assets']) {
+          for (const item of ['server.js', 'index.html', 'package.json', 'THIRD-PARTY-NOTICES.md', 'node_modules', 'dicts', 'core', 'features', 'adapters', 'desktop', 'ui', 'assets']) {
             const src = path.join(this.rootDir, item);
             if (fs.existsSync(src)) fs.cpSync(src, path.join(stagingDir, item), { recursive: true });
           }

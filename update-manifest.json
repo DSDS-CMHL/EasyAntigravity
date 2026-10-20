@@ -16,11 +16,11 @@
     "files": {
       "server.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/server.js",
-        "sha256": "9f1d93788bcfb85ca99b1983d59cdc0d7c8de5d39490ea1a489e0bb1043c5822"
+        "sha256": "df02d94f17ad9b4aed1870f425c2bb0b9a23a4c41809d74cac3e2ce11cc52abd"
       },
       "index.html": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/index.html",
-        "sha256": "2056ed024454a024caf9d0a7454706396405e77610e176266ccb0578126245ab"
+        "sha256": "26cf8ce8dae9715f9eaa86de54c93d90d2e2c072a41588167d90251e9143ea70"
       },
       "core/events.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/core/events.js",
@@ -56,7 +56,7 @@
       },
       "features/updater.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/features/updater.js",
-        "sha256": "f00d4a2540ac61ad0011c6356f3f96073a7822ba657910e2186737372d85af69"
+        "sha256": "09031c68c29e0bc23c82e69a36c68a0c421ab2730586dd393cd7807bfdfaf2ad"
       },
       "adapters/desktop/cdp.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/adapters/desktop/cdp.js",
@@ -84,7 +84,7 @@
       },
       "desktop/api.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/desktop/api.js",
-        "sha256": "ae8b301cfb7307ae859c4457241a86efd54ac515e99b952a49d310f9b62f849e"
+        "sha256": "2afa58a377400677caa66fa8f7108643305e8525ea47521994731d0cffe727c9"
       },
       "desktop/application.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/desktop/application.js",
@@ -92,19 +92,19 @@
       },
       "desktop/host.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/desktop/host.js",
-        "sha256": "cc783d9657c18f1ec9ab5aea9f15ebeb61a3a0e668f2e0ee119a31312dccb4e4"
+        "sha256": "b00fbcb52bbb0351fc1867e7b29965a3594c203912f5629fd5ada8c2724e5bfb"
       },
       "ui/api.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/ui/api.js",
-        "sha256": "c2f4b6fd94344b0ce2b23db4e625baa2eba9545b599565f5f7e753d37e858351"
+        "sha256": "a98ea7b595cc3df3d0efa7b7d38a99c88c53e32634fc81e83d8173ca97a86f3d"
       },
       "ui/launcher.css": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/ui/launcher.css",
-        "sha256": "9a4b7473fecb66ef93d1f9e17db7170407ead0bc2abd2b6fd7bd7dbe1ed27a2d"
+        "sha256": "5766cac69c48e69c5ac3656a2e89201c06e7f72f1a5dee48ef5f8fda295af111"
       },
       "ui/launcher.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/ui/launcher.js",
-        "sha256": "61a5ada899d09d90a826e65651b8db841c9152d1fa40d09beb13a30a2fc970a0"
+        "sha256": "81af8eb642aac340fddafc6b6c965230337f9dc9ee5740bab94dd9fff58e2030"
       }
     }
   }
