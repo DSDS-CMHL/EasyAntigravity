@@ -57,7 +57,7 @@
       },
       "features/updater.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/features/updater.js",
-        "sha256": "950fbe8741a1dd92db0dd21f1432b0bbfe1610f8d842159eb02faa622d09266c"
+        "sha256": "210d3cde465a0ef5a3ebc549266eea54ea7753d7e9c8118ca4278530f9ef2804"
       },
       "adapters/desktop/cdp.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/adapters/desktop/cdp.js",
@@ -97,7 +97,7 @@
       },
       "ui/api.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/ui/api.js",
-        "sha256": "a98ea7b595cc3df3d0efa7b7d38a99c88c53e32634fc81e83d8173ca97a86f3d"
+        "sha256": "1c6b7b5e75c72b59b589d8d91d724e412095184d7a6b751181d66893ae452575"
       },
       "ui/launcher.css": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/ui/launcher.css",

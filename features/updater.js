@@ -286,6 +286,13 @@ class Updater {
             if (!/^[0-9a-f]{64}$/.test(expectedHash)) throw new Error(`文件 ${relativePath} 校验摘要格式无效`);
             const destination = path.resolve(stagingDir, relativePath);
             if (!destination.startsWith(path.resolve(stagingDir) + path.sep)) throw new Error(`非法热更新目标路径: ${relativePath}`);
+            if (fs.existsSync(destination)) {
+              const localRaw = fs.readFileSync(destination);
+              const localLf = Buffer.from(localRaw.toString('utf8').replace(/\r\n/g, '\n'), 'utf8');
+              if (sha256Hex(localRaw) === expectedHash || sha256Hex(localLf) === expectedHash) {
+                continue;
+              }
+            }
             const fileUrl = new URL(spec.url, url).toString();
             const bytes = await this.fetchBytes(fileUrl, port);
             if (sha256Hex(bytes) !== expectedHash) throw new Error(`文件 ${relativePath} SHA-256 校验失败`);
