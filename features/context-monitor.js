@@ -16,12 +16,43 @@ function seconds(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-function summarizeMetadata(generators) {
+function resolveModelName(chat, modelMap) {
+  if (!chat || typeof chat !== 'object') return null;
+  for (const direct of [chat.modelDisplayName, chat.modelName, chat.usage?.modelDisplayName, chat.usage?.modelName, chat.chatStartMetadata?.modelDisplayName]) {
+    if (typeof direct === 'string' && direct.trim()) return direct.trim().slice(0, 100);
+  }
+  for (const raw of [chat.model, chat.usage?.model, chat.chatStartMetadata?.model, chat.modelOrAlias?.model, chat.modelOrAlias?.alias]) {
+    if (typeof raw !== 'string' || !raw.trim()) continue;
+    const key = raw.trim();
+    if (modelMap instanceof Map && modelMap.has(key)) return modelMap.get(key).slice(0, 100);
+    if (!/^MODEL_PLACEHOLDER_/i.test(key)) return key.replace(/^MODEL_/i, '').slice(0, 100);
+  }
+  return null;
+}
+
+function extractModelMap(status) {
+  const map = new Map();
+  const configs = status?.userStatus?.cascadeModelConfigData?.clientModelConfigs;
+  if (Array.isArray(configs)) {
+    for (const item of configs) {
+      const label = typeof item?.label === 'string' && item.label.trim() ? item.label.trim() : null;
+      if (!label) continue;
+      for (const k of [item.modelOrAlias?.model, item.modelOrAlias?.alias, item.model]) {
+        if (typeof k === 'string' && k.trim()) map.set(k.trim(), label);
+      }
+    }
+  }
+  return map;
+}
+
+function summarizeMetadata(generators, modelMap) {
   const latestChat = generators.findLast(item => item?.chatModel)?.chatModel;
   const rawContext = latestChat?.chatStartMetadata?.contextWindowMetadata;
   const used = tokenCount(rawContext?.estimatedTokensUsed), capacity = tokenCount(rawContext?.maxContextTokens);
   const max = capacity > 0 ? capacity : null;
-  const model = typeof latestChat?.modelDisplayName === 'string' ? latestChat.modelDisplayName.slice(0, 100) : null;
+  const fallbackModel = resolveModelName(latestChat, modelMap)
+    || resolveModelName(generators.findLast(item => resolveModelName(item?.chatModel, modelMap))?.chatModel, modelMap);
+  const model = fallbackModel;
   const context = used === null ? null : { usedTokens: used, maxTokens: max, usedFraction: max ? used / max : null, model };
   const seen = new Set();
   let speed = null;
@@ -37,7 +68,7 @@ function summarizeMetadata(generators) {
     if (tokens === null || !(duration > 0)) continue;
     speed = { tokensPerSecond: tokens / duration, ttftSeconds: seconds(chat.timeToFirstToken),
       basis: visible !== null || (output !== null && thinking !== null) ? 'response' : 'all-output',
-      shortSample: duration < 1, model: typeof chat.modelDisplayName === 'string' ? chat.modelDisplayName.slice(0, 100) : null };
+      shortSample: duration < 1, model: resolveModelName(chat, modelMap) || fallbackModel };
     if (!Number.isFinite(speed.tokensPerSecond)) speed = null;
   }
   return { context, speed };
@@ -72,9 +103,10 @@ class ContextMonitor {
     try {
       // Verify the same account and backend both before and after collecting.
       const server = await this.client.discover();
-      const identity = accountScope(await this.client.call('GetUserStatus', {}, signal));
+      const firstStatus = await this.client.call('GetUserStatus', {}, signal);
+      const identity = accountScope(firstStatus);
       const metadata = await this.client.metadata(id, signal);
-      const result = summarizeMetadata(metadata);
+      const result = summarizeMetadata(metadata, extractModelMap(firstStatus));
       const currentIdentity = accountScope(await this.client.call('GetUserStatus', {}, signal));
       const currentServer = await this.client.discover();
       if (generation !== this.generation || identity !== currentIdentity || server.pid !== currentServer.pid

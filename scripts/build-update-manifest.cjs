@@ -66,6 +66,7 @@ for (const rel of runtimeFiles) {
 }
 
 const manifest = {
+  edition: pkg.edition || 'lite',
   version: pkg.version,
   dictVersion,
   dicts,

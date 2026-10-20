@@ -56,6 +56,8 @@ fn stop_backend(backend: &Backend) {
 }
 
 fn show_main_window(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
@@ -67,6 +69,8 @@ fn hide_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 }
 
 fn open_url(url: &str) {
@@ -94,9 +98,9 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     )?;
 
     let mut builder = TrayIconBuilder::with_id("easyag-tray")
-        .tooltip("EasyAntigravity")
+        .tooltip("EasyAntigravity Lite")
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(cfg!(target_os = "macos"))
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main_window(app),
             "web" => {
@@ -271,7 +275,7 @@ fn main() {
             let _ = setup_tray(app);
             #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_title("EasyAntigravity (macOS Beta)");
+                let _ = window.set_title("EasyAntigravity Lite (macOS)");
             }
             let handle = app.handle().clone();
             std::thread::spawn(move || match start_backend(&handle) {
@@ -302,14 +306,19 @@ fn main() {
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                hide_main_window(window.app_handle());
             }
         })
         .build(tauri::generate_context!())
         .expect("Failed to build EasyAG")
-        .run(|app, event| {
-            if let RunEvent::Exit = event {
+        .run(|app, event| match event {
+            RunEvent::Exit => {
                 stop_backend(&app.state::<Backend>());
             }
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => {
+                show_main_window(app);
+            }
+            _ => {}
         });
 }

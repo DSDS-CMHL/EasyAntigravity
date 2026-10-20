@@ -1,6 +1,6 @@
 [package]
 name = "easyantigravity"
-version = "4.0.1"
+version = "4.0.2"
 edition = "2021"
 description = "EasyAntigravity Lite - TUN-free process proxy, reversible DOM localization and context ring"
 

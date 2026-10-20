@@ -212,11 +212,12 @@ class Updater {
   }
 
   currentState() {
-    const bundledPkg = readJson(path.join(this.rootDir, 'package.json'), { version: '4.0.0' });
+    const bundledPkg = readJson(path.join(this.rootDir, 'package.json'), { version: '4.0.2', edition: 'lite' });
     const saved = readJson(this.stateFile, {});
     return {
-      version: saved.runtimeVersion || bundledPkg.version || '4.0.0',
-      bundledVersion: bundledPkg.version || '4.0.0',
+      edition: bundledPkg.edition || 'lite',
+      version: saved.runtimeVersion || bundledPkg.version || '4.0.2',
+      bundledVersion: bundledPkg.version || '4.0.2',
       dictVersion: saved.dictVersion || '内置词典',
       lastCheckedAt: saved.lastCheckedAt || null,
       restartRequired: Boolean(saved.restartRequired)
@@ -234,8 +235,10 @@ class Updater {
       try { manifest = JSON.parse(rawManifest.toString('utf8')); }
       catch { throw new Error('热更新清单格式无效'); }
       if (!manifest || typeof manifest !== 'object') throw new Error('热更新清单内容为空');
-
       const state = this.currentState();
+      if (manifest.edition && manifest.edition !== state.edition) {
+        throw new Error(`更新通道不匹配（当前为 ${state.edition} 版）`);
+      }
       let dictsUpdated = 0;
       let runtimeFilesUpdated = 0;
 

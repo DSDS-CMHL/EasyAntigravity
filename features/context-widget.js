@@ -34,7 +34,7 @@ function installContextWidget(win, doc, enabled, report) {
         if (!row || row.contains(editor) || !row.parentElement?.contains(editor) || [doc.body, doc.documentElement].includes(row.parentElement)) continue;
         let branch = anchor;
         while (branch.parentElement !== row) branch = branch.parentElement;
-        const pair = { row, branch, editor, distance };
+        const pair = { row, branch, editor, anchor, distance };
         if (safeLayout(pair)) pairs.push(pair);
       }
     }
@@ -76,11 +76,14 @@ function installContextWidget(win, doc, enabled, report) {
     button.title = percentage !== null ? `EasyAG 上下文估算 ${percentage}% · 点击查看详情` : 'EasyAG 上下文估算暂不可用 · 点击查看详情';
     shadow.getElementById('usage').textContent = context
       ? `${compact(context.usedTokens)} / ${context.maxTokens === null ? '容量未知' : compact(context.maxTokens)} tokens` : '暂不可用';
-    shadow.getElementById('model').textContent = context?.model || '—';
+    const domModel = typeof composer?.anchor?.textContent === 'string' ? composer.anchor.textContent.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+    const resolvedModel = context?.model || speed?.model || domModel || '—';
+    shadow.getElementById('model').textContent = resolvedModel;
     shadow.getElementById('speed').textContent = speed ? `${speed.tokensPerSecond.toFixed(1)} tok/s` : '等待有效请求';
     shadow.getElementById('ttft').textContent = speed?.ttftSeconds !== null && speed?.ttftSeconds !== undefined ? `${speed.ttftSeconds.toFixed(2)} 秒` : '—';
+    const noteModel = speed?.model || context?.model || domModel;
     shadow.getElementById('speedNote').textContent = !speed ? '速度来自请求完成后的元数据，不是瞬时速度。'
-      : `${speed.basis === 'response' ? '按可见输出计算' : '输出字段不全，按总输出计算'}${speed.shortSample ? '；短样本波动较大' : ''}。${speed.model ? '采样模型：' + speed.model : ''}`;
+      : `${speed.basis === 'response' ? '按可见输出计算' : '输出字段不全，按总输出计算'}${speed.shortSample ? '；短样本波动较大' : ''}。${noteModel ? '采样模型：' + noteModel : ''}`;
     shadow.getElementById('updated').textContent = data?.state === 'live'
       ? `采集于 ${new Date(data.sampledAt).toLocaleTimeString()}；上下文为最近请求开始时的宿主估算。`
       : pending ? '正在读取本地统计…' : '当前统计不可用，将自动重试；不影响其他增强功能。';
