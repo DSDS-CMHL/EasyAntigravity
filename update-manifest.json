@@ -1,6 +1,6 @@
 {
   "edition": "lite",
-  "version": "4.0.2",
+  "version": "4.0.3",
   "dictVersion": "2026-10-20-hotfix1",
   "dicts": {
     "ui_v2.json": {
@@ -13,7 +13,7 @@
     }
   },
   "runtime": {
-    "version": "4.0.2",
+    "version": "4.0.3",
     "files": {
       "server.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/server.js",
@@ -21,7 +21,7 @@
       },
       "index.html": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/index.html",
-        "sha256": "fb4db6ab16f5ce2e3ff74eb09caf0c33eaa00cd4416f90f247e5418126279610"
+        "sha256": "804f8e62092ad558b57c4bbf94c0938e02746bf0ed1bcaab02c8e967ef221e34"
       },
       "core/events.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/core/events.js",
@@ -101,11 +101,11 @@
       },
       "ui/launcher.css": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/ui/launcher.css",
-        "sha256": "afd72f6417cf900010e75a94ff28ca44fb07cf87791ce9204fff5769b7d2057e"
+        "sha256": "5ab488919d875ea6bf9a72cd8eefcd34b8a3dbd533b8b5be68017aed3909be47"
       },
       "ui/launcher.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/ui/launcher.js",
-        "sha256": "81af8eb642aac340fddafc6b6c965230337f9dc9ee5740bab94dd9fff58e2030"
+        "sha256": "7a911843dc06c2b4e35f8c97b688111443a85797a829673a13767875405e5d2e"
       }
     }
   }

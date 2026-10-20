@@ -64,9 +64,9 @@ function renderStatus(status) {
     const badge = element('clientStatusBadge');
     badge.className = status.clientRunning ? 'status-capsule active' : 'status-capsule';
     badge.querySelector('span').textContent = status.clientRunning
-      ? status.cdpSockets ? '运行中 · 增强已连接' : '运行中 · 等待增强连接'
-      : '客户端未运行';
-    badge.title = status.cdpError || '';
+      ? status.cdpSockets ? '增强已连接' : '等待增强连接'
+      : '未运行';
+    badge.title = status.cdpError || (status.clientRunning ? 'Antigravity 正在运行' : 'Antigravity 未运行');
   }
 }
 
@@ -137,7 +137,11 @@ function applyTheme(theme, persist = false) {
   }
   const textNode = element('themeToggleText');
   if (textNode) {
-    textNode.textContent = theme === 'dark' ? '🌙 深色' : '☀️ 浅色';
+    textNode.textContent = theme === 'dark' ? '🌙' : '☀️';
+  }
+  const btnNode = element('themeToggleBtn');
+  if (btnNode) {
+    btnNode.title = theme === 'dark' ? '当前深色外观，点击切换为浅色' : '当前浅色外观，点击切换为深色';
   }
   api.setTheme?.(theme).catch(() => {});
 }

@@ -128,24 +128,33 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   padding-bottom: 6px;
   flex-shrink: 0;
 }
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
+  flex-shrink: 0;
 }
 .brand-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.2px;
   color: var(--text-main);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 .brand-sub {
   font-size: 10px;
@@ -160,9 +169,8 @@ body {
   background: var(--primary-glow);
   padding: 1px 6px;
   border-radius: 5px;
-  vertical-align: 1px;
-  margin-left: 3px;
   letter-spacing: 0.3px;
+  flex-shrink: 0;
 }
 
 .version-pill {
@@ -251,6 +259,13 @@ body {
   flex-shrink: 0;
   white-space: nowrap;
   transition: all 0.15s ease;
+}
+.tray-btn.icon-only {
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  justify-content: center;
+  font-size: 13px;
 }
 .tray-btn:hover {
   background: var(--surface-hover);
