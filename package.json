@@ -1,6 +1,6 @@
 {
   "name": "easyantigravity",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "Antigravity lightweight launcher: process proxy, reversible localization and context ring",
   "main": "server.js",
   "bin": "server.js",

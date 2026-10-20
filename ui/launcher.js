@@ -110,10 +110,35 @@ async function checkUpdate() {
   try {
     const result = await api.checkUpdate();
     renderStatus(result);
+    if (result.runtimeFilesUpdated > 0) {
+      setTimeout(() => location.reload(), 500);
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = originalText;
   }
+}
+
+function currentTheme() {
+  const attr = document.documentElement.dataset.theme;
+  if (attr === 'light' || attr === 'dark') return attr;
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyTheme(theme, persist = false) {
+  document.documentElement.dataset.theme = theme;
+  if (persist) {
+    try { localStorage.setItem('easyag-theme', theme); } catch {}
+  }
+  const textNode = element('themeToggleText');
+  if (textNode) {
+    textNode.textContent = theme === 'dark' ? '🌙 深色' : '☀️ 浅色';
+  }
+}
+
+function toggleTheme() {
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  applyTheme(next, true);
 }
 
 async function copyLogs() {
@@ -133,6 +158,7 @@ async function copyLogs() {
 const actions = {
   launch,
   hide: () => api.hide(),
+  'toggle-theme': toggleTheme,
   'check-update': checkUpdate,
   'copy-logs': copyLogs,
   'clear-logs': () => { consoleBox.replaceChildren(); }
@@ -154,6 +180,12 @@ for (const id of ['proxyPortInput', 'i18nToggle', 'contextMonitorToggle']) {
 }
 
 async function init() {
+  applyTheme(currentTheme());
+  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', e => {
+    try {
+      if (!localStorage.getItem('easyag-theme')) applyTheme(e.matches ? 'dark' : 'light');
+    } catch {}
+  });
   loadSettings(await api.status());
   for (const item of await api.logs()) appendLog(item.category, item.message, item.cls, item.at);
   stream = new EventSource('/api/events');

@@ -7,6 +7,15 @@
   <link rel="icon" type="image/png" href="/assets/logo-32.png">
   <link rel="shortcut icon" type="image/png" href="/assets/logo-32.png">
   <link rel="apple-touch-icon" href="/assets/logo-64.png">
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('easyag-theme');
+        var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.dataset.theme = (saved === 'light' || saved === 'dark') ? saved : (dark ? 'dark' : 'light');
+      } catch (e) {}
+    })();
+  </script>
   <link rel="stylesheet" href="/ui/launcher.css">
 </head>
 <body>
@@ -15,10 +24,13 @@
   <div class="nav-header">
     <div class="brand">
       <div>
-        <div class="brand-title">EasyAG <span class="brand-sub" id="versionBadge">v4.0.0</span></div>
+        <div class="brand-title">EasyAG <span class="brand-sub" id="versionBadge">v4.0.1</span></div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;">
+    <div style="display:flex;align-items:center;gap:6px;">
+      <button type="button" class="tray-btn" id="themeToggleBtn" data-action="toggle-theme" title="切换浅色 / 深色主题（默认自适应系统顶栏颜色）">
+        <span id="themeToggleText">☀️ 浅色</span>
+      </button>
       <button type="button" class="tray-btn" data-action="hide" title="收起至系统托盘，后台静默运行">
         <span>📥 托盘静默</span>
       </button>
@@ -66,7 +78,7 @@
     <div class="row">
       <span style="font-size: 11.5px; color: var(--text-dark);">词典与内核热更新</span>
       <div style="display:flex;align-items:center;gap:8px;">
-        <span id="dictCountBadge" style="color: #c084fc; font-size: 11.5px; font-weight: 600;">已载入词条</span>
+        <span id="dictCountBadge" style="color: var(--purple); font-size: 11.5px; font-weight: 600;">已载入词条</span>
         <button type="button" class="quick-tag" id="updateBtn" data-action="check-update" title="通过当前代理拉取最新汉化词典与热补丁，免重装即时生效">
           ↻ 检查热更新
         </button>

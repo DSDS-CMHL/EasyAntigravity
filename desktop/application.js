@@ -42,11 +42,14 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
     rootDir, dataDir, settings, events,
     ...(fetchBytes ? { fetchBytes } : {}),
     onDictionaryUpdated: async () => {
-      dictionary = loadDictionary(rootDir, dataDir);
+      dictionary = loadDictionary(app.rootDir, dataDir);
       await cdp.refresh();
       const count = Object.keys(dictionary).length;
       events.publish({ dictEntries: count, ...updater.currentState() });
       return count;
+    },
+    onRuntimeUpdated: async nextRoot => {
+      app.rootDir = nextRoot;
     }
   });
   let closing;

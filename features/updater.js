@@ -191,10 +191,24 @@ function resolveRuntimeRoot(bundledRoot, dataDir) {
 }
 
 class Updater {
-  constructor({ rootDir, dataDir, settings, events, fetchBytes = fetchBuffer, onDictionaryUpdated = async () => {} }) {
-    Object.assign(this, { rootDir, dataDir, settings, events, fetchBytes, onDictionaryUpdated });
+  constructor({ rootDir, dataDir, settings, events, fetchBytes = fetchBuffer, onDictionaryUpdated = async () => {}, onRuntimeUpdated = async () => {} }) {
+    Object.assign(this, { rootDir, dataDir, settings, events, fetchBytes, onDictionaryUpdated, onRuntimeUpdated });
     this.stateFile = path.join(dataDir, 'hotfix', 'update-state.json');
     this.busy = false;
+    try {
+      const overlayMeta = readJson(path.join(rootDir, 'overlay-meta.json'), null);
+      const saved = readJson(this.stateFile, null);
+      if (overlayMeta?.version) {
+        const pkgFile = path.join(rootDir, 'package.json');
+        const pkg = readJson(pkgFile, null);
+        if (pkg && pkg.version !== overlayMeta.version) {
+          writeJson(pkgFile, { ...pkg, version: overlayMeta.version });
+        }
+        if (saved?.restartRequired && saved.runtimeVersion === overlayMeta.version) {
+          writeJson(this.stateFile, { ...saved, restartRequired: false });
+        }
+      }
+    } catch {}
   }
 
   currentState() {
@@ -274,6 +288,9 @@ class Updater {
             fs.writeFileSync(destination, bytes);
             runtimeFilesUpdated++;
           }
+          const stagedPkgFile = path.join(stagingDir, 'package.json');
+          const stagedPkg = readJson(stagedPkgFile, null);
+          if (stagedPkg) writeJson(stagedPkgFile, { ...stagedPkg, version: manifest.runtime.version });
           writeJson(path.join(stagingDir, 'overlay-meta.json'), {
             version: manifest.runtime.version,
             updatedAt: new Date().toISOString(),
@@ -282,6 +299,8 @@ class Updater {
           fs.rmSync(currentDir, { recursive: true, force: true });
           fs.mkdirSync(path.dirname(currentDir), { recursive: true });
           fs.renameSync(stagingDir, currentDir);
+          this.rootDir = currentDir;
+          await this.onRuntimeUpdated(currentDir);
           restartRequired = true;
         } finally {
           fs.rmSync(stagingDir, { recursive: true, force: true });
