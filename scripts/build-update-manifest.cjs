@@ -6,14 +6,24 @@ const { DICT_FILES } = require('../features/i18n');
 const root = path.resolve(__dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const baseUrl = process.env.EASYAG_MANIFEST_BASE_URL || 'https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/';
+const dictVersion = process.env.EASYAG_DICT_VERSION || `${new Date().toISOString().slice(0, 10)}-hotfix1`;
+
+function readLfBuffer(filePath) {
+  const text = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  return Buffer.from(text, 'utf8');
+}
 
 const dicts = {};
 for (const name of DICT_FILES) {
   const file = path.join(root, 'dicts', name);
   if (fs.existsSync(file)) {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+    const canonical = JSON.stringify(parsed, null, 2) + '\n';
+    fs.writeFileSync(file, canonical, 'utf8');
+    const buf = Buffer.from(canonical, 'utf8');
     dicts[name] = {
       url: new URL('dicts/' + name, baseUrl).toString(),
-      sha256: sha256Hex(fs.readFileSync(file))
+      sha256: sha256Hex(buf)
     };
   }
 }
@@ -50,14 +60,14 @@ for (const rel of runtimeFiles) {
   if (fs.existsSync(full)) {
     files[rel] = {
       url: new URL(rel, baseUrl).toString(),
-      sha256: sha256Hex(fs.readFileSync(full))
+      sha256: sha256Hex(readLfBuffer(full))
     };
   }
 }
 
 const manifest = {
   version: pkg.version,
-  dictVersion: new Date().toISOString().slice(0, 10),
+  dictVersion,
   dicts,
   runtime: {
     version: pkg.version,
@@ -67,4 +77,5 @@ const manifest = {
 
 const outFile = path.join(root, 'update-manifest.json');
 fs.writeFileSync(outFile, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
-console.log(`Generated update-manifest.json (v${manifest.version}, ${Object.keys(dicts).length} dicts, ${Object.keys(files).length} runtime modules)`);
+console.log(`Generated update-manifest.json (v${manifest.version}, dictVersion=${dictVersion}, ${Object.keys(dicts).length} dicts, ${Object.keys(files).length} runtime modules)`);
+
