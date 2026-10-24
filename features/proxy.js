@@ -11,6 +11,7 @@ function buildProxyLaunch(port, cdpPort, environment = process.env) {
     env: {
       ...environment,
       HTTP_PROXY: proxy, HTTPS_PROXY: proxy, http_proxy: proxy, https_proxy: proxy,
+      ALL_PROXY: proxy, all_proxy: proxy,
       NO_PROXY: bypass, no_proxy: bypass
     }
   };

@@ -56,9 +56,17 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
   const app = {
     rootDir, dataDir, events, settings, desktop, host, cdp, session, contextMonitor, updater,
     status() {
+      const allTargets = desktop.discoverAllTargets ? desktop.discoverAllTargets() : {};
+      const active = session.activeTarget || (desktop.resolveTarget ? desktop.resolveTarget(settings.get().targetApp) : { id: 'hub', name: 'Antigravity' });
+      const bothInstalled = Boolean(allTargets.hub?.exists && allTargets.ide?.exists);
       return {
         ...settings.get(), ...session.snapshot(), ...cdp.status, ...updater.currentState(),
-        dictEntries: Object.keys(dictionary).length, capabilities: desktop.capabilities
+        dictEntries: Object.keys(dictionary).length,
+        capabilities: active.capabilities || desktop.capabilities,
+        targets: allTargets,
+        activeTarget: active.id,
+        targetName: active.name,
+        bothInstalled
       };
     },
     async reloadDictionary() {
@@ -76,6 +84,11 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
       await cdp.refresh();
       if (next.enableI18n !== previous.enableI18n) events.log('I18N', next.enableI18n ? '汉化已开启' : '汉化已关闭，原文已恢复', 'tag-i18n');
       if (next.enableContextMonitor !== previous.enableContextMonitor) events.log('SYSTEM', next.enableContextMonitor ? '上下文监控已开启（只读）' : '上下文监控已关闭，上下文圆环已移除', 'tag-proxy');
+      if (input.targetApp !== undefined && input.targetApp !== previous.targetApp) {
+        const target = desktop.resolveTarget ? desktop.resolveTarget(next.targetApp) : { name: next.targetApp };
+        events.log('SYSTEM', `已切换启动目标为: ${target.fullName || target.name}`, 'tag-proxy');
+        events.publish(app.status());
+      }
       return next;
     },
     async start() {

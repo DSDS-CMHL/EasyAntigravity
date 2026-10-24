@@ -9,7 +9,7 @@
     "start": "node server.js",
     "check": "node scripts/check.cjs",
     "build:manifest": "node scripts/build-update-manifest.cjs",
-    "test": "node test/i18n-revert.test.js && node --test test/core.test.cjs test/cdp.test.cjs test/context-monitor.test.cjs test/context-widget.test.cjs test/backend-resources.test.cjs && node test/foundation.test.cjs",
+    "test": "node test/i18n-revert.test.js && node --test test/core.test.cjs test/discovery.test.cjs test/cdp.test.cjs test/context-monitor.test.cjs test/context-widget.test.cjs test/backend-resources.test.cjs && node test/foundation.test.cjs",
     "test:core": "node --test test/core.test.cjs test/cdp.test.cjs test/context-monitor.test.cjs test/backend-resources.test.cjs",
     "test:context": "node --test test/context-monitor.test.cjs test/context-widget.test.cjs",
     "test:context:browser": "node test/context-browser.cjs",

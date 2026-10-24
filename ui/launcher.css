@@ -427,6 +427,69 @@ input:checked + .slider:before {
   transform: translateX(18px);
 }
 
+/* 启动目标选择器 (桌面版 / IDE 版) */
+.target-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 6px 12px;
+  box-shadow: var(--card-shadow);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.target-switcher[hidden] {
+  display: none !important;
+}
+.switcher-label {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.switcher-pills {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+  justify-content: flex-end;
+}
+.target-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--surface-subtle);
+  color: var(--text-muted);
+  border: 1px solid var(--card-border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.target-pill:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-main);
+  border-color: var(--card-border-hover);
+}
+.target-pill.active {
+  background: var(--primary-glow);
+  color: var(--primary);
+  border-color: var(--primary);
+  font-weight: 650;
+}
+.target-pill:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.target-pill .pill-icon {
+  font-size: 12.5px;
+}
+
 /* 核心启动大按钮 */
 .launch-btn {
   background: linear-gradient(135deg, #818cf8 0%, #6366f1 100%);

@@ -72,13 +72,15 @@ async function start() {
     const cfg = await fetch(app.url + '/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ port: 7897, enableI18n: false, enableContextMonitor: false })
+      body: JSON.stringify({ port: 7897, enableI18n: false, enableContextMonitor: false, targetApp: 'ide' })
     });
     assert.ok(cfg.ok);
     const status2 = await (await fetch(app.url + '/api/status')).json();
     assert.equal(status2.port, 7897);
     assert.equal(status2.enableI18n, false);
     assert.equal(status2.enableContextMonitor, false);
+    assert.equal(status2.targetApp, 'ide');
+    assert.equal(status2.activeTarget, 'ide');
 
     console.log('PASS: foundation API smoke (ping/status/config/security)');
   } finally {

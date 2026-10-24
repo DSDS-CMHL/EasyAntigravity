@@ -8,6 +8,8 @@ let refreshing = false;
 let stream;
 let pollTimer;
 let launchPending = false;
+let activeTarget = 'hub';
+let activeTargetName = 'Antigravity';
 const logKeys = new Set();
 
 function appendLog(category, message, cls = '', at) {
@@ -29,7 +31,7 @@ function appendLog(category, message, cls = '', at) {
 
 function report(error) { appendLog('SYSTEM', error.message || String(error), 'tag-alert'); }
 
-function renderPhase(next) {
+function renderPhase(next, targetName = activeTargetName) {
   phase = next;
   document.body.dataset.uiState = next;
   const busy = ['preparing', 'launching'].includes(next);
@@ -38,19 +40,33 @@ function renderPhase(next) {
   button.disabled = locked;
   button.classList.toggle('busy', busy);
   document.querySelectorAll('[data-port]').forEach(control => { control.disabled = locked; });
+  document.querySelectorAll('[data-target]').forEach(control => { control.disabled = locked; });
   element('proxyPortInput').disabled = locked;
   element('launchIcon').textContent = busy ? '◌' : next === 'running' ? '●' : next === 'error' ? '↻' : '🚀';
   element('launchText').textContent = {
     preparing: '正在准备代理环境…',
-    launching: '正在启动 Antigravity…',
-    running: 'Antigravity 运行中',
+    launching: `正在启动 ${targetName}…`,
+    running: `${targetName} 运行中`,
     error: '启动失败，点击重试'
-  }[next] || '启动 Antigravity';
+  }[next] || `启动 ${targetName}`;
   button.style.background = next === 'running' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '';
 }
 
 function renderStatus(status) {
-  if (status.phase && !(launchPending && status.phase === 'idle')) renderPhase(status.phase);
+  if (status.activeTarget) {
+    activeTarget = status.activeTarget;
+    activeTargetName = status.targetName || (status.activeTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity');
+  }
+  if (status.bothInstalled) {
+    const switcher = element('targetSwitcher');
+    if (switcher) switcher.hidden = false;
+    element('targetHubBtn')?.classList.toggle('active', activeTarget === 'hub');
+    element('targetIdeBtn')?.classList.toggle('active', activeTarget === 'ide');
+  } else {
+    const switcher = element('targetSwitcher');
+    if (switcher) switcher.hidden = true;
+  }
+  if (status.phase && !(launchPending && status.phase === 'idle')) renderPhase(status.phase, activeTargetName);
   if (status.dictEntries !== undefined) {
     element('dictCountBadge').textContent = `· 已载入 ${status.dictEntries} 词条`;
   }
@@ -64,13 +80,17 @@ function renderStatus(status) {
     const badge = element('clientStatusBadge');
     badge.className = status.clientRunning ? 'status-capsule active' : 'status-capsule';
     badge.querySelector('span').textContent = status.clientRunning
-      ? status.cdpSockets ? '增强已连接' : '等待增强连接'
+      ? status.cdpSockets ? '增强已连接' : '运行中'
       : '未运行';
-    badge.title = status.cdpError || (status.clientRunning ? 'Antigravity 正在运行' : 'Antigravity 未运行');
+    badge.title = status.cdpError || (status.clientRunning ? `${activeTargetName} 正在运行` : `${activeTargetName} 未运行`);
   }
 }
 
 function loadSettings(status) {
+  if (status.activeTarget) {
+    activeTarget = status.activeTarget;
+    activeTargetName = status.targetName || (status.activeTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity');
+  }
   element('proxyPortInput').value = status.port;
   element('i18nToggle').checked = status.enableI18n;
   element('contextMonitorToggle').checked = status.enableContextMonitor;
@@ -82,7 +102,8 @@ function persistSettings() {
   const payload = {
     port: Number(element('proxyPortInput').value),
     enableI18n: element('i18nToggle').checked,
-    enableContextMonitor: element('contextMonitorToggle').checked
+    enableContextMonitor: element('contextMonitorToggle').checked,
+    targetApp: activeTarget
   };
   settingsQueue = settingsQueue.catch(() => {}).then(() => api.configure(payload));
   return settingsQueue;
@@ -175,6 +196,22 @@ const actions = {
 };
 
 document.addEventListener('click', event => {
+  const targetBtn = event.target.closest('[data-target]');
+  if (targetBtn && !targetBtn.disabled) {
+    const nextTarget = targetBtn.dataset.target;
+    if (nextTarget && nextTarget !== activeTarget) {
+      activeTarget = nextTarget;
+      activeTargetName = nextTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity';
+      element('targetHubBtn')?.classList.toggle('active', activeTarget === 'hub');
+      element('targetIdeBtn')?.classList.toggle('active', activeTarget === 'ide');
+      renderPhase(phase, activeTargetName);
+      api.configure({ targetApp: nextTarget }).then(res => {
+        if (res?.targetName) activeTargetName = res.targetName;
+        renderPhase(phase, activeTargetName);
+      }).catch(report);
+    }
+    return;
+  }
   const control = event.target.closest('[data-action],[data-port]');
   if (!control || control.disabled) return;
   const action = control.dataset.port !== undefined ? async () => {

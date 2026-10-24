@@ -68,9 +68,42 @@ test('Settings validate values and lock port only while running', () => {
   assert.throws(() => normalizeSettings({ enableI18n: 'false' }));
   assert.throws(() => normalizeSettings({ enableContextMonitor: 'true' }));
   const normalized = normalizeSettings({ port: 7897, enableI18n: false, enableContextMonitor: true });
-  assert.deepEqual(normalized, { port: 7897, enableI18n: false, enableContextMonitor: true });
+  assert.deepEqual(normalized, { port: 7897, enableI18n: false, enableContextMonitor: true, targetApp: 'auto' });
+  assert.throws(() => normalizeSettings({ targetApp: 'invalid' }));
+  assert.throws(() => assertLaunchSettingsMutable({ targetApp: 'ide' }, normalized, 'running'));
+  assert.doesNotThrow(() => assertLaunchSettingsMutable({ targetApp: 'ide' }, normalized, 'idle'));
   assert.throws(() => assertLaunchSettingsMutable({ port: 10808 }, normalized, 'running'));
   assert.doesNotThrow(() => assertLaunchSettingsMutable({ enableI18n: true, enableContextMonitor: false }, normalized, 'running'));
+});
+
+test('Session supports selecting Antigravity IDE and handles target-specific launch', async () => {
+  const calls = [];
+  const child = new EventEmitter();
+  child.pid = 456; child.exitCode = null; child.kill = () => calls.push('kill');
+  const session = new Session({
+    settings: { get: () => ({ port: 7890, enableI18n: true, enableContextMonitor: true, targetApp: 'ide' }) },
+    desktop: {
+      resolveTarget: () => ({ id: 'ide', name: 'Antigravity IDE', exists: true, appExe: 'Antigravity IDE.exe', capabilities: { cdp: false } }),
+      running: async () => false
+    },
+    cdp: { port: 9333, start: () => calls.push('cdp'), stop: async () => calls.push('stop-cdp') },
+    events: { log(cat, msg) { calls.push(msg); }, publish() {} },
+    host: { hide() {} },
+    spawnProcess(exe, args, opts) {
+      calls.push({ exe, args, opts });
+      process.nextTick(() => child.emit('spawn'));
+      return child;
+    }
+  });
+  const res = await session.launch();
+  assert.equal(res.ok, true);
+  assert.equal(res.target, 'ide');
+  assert.equal(calls.includes('cdp'), false);
+  assert.equal(calls[0].exe, 'Antigravity IDE.exe');
+  assert.ok(calls[0].opts.env.ALL_PROXY.includes('7890'));
+  child.emit('exit');
+  await session.finishing;
+  assert.equal(session.phase, 'idle');
 });
 
 test('Hotfix dictionary overlays bundled entries and tolerates corrupted hotfix files', t => {

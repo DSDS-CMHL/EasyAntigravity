@@ -84,6 +84,21 @@
     </div>
   </div>
 
+  <!-- 启动目标切换器：检测到同时安装了桌面版与 IDE 时显示 -->
+  <div class="target-switcher" id="targetSwitcher" hidden>
+    <span class="switcher-label">启动目标</span>
+    <div class="switcher-pills" role="radiogroup" aria-label="选择启动目标">
+      <button type="button" class="target-pill active" data-target="hub" id="targetHubBtn" title="启动 Antigravity 官方桌面客户端">
+        <span class="pill-icon">💻</span>
+        <span>桌面版</span>
+      </button>
+      <button type="button" class="target-pill" data-target="ide" id="targetIdeBtn" title="启动 Antigravity IDE 编辑器版（基于 VS Code）">
+        <span class="pill-icon">📝</span>
+        <span>IDE 版</span>
+      </button>
+    </div>
+  </div>
+
   <!-- 核心启动按钮 -->
   <button class="launch-btn" id="launchBtn" data-action="launch">
     <span class="launch-icon" id="launchIcon">🚀</span>
