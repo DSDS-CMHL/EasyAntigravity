@@ -84,6 +84,9 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
       await cdp.refresh();
       if (next.enableI18n !== previous.enableI18n) events.log('I18N', next.enableI18n ? '汉化已开启' : '汉化已关闭，原文已恢复', 'tag-i18n');
       if (next.enableContextMonitor !== previous.enableContextMonitor) events.log('SYSTEM', next.enableContextMonitor ? '上下文监控已开启（只读）' : '上下文监控已关闭，上下文圆环已移除', 'tag-proxy');
+      if (input.enableProxy !== undefined && input.enableProxy !== previous.enableProxy) {
+        events.log('SYSTEM', next.enableProxy ? `免 TUN 代理已开启（127.0.0.1:${next.port}）` : '免 TUN 代理已关闭（直连模式）', 'tag-proxy');
+      }
       if (input.targetApp !== undefined && input.targetApp !== previous.targetApp) {
         const target = desktop.resolveTarget ? desktop.resolveTarget(next.targetApp) : { name: next.targetApp };
         events.log('SYSTEM', `已切换启动目标为: ${target.fullName || target.name}`, 'tag-proxy');

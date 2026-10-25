@@ -31,6 +31,23 @@ function appendLog(category, message, cls = '', at) {
 
 function report(error) { appendLog('SYSTEM', error.message || String(error), 'tag-alert'); }
 
+function updateProxyUi(enabled) {
+  const row = element('proxyPortRow');
+  const badge = element('patchStatusBadge');
+  const busyOrRunning = ['preparing', 'launching', 'running'].includes(phase);
+  if (row) row.classList.toggle('disabled', !enabled);
+  document.querySelectorAll('[data-port]').forEach(control => {
+    control.disabled = !enabled || busyOrRunning;
+  });
+  if (element('proxyPortInput')) {
+    element('proxyPortInput').disabled = !enabled || busyOrRunning;
+  }
+  if (badge) {
+    badge.textContent = enabled ? '· 本地代理就绪' : '· 直连模式（不挂代理）';
+    badge.style.color = enabled ? 'var(--green)' : 'var(--text-dark)';
+  }
+}
+
 function renderPhase(next, targetName = activeTargetName) {
   phase = next;
   document.body.dataset.uiState = next;
@@ -39,12 +56,14 @@ function renderPhase(next, targetName = activeTargetName) {
   const button = element('launchBtn');
   button.disabled = locked;
   button.classList.toggle('busy', busy);
-  document.querySelectorAll('[data-port]').forEach(control => { control.disabled = locked; });
+  if (element('proxyToggle')) element('proxyToggle').disabled = locked;
   document.querySelectorAll('[data-target]').forEach(control => { control.disabled = locked; });
-  element('proxyPortInput').disabled = locked;
+  const proxyEnabled = element('proxyToggle') ? element('proxyToggle').checked : true;
+  document.querySelectorAll('[data-port]').forEach(control => { control.disabled = locked || !proxyEnabled; });
+  element('proxyPortInput').disabled = locked || !proxyEnabled;
   element('launchIcon').textContent = busy ? '◌' : next === 'running' ? '●' : next === 'error' ? '↻' : '🚀';
   element('launchText').textContent = {
-    preparing: '正在准备代理环境…',
+    preparing: proxyEnabled ? '正在准备代理环境…' : '正在准备启动环境…',
     launching: `正在启动 ${targetName}…`,
     running: `${targetName} 运行中`,
     error: '启动失败，点击重试'
@@ -56,6 +75,10 @@ function renderStatus(status) {
   if (status.activeTarget) {
     activeTarget = status.activeTarget;
     activeTargetName = status.targetName || (status.activeTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity');
+  }
+  if (status.enableProxy !== undefined && element('proxyToggle')) {
+    element('proxyToggle').checked = status.enableProxy;
+    updateProxyUi(status.enableProxy);
   }
   if (status.bothInstalled) {
     const switcher = element('targetSwitcher');
@@ -92,15 +115,17 @@ function loadSettings(status) {
     activeTargetName = status.targetName || (status.activeTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity');
   }
   element('proxyPortInput').value = status.port;
+  if (element('proxyToggle')) element('proxyToggle').checked = status.enableProxy !== false;
   element('i18nToggle').checked = status.enableI18n;
   element('contextMonitorToggle').checked = status.enableContextMonitor;
-  element('patchStatusBadge').textContent = '● 原生代理已就绪';
+  updateProxyUi(status.enableProxy !== false);
   renderStatus(status);
 }
 
 function persistSettings() {
   const payload = {
     port: Number(element('proxyPortInput').value),
+    enableProxy: element('proxyToggle') ? element('proxyToggle').checked : true,
     enableI18n: element('i18nToggle').checked,
     enableContextMonitor: element('contextMonitorToggle').checked,
     targetApp: activeTarget
@@ -222,8 +247,11 @@ document.addEventListener('click', event => {
 });
 
 element('proxyPortInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, ''); });
-for (const id of ['proxyPortInput', 'i18nToggle', 'contextMonitorToggle']) {
-  element(id).addEventListener('change', () => { persistSettings().catch(report); });
+for (const id of ['proxyPortInput', 'proxyToggle', 'i18nToggle', 'contextMonitorToggle']) {
+  element(id)?.addEventListener('change', () => {
+    if (id === 'proxyToggle') updateProxyUi(element('proxyToggle').checked);
+    persistSettings().catch(report);
+  });
 }
 
 async function init() {

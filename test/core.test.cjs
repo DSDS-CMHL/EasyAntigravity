@@ -67,8 +67,21 @@ test('Settings validate values and lock port only while running', () => {
   assert.throws(() => normalizeSettings({ port: '7890xyz' }));
   assert.throws(() => normalizeSettings({ enableI18n: 'false' }));
   assert.throws(() => normalizeSettings({ enableContextMonitor: 'true' }));
+  assert.throws(() => normalizeSettings({ enableProxy: 'true' }));
   const normalized = normalizeSettings({ port: 7897, enableI18n: false, enableContextMonitor: true });
-  assert.deepEqual(normalized, { port: 7897, enableI18n: false, enableContextMonitor: true, targetApp: 'auto' });
+  assert.deepEqual(normalized, { port: 7897, enableI18n: false, enableContextMonitor: true, enableProxy: true, targetApp: 'auto' });
+  assert.throws(() => assertLaunchSettingsMutable({ enableProxy: false }, normalized, 'running'));
+  assert.doesNotThrow(() => assertLaunchSettingsMutable({ enableProxy: false }, normalized, 'idle'));
+test('buildProxyLaunch respects enableProxy=false for direct connection', () => {
+  const { buildProxyLaunch } = require('../features/proxy');
+  const direct = buildProxyLaunch(7890, 9333, { CUSTOM: '1' }, false);
+  assert.equal(direct.args.some(a => a.startsWith('--proxy-server')), false);
+  assert.equal(direct.args.some(a => a.startsWith('--proxy-bypass-list')), false);
+  assert.equal(direct.args.some(a => a.startsWith('--remote-debugging-port=9333')), true);
+  assert.equal(direct.env.HTTP_PROXY, undefined);
+  assert.equal(direct.env.ALL_PROXY, undefined);
+  assert.equal(direct.env.CUSTOM, '1');
+});
   assert.throws(() => normalizeSettings({ targetApp: 'invalid' }));
   assert.throws(() => assertLaunchSettingsMutable({ targetApp: 'ide' }, normalized, 'running'));
   assert.doesNotThrow(() => assertLaunchSettingsMutable({ targetApp: 'ide' }, normalized, 'idle'));

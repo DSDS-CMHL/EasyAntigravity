@@ -45,10 +45,13 @@
   <div class="card">
     <div class="card-label">网络与免 TUN 链路</div>
     <div class="row">
-      <span style="font-weight: 500;">原生代理状态:</span>
-      <span id="patchStatusBadge" style="font-weight: 600; color: var(--green);">● 本地代理就绪</span>
+      <span style="font-weight: 500;">免 TUN 进程代理 <span id="patchStatusBadge" style="font-size: 11px; font-weight: 600; color: var(--green);">· 本地代理就绪</span></span>
+      <label class="switch" title="开启后为 AG 进程注入本地代理；直连环境（如海外/台湾/全局VPN用户）可关闭">
+        <input type="checkbox" id="proxyToggle" checked>
+        <span class="slider"></span>
+      </label>
     </div>
-    <div class="row">
+    <div class="row" id="proxyPortRow">
       <span style="font-weight: 500;">本地代理端口:</span>
       <div class="port-cluster">
         <button type="button" class="quick-tag" data-port="7890" title="7890: Mihomo / Clash 默认端口">

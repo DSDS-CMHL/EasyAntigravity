@@ -50,6 +50,7 @@ async function start() {
     assert.equal(status.port, 7890);
     assert.equal(status.enableI18n, true);
     assert.equal(status.enableContextMonitor, true);
+    assert.equal(status.enableProxy, true);
     assert.ok(status.dictEntries > 100, '词典应已加载');
 
     for (const removedRoute of ['/api/pilot/project', '/api/pilot/global', '/api/danger-rules', '/api/kb', '/api/injected', '/api/agent-event', '/capsule.html']) {
@@ -72,13 +73,14 @@ async function start() {
     const cfg = await fetch(app.url + '/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ port: 7897, enableI18n: false, enableContextMonitor: false, targetApp: 'ide' })
+      body: JSON.stringify({ port: 7897, enableI18n: false, enableContextMonitor: false, enableProxy: false, targetApp: 'ide' })
     });
     assert.ok(cfg.ok);
     const status2 = await (await fetch(app.url + '/api/status')).json();
     assert.equal(status2.port, 7897);
     assert.equal(status2.enableI18n, false);
     assert.equal(status2.enableContextMonitor, false);
+    assert.equal(status2.enableProxy, false);
     assert.equal(status2.targetApp, 'ide');
     assert.equal(status2.activeTarget, 'ide');
 
