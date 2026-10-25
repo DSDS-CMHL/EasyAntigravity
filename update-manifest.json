@@ -1,7 +1,7 @@
 {
   "edition": "lite",
-  "version": "4.0.3",
-  "dictVersion": "2026-10-20-hotfix1",
+  "version": "4.0.4",
+  "dictVersion": "2026-10-25-hotfix1",
   "dicts": {
     "ui_v2.json": {
       "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/dicts/ui_v2.json",
@@ -13,7 +13,7 @@
     }
   },
   "runtime": {
-    "version": "4.0.3",
+    "version": "4.0.4",
     "files": {
       "server.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/server.js",
@@ -21,7 +21,7 @@
       },
       "index.html": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/index.html",
-        "sha256": "804f8e62092ad558b57c4bbf94c0938e02746bf0ed1bcaab02c8e967ef221e34"
+        "sha256": "dc8aa104eea61a14dc9a8c50d5eaddc2c754491ec08438e4bbfbcbef26fcb75f"
       },
       "core/events.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/core/events.js",
@@ -29,11 +29,11 @@
       },
       "core/session.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/core/session.js",
-        "sha256": "9ca42e2986221fce7af1fb8bea119cd49367364b717e349a0c9b67286282bca0"
+        "sha256": "2b8b1f0d70ff0ab2095ec6b585932828ae8e1f59870fc15f022aef9fcb2772af"
       },
       "core/settings.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/core/settings.js",
-        "sha256": "a967d1acf8d5cfd6646a903a9994bd34d2776339bb83a5597e7f3d59c2d0fbc4"
+        "sha256": "d17e7bd98f9e231152c9bb1b73e6172367667bd0c6bee28d845e6208e747398c"
       },
       "core/storage.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/core/storage.js",
@@ -53,7 +53,7 @@
       },
       "features/proxy.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/features/proxy.js",
-        "sha256": "9b221d1cb1bf83d4b98fb1d915f0b257d263880ade93260c63a1c9c5f77f1498"
+        "sha256": "c460791272d015251f6dcd173c0c4dbc4b58669e9db656ba4708c746b94e1f78"
       },
       "features/updater.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/features/updater.js",
@@ -65,11 +65,11 @@
       },
       "adapters/desktop/discovery.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/adapters/desktop/discovery.js",
-        "sha256": "9a4228d6af1c801126dbb1de3b2ca9aab3a736f39503a99fe5adfd65c105f4a6"
+        "sha256": "521216df69c98cf8f2d7fc07e548b843962904f4fa62e1644f1e83a6d66e7ed5"
       },
       "adapters/desktop/index.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/adapters/desktop/index.js",
-        "sha256": "b5fd7c365acaa5039dbf98465b48835318f522701844db7b3304ffe4a49bf302"
+        "sha256": "0cc8a4347c796a12ff53a32ceb63c2a72270d07538c4d70c064ca393093577ff"
       },
       "adapters/desktop/language-service.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/adapters/desktop/language-service.js",
@@ -89,7 +89,7 @@
       },
       "desktop/application.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/desktop/application.js",
-        "sha256": "3e9075929ec7c22fa0683e851f2821d610b4cdce2784e738acc17a2c7b74ad8b"
+        "sha256": "fa24054e3be061af4a19d922948b733e678de3469b048a886b4f372e45362602"
       },
       "desktop/host.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/desktop/host.js",
@@ -101,11 +101,11 @@
       },
       "ui/launcher.css": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/ui/launcher.css",
-        "sha256": "5ab488919d875ea6bf9a72cd8eefcd34b8a3dbd533b8b5be68017aed3909be47"
+        "sha256": "9f6b6a077434ccaea6144c129dd1bf6b2a0a84c0cc21b2cf08e58ef93166b6bc"
       },
       "ui/launcher.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/ui/launcher.js",
-        "sha256": "7a911843dc06c2b4e35f8c97b688111443a85797a829673a13767875405e5d2e"
+        "sha256": "6cb34caaea4dd699cf81bf5ff6fb6ccd278da362733156f30d4c9c91323138ea"
       }
     }
   }
