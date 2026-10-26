@@ -10,6 +10,7 @@ let pollTimer;
 let launchPending = false;
 let activeTarget = 'hub';
 let activeTargetName = 'Antigravity';
+let clientRunningState = false;
 const logKeys = new Set();
 
 function appendLog(category, message, cls = '', at) {
@@ -100,12 +101,14 @@ function renderStatus(status) {
     }
   }
   if (status.clientRunning !== undefined) {
+    clientRunningState = Boolean(status.clientRunning);
     const badge = element('clientStatusBadge');
     badge.className = status.clientRunning ? 'status-capsule active' : 'status-capsule';
     badge.querySelector('span').textContent = status.clientRunning
       ? status.cdpSockets ? '增强已连接' : '运行中'
       : '未运行';
     badge.title = status.cdpError || (status.clientRunning ? `${activeTargetName} 正在运行` : `${activeTargetName} 未运行`);
+    renderPhase(status.phase || phase, activeTargetName);
   }
 }
 

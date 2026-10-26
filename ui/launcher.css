@@ -433,6 +433,21 @@ input:checked + .slider:before {
   transform: translateX(18px);
 }
 
+/* Switch 禁用与置灰锁定状态 */
+.switch.disabled,
+.switch:has(input:disabled) {
+  opacity: 0.45;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+.switch.disabled .slider,
+input:disabled + .slider {
+  opacity: 0.45;
+  cursor: not-allowed !important;
+  filter: grayscale(0.85);
+  box-shadow: none !important;
+}
+
 /* 启动目标选择器 (桌面版 / IDE 版) */
 .target-switcher {
   display: flex;

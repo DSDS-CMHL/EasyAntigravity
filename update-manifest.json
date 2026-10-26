@@ -1,7 +1,7 @@
 {
   "edition": "lite",
   "version": "4.0.4",
-  "dictVersion": "2026-10-25-hotfix1",
+  "dictVersion": "2026-10-26-hotfix1",
   "dicts": {
     "ui_v2.json": {
       "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/dicts/ui_v2.json",
@@ -101,11 +101,11 @@
       },
       "ui/launcher.css": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/ui/launcher.css",
-        "sha256": "9f6b6a077434ccaea6144c129dd1bf6b2a0a84c0cc21b2cf08e58ef93166b6bc"
+        "sha256": "1f12723f1c89c6f0f0f89e3eaa0cc20512629ecd9eaecf02e2fe16db6db035d6"
       },
       "ui/launcher.js": {
         "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/main/ui/launcher.js",
-        "sha256": "6cb34caaea4dd699cf81bf5ff6fb6ccd278da362733156f30d4c9c91323138ea"
+        "sha256": "cd0ff59a6d79d097c86542fd76a82a2fe6a5bb467919b1ea7043dc197f558dad"
       }
     }
   }
