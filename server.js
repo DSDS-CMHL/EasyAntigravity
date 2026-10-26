@@ -1,43 +1,17 @@
 #!/usr/bin/env node
 const path = require('node:path');
 const readline = require('node:readline');
-const { normalizePath } = require('./adapters/desktop/discovery');
-const { resolveRuntimeRoot } = require('./features/updater');
-const { readJson, writeJson } = require('./core/storage');
+const { writeJson } = require('./core/storage');
+const { createApplication } = require('./desktop/application');
 
 const native = process.env.EASYAG_TAURI === '1';
 const bundledRoot = process.pkg ? path.dirname(process.execPath) : __dirname;
-const dataDir = normalizePath(process.env.EASYAG_DATA_DIR) || bundledRoot;
-
-// Ensure runtime overlays stored in dataDir can always resolve bundled dependencies (e.g. 'ws')
-const bundledNodeModules = path.join(bundledRoot, 'node_modules');
-process.env.NODE_PATH = process.env.NODE_PATH
-  ? `${bundledNodeModules}${path.delimiter}${process.env.NODE_PATH}`
-  : bundledNodeModules;
-require('node:module').Module._initPaths();
-
-let rootDir = bundledRoot;
-let createApplication;
-const candidateRoot = resolveRuntimeRoot(bundledRoot, dataDir);
-if (candidateRoot !== bundledRoot) {
-  try {
-    ({ createApplication } = require(path.join(candidateRoot, 'desktop/application')));
-    rootDir = candidateRoot;
-  } catch {
-    // Automatic rollback: mark broken overlay so future launches use bundled code immediately
-    try {
-      const metaFile = path.join(candidateRoot, 'overlay-meta.json');
-      writeJson(metaFile, { ...readJson(metaFile, {}), failedBoot: true });
-    } catch {}
-    ({ createApplication } = require('./desktop/application'));
-    rootDir = bundledRoot;
-  }
-} else {
-  ({ createApplication } = require('./desktop/application'));
-}
+const dataDir = process.env.EASYAG_DATA_DIR ? path.resolve(process.env.EASYAG_DATA_DIR) : bundledRoot;
 
 const app = createApplication({
-  rootDir, dataDir, native,
+  rootDir: bundledRoot,
+  dataDir,
+  native,
   testMode: process.env.EASYAG_TEST_MODE === '1',
   onClose: () => setTimeout(() => process.exit(0), 50)
 });

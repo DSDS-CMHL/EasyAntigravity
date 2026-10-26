@@ -2,7 +2,17 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webp': 'image/webp', '.jpg': 'image/jpeg' };
+const TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.webp': 'image/webp',
+  '.jpg': 'image/jpeg'
+};
+
 function json(response, value, status = 200) {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   response.end(JSON.stringify(value));
@@ -21,7 +31,11 @@ function serveFile(response, base, relative) {
   const target = path.resolve(base, relative);
   if (!target.startsWith(path.resolve(base) + path.sep)) return json(response, { ok: false, error: '无效路径' }, 403);
   if (!fs.existsSync(target) || !fs.statSync(target).isFile()) return json(response, { ok: false, error: '文件不存在' }, 404);
-  response.writeHead(200, { 'Content-Type': TYPES[path.extname(target)] || 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  response.writeHead(200, {
+    'Content-Type': TYPES[path.extname(target)] || 'application/octet-stream',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff'
+  });
   const stream = fs.createReadStream(target);
   stream.on('error', () => response.destroy());
   stream.pipe(response);
@@ -54,7 +68,12 @@ function createApi(app) {
         return json(response, app.events.logs(Number.isFinite(limit) ? limit : 100));
       }
       if (method === 'GET' && route === '/api/events') {
-        response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+        response.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no'
+        });
         response.write(': connected\n\n');
         const send = item => {
           if (response.destroyed) return;
@@ -67,17 +86,27 @@ function createApi(app) {
       }
       if (method === 'POST' && route === '/api/config') {
         const data = await readBody(request);
-        await app.configure(data);
-        return json(response, { ok: true, settings: app.settings.get() });
+        const next = await app.configure(data);
+        return json(response, { ok: true, settings: next });
       }
-      if (method === 'POST' && route === '/api/launch') {
-        const result = await app.session.launch();
-        return json(response, result, result.ok ? 200 : 409);
+      if (method === 'GET' && route === '/api/cli/projects') {
+        const projects = app.getProjects();
+        return json(response, { ok: true, projects });
       }
-      if (method === 'POST' && route === '/api/update') {
+      if (method === 'POST' && route === '/api/cli/create-project') {
         const data = await readBody(request);
-        const result = await app.updater.checkAndApply({ manifestUrl: data.manifestUrl });
-        return json(response, result);
+        const result = app.createProject(data);
+        return json(response, result, result.ok ? 200 : 400);
+      }
+      if (method === 'POST' && route === '/api/cli/launch') {
+        const data = await readBody(request);
+        const result = app.launchCli(data);
+        return json(response, result, result.ok ? 200 : 400);
+      }
+      if (method === 'POST' && route === '/api/cli/open-folder') {
+        const data = await readBody(request);
+        const result = app.openFolder(data.folderPath);
+        return json(response, result, result.ok ? 200 : 400);
       }
       if (method === 'POST' && route === '/api/theme') {
         const data = await readBody(request);
@@ -97,6 +126,7 @@ function createApi(app) {
       else response.end();
     }
   });
+
   return {
     server,
     listen(port) {

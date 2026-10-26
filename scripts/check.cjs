@@ -11,12 +11,14 @@ function check(file, browser = false) {
   count++;
 }
 function walk(directory) {
-  for (const entry of fs.readdirSync(path.join(root, directory), { withFileTypes: true })) {
+  const dirPath = path.join(root, directory);
+  if (!fs.existsSync(dirPath)) return;
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
     const file = path.join(directory, entry.name);
     if (entry.isDirectory()) walk(file);
     else if (/\.(?:js|cjs)$/.test(entry.name)) check(file, directory === 'ui');
   }
 }
 check('server.js');
-for (const directory of ['core', 'features', 'adapters', 'desktop', 'ui']) walk(directory);
+for (const directory of ['core', 'features', 'desktop', 'ui']) walk(directory);
 console.log(`PASS: ${count} JavaScript modules checked`);

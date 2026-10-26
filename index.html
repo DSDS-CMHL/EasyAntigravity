@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>EasyAntigravity Lite</title>
+  <title>EasyAntigravity CLI Hub</title>
   <link rel="icon" type="image/png" href="/assets/logo-32.png">
   <link rel="shortcut icon" type="image/png" href="/assets/logo-32.png">
   <link rel="apple-touch-icon" href="/assets/logo-64.png">
@@ -20,39 +20,42 @@
 </head>
 <body>
 
-  <!-- 顶部状态栏 -->
+  <!-- 顶部导航栏 -->
   <div class="nav-header">
     <div class="brand">
-      <span class="brand-title">EasyAG <span class="edition-tag">Lite</span></span>
-      <button type="button" class="version-pill" id="updateBtn" data-action="check-update" title="检查并拉取 Lite 版最新内核与汉化词典，免重装直接生效">
-        <span id="versionBadge">v4.0.4</span>
-        <span class="version-sep">·</span>
-        <span id="updateActionText">↻ 检查更新</span>
-      </button>
+      <span class="brand-title">EasyAG <span class="edition-tag">CLI</span></span>
+      <span class="version-tag">v1.0.0</span>
     </div>
     <div class="nav-actions">
-      <button type="button" class="tray-btn icon-only" id="themeToggleBtn" data-action="toggle-theme" title="切换浅色 / 深色外观（顶栏与面板同步变色）">
+      <div class="status-capsule" id="cliStatusBadge" title="正在检测 Antigravity CLI...">
+        <div class="dot"></div>
+        <span id="cliStatusText">检测中...</span>
+      </div>
+      <div class="status-capsule subtle" id="terminalBadge" title="终端环境">
+        <span id="terminalText">Terminal</span>
+      </div>
+      <button type="button" class="tray-btn icon-only" id="themeToggleBtn" data-action="toggle-theme" title="切换浅色 / 深色外观">
         <span id="themeToggleText">☀️</span>
       </button>
-      <div class="status-capsule" id="clientStatusBadge">
-        <div class="dot"></div>
-        <span>未运行</span>
-      </div>
     </div>
   </div>
 
-  <!-- 卡片 1: 原生代理 -->
+  <!-- 卡片 1: 免 TUN 进程网络代理 -->
   <div class="card">
     <div class="card-label">网络与免 TUN 链路</div>
     <div class="row">
-      <span style="font-weight: 500;">免 TUN 进程代理 <span id="patchStatusBadge" style="font-size: 11px; font-weight: 600; color: var(--green);">· 本地代理就绪</span></span>
-      <label class="switch" title="开启后为 AG 进程注入本地代理；直连环境（如海外/台湾/全局VPN用户）可关闭">
+      <div>
+        <span style="font-weight: 600;">免 TUN 进程代理</span>
+        <span id="proxyStatusBadge" style="font-size: 11px; font-weight: 600; color: var(--green); margin-left: 6px;">· 127.0.0.1:7890</span>
+        <div style="font-size: 11px; color: var(--text-dark); margin-top: 2px;">仅注入终端子进程环境变量，零注册表污染</div>
+      </div>
+      <label class="switch" title="开启后启动终端时自动注入本地代理环境变量">
         <input type="checkbox" id="proxyToggle" checked>
         <span class="slider"></span>
       </label>
     </div>
     <div class="row" id="proxyPortRow">
-      <span style="font-weight: 500;">本地代理端口:</span>
+      <span style="font-weight: 500;">代理端口:</span>
       <div class="port-cluster">
         <button type="button" class="quick-tag" data-port="7890" title="7890: Mihomo / Clash 默认端口">
           7890 <span class="tag-hint">Mihomo</span>
@@ -66,49 +69,60 @@
         <input type="text" id="proxyPortInput" inputmode="numeric" pattern="[0-9]*" maxlength="5" value="7890" placeholder="7890">
       </div>
     </div>
-  </div>
-
-  <!-- 卡片 2: 本地化汉化与上下文圆环 -->
-  <div class="card">
-    <div class="card-label">界面深度汉化与监控</div>
-    <div class="row">
-      <span style="font-weight: 500;">实时 DOM 字典翻译 <span id="dictCountBadge" class="dict-badge">· 已载入词条</span></span>
-      <label class="switch">
-        <input type="checkbox" id="i18nToggle" checked>
-        <span class="slider"></span>
-      </label>
-    </div>
-    <div class="row">
-      <span style="font-weight: 500;">AG 内上下文圆环 <span style="font-size: 11px; color: var(--text-dark);">· 速度在详情中</span></span>
-      <label class="switch" title="只读采集最近请求的上下文估算；关闭后移除 AG 内标记">
-        <input type="checkbox" id="contextMonitorToggle" aria-label="AG 内上下文圆环" checked>
+    <div class="row" style="border-top: 1px solid var(--card-border); padding-top: 10px; margin-top: 4px;">
+      <div>
+        <span style="font-weight: 500;">跳过权限确认</span>
+        <span style="font-size: 11px; color: var(--text-dark); margin-left: 4px;">(--dangerously-skip-permissions)</span>
+        <div style="font-size: 11px; color: var(--text-dark); margin-top: 2px;">自动化运行体验，免去每次命令执行的手动确认</div>
+      </div>
+      <label class="switch" title="CLI 启动时附加 --dangerously-skip-permissions">
+        <input type="checkbox" id="skipPermissionsToggle">
         <span class="slider"></span>
       </label>
     </div>
   </div>
 
-  <!-- 启动目标切换器：检测到同时安装了桌面版与 IDE 时显示 -->
-  <div class="target-switcher" id="targetSwitcher" hidden>
-    <span class="switcher-label">启动目标</span>
-    <div class="switcher-pills" role="radiogroup" aria-label="选择启动目标">
-      <button type="button" class="target-pill active" data-target="hub" id="targetHubBtn" title="启动 Antigravity 官方桌面客户端">
-        <span class="pill-icon">💻</span>
-        <span>桌面版</span>
-      </button>
-      <button type="button" class="target-pill" data-target="ide" id="targetIdeBtn" title="启动 Antigravity IDE 编辑器版（基于 VS Code）">
-        <span class="pill-icon">📝</span>
-        <span>IDE 版</span>
-      </button>
+  <!-- 卡片 2: 工作区与历史项目管理器 -->
+  <div class="card project-hub-card">
+    <div class="card-header-bar">
+      <div class="card-label-row">
+        <span class="card-label-title">工作区与历史项目</span>
+        <span id="projectCountBadge" class="count-badge">0 个项目</span>
+      </div>
+      <div class="card-actions">
+        <button type="button" class="btn-sm btn-primary" id="toggleNewProjectBtn" title="新建或导入一个本地项目工作区">
+          + 新建项目
+        </button>
+        <button type="button" class="btn-sm btn-ghost" id="refreshProjectsBtn" title="重新扫描本地项目与会话">
+          ↻ 刷新
+        </button>
+      </div>
+    </div>
+
+    <!-- 新建项目抽屉/表单 (默认隐藏) -->
+    <div class="new-project-panel" id="newProjectPanel" style="display: none;">
+      <div class="new-project-title">新建或关联本地项目</div>
+      <div class="form-row">
+        <label for="newProjectName">项目名称</label>
+        <input type="text" id="newProjectName" placeholder="例如: MyProject (可选，默认使用文件夹名)">
+      </div>
+      <div class="form-row">
+        <label for="newProjectPath">本地文件夹路径 *</label>
+        <input type="text" id="newProjectPath" placeholder="例如: D:\Workspace\MyProject">
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-sm btn-ghost" id="cancelNewProjectBtn">取消</button>
+        <button type="button" class="btn-sm btn-primary" id="confirmNewProjectBtn">立即创建并登记</button>
+      </div>
+    </div>
+
+    <!-- 项目卡片容器 -->
+    <div class="projects-container" id="projectsContainer">
+      <div class="empty-hint" id="loadingHint">正在读取本地项目与会话...</div>
     </div>
   </div>
 
-  <!-- 核心启动按钮 -->
-  <button class="launch-btn" id="launchBtn" data-action="launch">
-    <span class="launch-icon" id="launchIcon">🚀</span>
-    <span id="launchText">启动 Antigravity</span>
-  </button>
-
-  <!-- 运行日志：常显卡片，不折叠 -->
+  <!-- 卡片 3: 运行日志 -->
   <div class="advanced" id="advancedPanel">
     <div class="advanced-head">
       <span>运行日志</span>
@@ -120,7 +134,7 @@
     <div class="advanced-body">
       <div class="console-pane">
         <div class="console" id="consoleBox">
-          <div class="log-line" style="color: var(--text-dark);">[SYSTEM] EasyAG 已就绪。</div>
+          <div class="log-line" style="color: var(--text-dark);">[SYSTEM] EasyAG CLI Hub 已启动。</div>
         </div>
       </div>
     </div>

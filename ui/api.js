@@ -11,15 +11,20 @@ export async function request(route, { body, method = body === undefined ? 'GET'
     const data = await response.json();
     if (!response.ok || data?.ok === false) throw new Error(data?.error || `请求失败 (${response.status})`);
     return data;
-  } finally { clearTimeout(timeout); }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export const api = {
   status: () => request('/api/status'),
   logs: () => request('/api/logs?limit=200'),
   configure: body => request('/api/config', { body }),
-  launch: () => request('/api/launch', { method: 'POST' }),
-  checkUpdate: body => request('/api/update', { body: body || {}, method: 'POST', timeoutMs: 60000 }),
+  getProjects: () => request('/api/cli/projects'),
+  createProject: body => request('/api/cli/create-project', { body }),
+  launchCli: body => request('/api/cli/launch', { body }),
+  openFolder: folderPath => request('/api/cli/open-folder', { body: { folderPath } }),
   setTheme: theme => request('/api/theme', { body: { theme }, method: 'POST' }),
-  hide: () => request('/api/hide', { method: 'POST' })
+  hide: () => request('/api/hide', { method: 'POST' }),
+  quit: () => request('/api/quit', { method: 'POST' })
 };

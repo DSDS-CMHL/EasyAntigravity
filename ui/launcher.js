@@ -1,287 +1,487 @@
 import { api } from './api.js';
 
-const element = id => document.getElementById(id);
-const consoleBox = element('consoleBox');
-let phase = 'idle';
-let settingsQueue = Promise.resolve();
-let refreshing = false;
-let stream;
-let pollTimer;
-let launchPending = false;
-let activeTarget = 'hub';
-let activeTargetName = 'Antigravity';
-let clientRunningState = false;
-const logKeys = new Set();
+const state = {
+  settings: {},
+  cli: {},
+  terminal: {},
+  projects: []
+};
 
-function appendLog(category, message, cls = '', at) {
-  const key = at && `${at}|${category}|${message}`;
-  if (key && logKeys.has(key)) return;
-  if (key) {
-    logKeys.add(key);
-    if (logKeys.size > 500) logKeys.delete(logKeys.values().next().value);
+// DOM 元素引用
+const cliStatusBadge = document.getElementById('cliStatusBadge');
+const cliStatusText = document.getElementById('cliStatusText');
+const terminalBadge = document.getElementById('terminalBadge');
+const terminalText = document.getElementById('terminalText');
+const themeToggleBtn = document.getElementById('themeToggleBtn');
+const themeToggleText = document.getElementById('themeToggleText');
+
+const proxyToggle = document.getElementById('proxyToggle');
+const proxyStatusBadge = document.getElementById('proxyStatusBadge');
+const proxyPortInput = document.getElementById('proxyPortInput');
+const quickPortTags = document.querySelectorAll('.quick-tag');
+const skipPermissionsToggle = document.getElementById('skipPermissionsToggle');
+
+const projectCountBadge = document.getElementById('projectCountBadge');
+const toggleNewProjectBtn = document.getElementById('toggleNewProjectBtn');
+const refreshProjectsBtn = document.getElementById('refreshProjectsBtn');
+const newProjectPanel = document.getElementById('newProjectPanel');
+const newProjectName = document.getElementById('newProjectName');
+const newProjectPath = document.getElementById('newProjectPath');
+const cancelNewProjectBtn = document.getElementById('cancelNewProjectBtn');
+const confirmNewProjectBtn = document.getElementById('confirmNewProjectBtn');
+const projectsContainer = document.getElementById('projectsContainer');
+
+const consoleBox = document.getElementById('consoleBox');
+
+// 格式化时间戳
+function formatTime(isoString) {
+  if (!isoString) return '';
+  try {
+    const d = new Date(isoString);
+    if (Number.isNaN(d.getTime())) return '';
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return '刚刚';
+    if (diffMins < 60) return `${diffMins} 分钟前`;
+    if (diffHours < 24) return `${diffHours} 小时前`;
+    if (diffDays < 7) return `${diffDays} 天前`;
+
+    const m = (d.getMonth() + 1).toString().padStart(2, '0');
+    const day = d.getDate().toString().padStart(2, '0');
+    const hr = d.getHours().toString().padStart(2, '0');
+    const min = d.getMinutes().toString().padStart(2, '0');
+    return `${m}-${day} ${hr}:${min}`;
+  } catch {
+    return '';
   }
+}
+
+// 追加日志
+function appendLog(category, message, cls = '') {
+  if (!consoleBox) return;
   const line = document.createElement('div');
-  line.className = 'log-line';
-  if (/^tag-[a-z-]+$/.test(cls)) line.classList.add(cls);
-  const time = new Date(at || Date.now()).toLocaleTimeString();
-  line.textContent = `[${time}] [${category || 'SYSTEM'}] ${message || ''}`;
+  line.className = `log-line ${cls}`;
+  const now = new Date().toLocaleTimeString();
+  line.textContent = `[${now}] [${category}] ${message}`;
   consoleBox.appendChild(line);
-  while (consoleBox.children.length > 300) consoleBox.firstElementChild.remove();
   consoleBox.scrollTop = consoleBox.scrollHeight;
 }
 
-function report(error) { appendLog('SYSTEM', error.message || String(error), 'tag-alert'); }
+// 刷新状态与 UI 展现
+function applyStatus(status) {
+  state.settings = status;
+  state.cli = status.cli || {};
+  state.terminal = status.terminal || {};
 
-function updateProxyUi(enabled) {
-  const row = element('proxyPortRow');
-  const badge = element('patchStatusBadge');
-  const busyOrRunning = ['preparing', 'launching', 'running'].includes(phase);
-  if (row) row.classList.toggle('disabled', !enabled);
-  document.querySelectorAll('[data-port]').forEach(control => {
-    control.disabled = !enabled || busyOrRunning;
-  });
-  if (element('proxyPortInput')) {
-    element('proxyPortInput').disabled = !enabled || busyOrRunning;
-  }
-  if (badge) {
-    badge.textContent = enabled ? '· 本地代理就绪' : '· 直连模式（不挂代理）';
-    badge.style.color = enabled ? 'var(--green)' : 'var(--text-dark)';
-  }
-}
-
-function renderPhase(next, targetName = activeTargetName) {
-  phase = next;
-  document.body.dataset.uiState = next;
-  const busy = ['preparing', 'launching'].includes(next);
-  const locked = busy || next === 'running';
-  const button = element('launchBtn');
-  button.disabled = locked;
-  button.classList.toggle('busy', busy);
-  if (element('proxyToggle')) element('proxyToggle').disabled = locked;
-  document.querySelectorAll('[data-target]').forEach(control => { control.disabled = locked; });
-  const proxyEnabled = element('proxyToggle') ? element('proxyToggle').checked : true;
-  document.querySelectorAll('[data-port]').forEach(control => { control.disabled = locked || !proxyEnabled; });
-  element('proxyPortInput').disabled = locked || !proxyEnabled;
-  element('launchIcon').textContent = busy ? '◌' : next === 'running' ? '●' : next === 'error' ? '↻' : '🚀';
-  element('launchText').textContent = {
-    preparing: proxyEnabled ? '正在准备代理环境…' : '正在准备启动环境…',
-    launching: `正在启动 ${targetName}…`,
-    running: `${targetName} 运行中`,
-    error: '启动失败，点击重试'
-  }[next] || `启动 ${targetName}`;
-  button.style.background = next === 'running' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '';
-}
-
-function renderStatus(status) {
-  if (status.activeTarget) {
-    activeTarget = status.activeTarget;
-    activeTargetName = status.targetName || (status.activeTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity');
-  }
-  if (status.enableProxy !== undefined && element('proxyToggle')) {
-    element('proxyToggle').checked = status.enableProxy;
-    updateProxyUi(status.enableProxy);
-  }
-  if (status.bothInstalled) {
-    const switcher = element('targetSwitcher');
-    if (switcher) switcher.hidden = false;
-    element('targetHubBtn')?.classList.toggle('active', activeTarget === 'hub');
-    element('targetIdeBtn')?.classList.toggle('active', activeTarget === 'ide');
+  // CLI 状态
+  if (state.cli.installed) {
+    cliStatusBadge.className = 'status-capsule active';
+    cliStatusText.textContent = 'CLI 已就绪';
+    cliStatusBadge.title = `已检测到 Antigravity CLI:\n${state.cli.path}`;
   } else {
-    const switcher = element('targetSwitcher');
-    if (switcher) switcher.hidden = true;
+    cliStatusBadge.className = 'status-capsule error';
+    cliStatusText.textContent = '未检测到 CLI';
+    cliStatusBadge.title = '未找到 agy.exe，请确认 Antigravity CLI 已安装';
   }
-  if (status.phase && !(launchPending && status.phase === 'idle')) renderPhase(status.phase, activeTargetName);
-  if (status.dictEntries !== undefined) {
-    element('dictCountBadge').textContent = `· 已载入 ${status.dictEntries} 词条`;
+
+  // 终端环境
+  if (terminalText) {
+    terminalText.textContent = state.terminal.type === 'wt' ? 'Windows Terminal' : 'PowerShell';
+    terminalBadge.title = `默认呼出终端: ${state.terminal.path || state.terminal.type}`;
   }
-  if (status.version) {
-    const versionNode = element('versionBadge');
-    if (versionNode) {
-      versionNode.textContent = `v${status.version}`;
+
+  // 免 TUN 代理
+  proxyToggle.checked = Boolean(status.enableProxy);
+  proxyPortInput.value = status.port || 7890;
+  skipPermissionsToggle.checked = Boolean(status.skipPermissions);
+
+  updatePortHighlight(status.port);
+  updateProxyBadge(status.enableProxy, status.port);
+}
+
+function updatePortHighlight(port) {
+  const current = Number(port);
+  for (const tag of quickPortTags) {
+    if (Number(tag.dataset.port) === current) {
+      tag.classList.add('active');
+    } else {
+      tag.classList.remove('active');
     }
   }
-  if (status.clientRunning !== undefined) {
-    clientRunningState = Boolean(status.clientRunning);
-    const badge = element('clientStatusBadge');
-    badge.className = status.clientRunning ? 'status-capsule active' : 'status-capsule';
-    badge.querySelector('span').textContent = status.clientRunning
-      ? status.cdpSockets ? '增强已连接' : '运行中'
-      : '未运行';
-    badge.title = status.cdpError || (status.clientRunning ? `${activeTargetName} 正在运行` : `${activeTargetName} 未运行`);
-    renderPhase(status.phase || phase, activeTargetName);
+}
+
+function updateProxyBadge(enabled, port) {
+  if (enabled) {
+    proxyStatusBadge.textContent = `· 127.0.0.1:${port}`;
+    proxyStatusBadge.style.color = 'var(--green)';
+  } else {
+    proxyStatusBadge.textContent = '· 直连模式 (未注入)';
+    proxyStatusBadge.style.color = 'var(--yellow)';
   }
 }
 
-function loadSettings(status) {
-  if (status.activeTarget) {
-    activeTarget = status.activeTarget;
-    activeTargetName = status.targetName || (status.activeTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity');
-  }
-  element('proxyPortInput').value = status.port;
-  if (element('proxyToggle')) element('proxyToggle').checked = status.enableProxy !== false;
-  element('i18nToggle').checked = status.enableI18n;
-  element('contextMonitorToggle').checked = status.enableContextMonitor;
-  updateProxyUi(status.enableProxy !== false);
-  renderStatus(status);
-}
-
-function persistSettings() {
-  const payload = {
-    port: Number(element('proxyPortInput').value),
-    enableProxy: element('proxyToggle') ? element('proxyToggle').checked : true,
-    enableI18n: element('i18nToggle').checked,
-    enableContextMonitor: element('contextMonitorToggle').checked,
-    targetApp: activeTarget
-  };
-  settingsQueue = settingsQueue.catch(() => {}).then(() => api.configure(payload));
-  return settingsQueue;
-}
-
-async function launch() {
-  if (['preparing', 'launching', 'running'].includes(phase)) return;
-  launchPending = true;
-  renderPhase('preparing');
+// 加载项目列表
+async function loadProjects() {
   try {
-    await persistSettings();
-    renderPhase('launching');
-    await api.launch();
-    renderPhase('running');
-  } catch (error) { renderPhase('error'); report(error); }
-  finally { launchPending = false; }
-}
-
-async function checkUpdate() {
-  const btn = element('updateBtn');
-  const actionLabel = element('updateActionText') || btn;
-  if (!btn || btn.disabled) return;
-  btn.disabled = true;
-  if (actionLabel) actionLabel.textContent = '↻ 检查中…';
-  try {
-    const result = await api.checkUpdate();
-    renderStatus(result);
-    if (actionLabel) actionLabel.textContent = result.updated ? '✨ 已更新' : '✓ 已是最新';
-    if (result.runtimeFilesUpdated > 0) {
-      setTimeout(() => location.reload(), 400);
-      return;
-    }
-    setTimeout(() => { if (actionLabel) actionLabel.textContent = '↻ 检查更新'; }, 2500);
-  } catch (error) {
-    if (actionLabel) actionLabel.textContent = '↻ 检查更新';
-    throw error;
-  } finally {
-    btn.disabled = false;
+    const res = await api.getProjects();
+    state.projects = res.projects || [];
+    renderProjects(state.projects);
+  } catch (err) {
+    projectsContainer.innerHTML = `<div class="empty-hint" style="color:var(--red);">读取项目列表失败: ${err.message}</div>`;
   }
 }
 
-function currentTheme() {
-  const attr = document.documentElement.dataset.theme;
-  if (attr === 'light' || attr === 'dark') return attr;
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
+// 渲染项目卡片
+function renderProjects(projects) {
+  if (!projectsContainer) return;
+  projectCountBadge.textContent = `${projects.length} 个项目`;
 
-function applyTheme(theme, persist = false) {
-  document.documentElement.dataset.theme = theme;
-  if (persist) {
-    try { localStorage.setItem('easyag-theme', theme); } catch {}
-  }
-  const textNode = element('themeToggleText');
-  if (textNode) {
-    textNode.textContent = theme === 'dark' ? '🌙' : '☀️';
-  }
-  const btnNode = element('themeToggleBtn');
-  if (btnNode) {
-    btnNode.title = theme === 'dark' ? '当前深色外观，点击切换为浅色' : '当前浅色外观，点击切换为深色';
-  }
-  api.setTheme?.(theme).catch(() => {});
-}
-
-function toggleTheme() {
-  const next = currentTheme() === 'dark' ? 'light' : 'dark';
-  applyTheme(next, true);
-}
-
-async function copyLogs() {
-  try {
-    await navigator.clipboard.writeText(consoleBox.innerText);
-    appendLog('SYSTEM', '日志已复制', 'tag-proxy');
-  } catch {
-    const range = document.createRange();
-    range.selectNodeContents(consoleBox);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-    appendLog('SYSTEM', '已选中日志，可手动复制', 'tag-warn');
-  }
-}
-
-const actions = {
-  launch,
-  hide: () => api.hide(),
-  'toggle-theme': toggleTheme,
-  'check-update': checkUpdate,
-  'copy-logs': copyLogs,
-  'clear-logs': () => { consoleBox.replaceChildren(); }
-};
-
-document.addEventListener('click', event => {
-  const targetBtn = event.target.closest('[data-target]');
-  if (targetBtn && !targetBtn.disabled) {
-    const nextTarget = targetBtn.dataset.target;
-    if (nextTarget && nextTarget !== activeTarget) {
-      activeTarget = nextTarget;
-      activeTargetName = nextTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity';
-      element('targetHubBtn')?.classList.toggle('active', activeTarget === 'hub');
-      element('targetIdeBtn')?.classList.toggle('active', activeTarget === 'ide');
-      renderPhase(phase, activeTargetName);
-      api.configure({ targetApp: nextTarget }).then(res => {
-        if (res?.targetName) activeTargetName = res.targetName;
-        renderPhase(phase, activeTargetName);
-      }).catch(report);
-    }
+  if (projects.length === 0) {
+    projectsContainer.innerHTML = '<div class="empty-hint">暂无已登记项目，点击上方 "+ 新建项目" 添加或导入本地工作区</div>';
     return;
   }
-  const control = event.target.closest('[data-action],[data-port]');
-  if (!control || control.disabled) return;
-  const action = control.dataset.port !== undefined ? async () => {
-    element('proxyPortInput').value = control.dataset.port;
-    await persistSettings();
-  } : actions[control.dataset.action];
-  if (action) Promise.resolve().then(() => action(control)).catch(report);
-});
 
-element('proxyPortInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, ''); });
-for (const id of ['proxyPortInput', 'proxyToggle', 'i18nToggle', 'contextMonitorToggle']) {
-  element(id)?.addEventListener('change', () => {
-    if (id === 'proxyToggle') updateProxyUi(element('proxyToggle').checked);
-    persistSettings().catch(report);
-  });
+  projectsContainer.innerHTML = '';
+
+  for (const proj of projects) {
+    const card = document.createElement('div');
+    card.className = 'project-card';
+
+    const convCount = proj.conversations?.length || 0;
+
+    // 头部区域
+    const header = document.createElement('div');
+    header.className = 'project-header';
+
+    const meta = document.createElement('div');
+    meta.className = 'project-meta';
+
+    const nameRow = document.createElement('div');
+    nameRow.className = 'project-name-row';
+
+    const icon = document.createElement('span');
+    icon.textContent = '📁';
+    icon.style.fontSize = '14px';
+
+    const name = document.createElement('span');
+    name.className = 'project-name';
+    name.textContent = proj.name;
+
+    const countTag = document.createElement('span');
+    countTag.className = 'project-conv-count';
+    countTag.textContent = `${convCount} 会话`;
+
+    nameRow.appendChild(icon);
+    nameRow.appendChild(name);
+    nameRow.appendChild(countTag);
+
+    const pathSpan = document.createElement('div');
+    pathSpan.className = 'project-path';
+    pathSpan.textContent = proj.path;
+    pathSpan.title = '点击在资源管理器中打开此目录';
+    pathSpan.addEventListener('click', () => {
+      api.openFolder(proj.path);
+    });
+
+    meta.appendChild(nameRow);
+    meta.appendChild(pathSpan);
+
+    // 操作按钮区域
+    const actions = document.createElement('div');
+    actions.className = 'project-actions';
+
+    const openDirBtn = document.createElement('button');
+    openDirBtn.type = 'button';
+    openDirBtn.className = 'btn-sm btn-ghost';
+    openDirBtn.title = '在 Windows 文件资源管理器中打开';
+    openDirBtn.textContent = '📂 浏览';
+    openDirBtn.addEventListener('click', () => {
+      api.openFolder(proj.path);
+    });
+
+    const newConvBtn = document.createElement('button');
+    newConvBtn.type = 'button';
+    newConvBtn.className = 'btn-launch-new';
+    newConvBtn.title = '在此项目目录打开 CLI 终端开启全新会话';
+    newConvBtn.innerHTML = '🚀 开启新会话';
+    newConvBtn.addEventListener('click', async () => {
+      try {
+        await api.launchCli({ workspace: proj.path });
+      } catch (e) {
+        appendLog('ERROR', `启动失败: ${e.message}`, 'tag-alert');
+      }
+    });
+
+    actions.appendChild(openDirBtn);
+    actions.appendChild(newConvBtn);
+
+    header.appendChild(meta);
+    header.appendChild(actions);
+    card.appendChild(header);
+
+    // 历史会话区域
+    if (convCount > 0) {
+      const convSection = document.createElement('div');
+      convSection.className = 'conv-section';
+
+      const toggleBtn = document.createElement('button');
+      toggleBtn.type = 'button';
+      toggleBtn.className = 'conv-toggle-btn';
+      toggleBtn.innerHTML = `📜 历史会话 (${convCount}) <span style="font-size: 10px;">▾</span>`;
+
+      const convList = document.createElement('div');
+      convList.className = 'conv-list';
+
+      for (const conv of proj.conversations) {
+        const item = document.createElement('div');
+        item.className = 'conv-item';
+
+        const info = document.createElement('div');
+        info.className = 'conv-info';
+
+        const title = document.createElement('div');
+        title.className = 'conv-title';
+        title.textContent = conv.title || '未命名会话';
+        title.title = conv.title || '';
+
+        const metaRow = document.createElement('div');
+        metaRow.className = 'conv-meta';
+
+        const steps = document.createElement('span');
+        steps.className = 'conv-steps-badge';
+        steps.textContent = `${conv.numSteps || 0} 步`;
+
+        const time = document.createElement('span');
+        time.textContent = formatTime(conv.updatedAt);
+
+        metaRow.appendChild(steps);
+        if (time.textContent) metaRow.appendChild(time);
+
+        info.appendChild(title);
+        info.appendChild(metaRow);
+
+        const resumeBtn = document.createElement('button');
+        resumeBtn.type = 'button';
+        resumeBtn.className = 'btn-resume';
+        resumeBtn.title = `续接此会话 [${conv.id.slice(0, 8)}]`;
+        resumeBtn.textContent = '⚡ 续接';
+        resumeBtn.addEventListener('click', async () => {
+          try {
+            await api.launchCli({ workspace: proj.path, conversationId: conv.id });
+          } catch (e) {
+            appendLog('ERROR', `续接失败: ${e.message}`, 'tag-alert');
+          }
+        });
+
+        item.appendChild(info);
+        item.appendChild(resumeBtn);
+        convList.appendChild(item);
+      }
+
+      let expanded = true;
+      toggleBtn.addEventListener('click', () => {
+        expanded = !expanded;
+        convList.style.display = expanded ? 'flex' : 'none';
+        toggleBtn.innerHTML = `📜 历史会话 (${convCount}) <span style="font-size: 10px;">${expanded ? '▾' : '▸'}</span>`;
+      });
+
+      convSection.appendChild(toggleBtn);
+      convSection.appendChild(convList);
+      card.appendChild(convSection);
+    }
+
+    projectsContainer.appendChild(card);
+  }
 }
 
-async function init() {
-  applyTheme(currentTheme());
-  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', e => {
+// 事件绑定
+function initEvents() {
+  // 代理开关
+  proxyToggle.addEventListener('change', async () => {
     try {
-      if (!localStorage.getItem('easyag-theme')) applyTheme(e.matches ? 'dark' : 'light');
+      const res = await api.configure({ enableProxy: proxyToggle.checked });
+      updateProxyBadge(res.settings.enableProxy, res.settings.port);
+    } catch (e) {
+      proxyToggle.checked = !proxyToggle.checked;
+      appendLog('ERROR', e.message, 'tag-alert');
+    }
+  });
+
+  // 端口输入
+  proxyPortInput.addEventListener('change', async () => {
+    const port = Number(proxyPortInput.value.trim());
+    if (!port || port < 1 || port > 65535) {
+      appendLog('WARN', '端口格式不正确，请输入 1–65535 的整数', 'tag-warn');
+      proxyPortInput.value = state.settings.port || 7890;
+      return;
+    }
+    try {
+      const res = await api.configure({ port });
+      state.settings.port = res.settings.port;
+      updatePortHighlight(res.settings.port);
+      updateProxyBadge(state.settings.enableProxy, res.settings.port);
+    } catch (e) {
+      appendLog('ERROR', e.message, 'tag-alert');
+    }
+  });
+
+  // 快速端口选择
+  for (const tag of quickPortTags) {
+    tag.addEventListener('click', async () => {
+      const port = Number(tag.dataset.port);
+      proxyPortInput.value = port;
+      try {
+        const res = await api.configure({ port });
+        state.settings.port = res.settings.port;
+        updatePortHighlight(res.settings.port);
+        updateProxyBadge(state.settings.enableProxy, res.settings.port);
+      } catch (e) {
+        appendLog('ERROR', e.message, 'tag-alert');
+      }
+    });
+  }
+
+  // 跳过权限确认开关
+  skipPermissionsToggle.addEventListener('change', async () => {
+    try {
+      await api.configure({ skipPermissions: skipPermissionsToggle.checked });
+    } catch (e) {
+      skipPermissionsToggle.checked = !skipPermissionsToggle.checked;
+      appendLog('ERROR', e.message, 'tag-alert');
+    }
+  });
+
+  // 新建项目抽屉展开与取消
+  toggleNewProjectBtn.addEventListener('click', () => {
+    const isHidden = newProjectPanel.style.display === 'none';
+    newProjectPanel.style.display = isHidden ? 'block' : 'none';
+    if (isHidden) {
+      newProjectPath.focus();
+    }
+  });
+
+  cancelNewProjectBtn.addEventListener('click', () => {
+    newProjectPanel.style.display = 'none';
+    newProjectName.value = '';
+    newProjectPath.value = '';
+  });
+
+  // 确认创建项目
+  confirmNewProjectBtn.addEventListener('click', async () => {
+    const folderPath = newProjectPath.value.trim();
+    const name = newProjectName.value.trim();
+    if (!folderPath) {
+      appendLog('WARN', '请输入文件夹完整路径', 'tag-warn');
+      newProjectPath.focus();
+      return;
+    }
+    try {
+      confirmNewProjectBtn.disabled = true;
+      confirmNewProjectBtn.textContent = '创建中...';
+      const res = await api.createProject({ name, folderPath });
+      if (res.ok) {
+        appendLog('CLI', `项目已就绪: ${res.project.name} (${res.project.path})`, 'tag-proxy');
+        newProjectPanel.style.display = 'none';
+        newProjectName.value = '';
+        newProjectPath.value = '';
+        await loadProjects();
+      }
+    } catch (e) {
+      appendLog('ERROR', `新建项目失败: ${e.message}`, 'tag-alert');
+    } finally {
+      confirmNewProjectBtn.disabled = false;
+      confirmNewProjectBtn.textContent = '立即创建并登记';
+    }
+  });
+
+  // 刷新按钮
+  refreshProjectsBtn.addEventListener('click', async () => {
+    refreshProjectsBtn.disabled = true;
+    refreshProjectsBtn.textContent = '刷新中...';
+    try {
+      await loadProjects();
+      appendLog('CLI', '已刷新项目与会话列表', 'tag-proxy');
+    } finally {
+      refreshProjectsBtn.disabled = false;
+      refreshProjectsBtn.textContent = '↻ 刷新';
+    }
+  });
+
+  // 复制与清空日志
+  document.querySelector('[data-action="copy-logs"]')?.addEventListener('click', () => {
+    const text = consoleBox?.innerText || '';
+    navigator.clipboard.writeText(text).then(() => {
+      appendLog('SYSTEM', '日志已复制到剪贴板', 'tag-proxy');
+    }).catch(() => {
+      appendLog('WARN', '复制失败，请手动选择复制', 'tag-warn');
+    });
+  });
+
+  document.querySelector('[data-action="clear-logs"]')?.addEventListener('click', () => {
+    if (consoleBox) consoleBox.innerHTML = '';
+  });
+
+  // 主题切换
+  themeToggleBtn?.addEventListener('click', async () => {
+    const current = document.documentElement.dataset.theme;
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem('easyag-theme', next);
+    } catch {}
+    themeToggleText.textContent = next === 'dark' ? '🌙' : '☀️';
+    try {
+      await api.setTheme(next);
     } catch {}
   });
-  loadSettings(await api.status());
-  for (const item of await api.logs()) appendLog(item.category, item.message, item.cls, item.at);
-  stream = new EventSource('/api/events');
-  stream.onmessage = event => {
-    try {
-      const message = JSON.parse(event.data);
-      renderStatus(message);
-      if (message.category) appendLog(message.category, message.message, message.cls, message.at);
-    } catch (error) { report(error); }
-  };
-  pollTimer = setInterval(async () => {
-    if (refreshing) return;
-    refreshing = true;
-    try { renderStatus(await api.status()); }
-    catch { /* EventSource and the next poll reconnect without ending the backend session. */ }
-    finally { refreshing = false; }
-  }, 3000);
+
+  // 初始化主题图标
+  const currentTheme = document.documentElement.dataset.theme || 'light';
+  if (themeToggleText) {
+    themeToggleText.textContent = currentTheme === 'dark' ? '🌙' : '☀️';
+  }
 }
 
-window.addEventListener('pagehide', () => { clearInterval(pollTimer); stream?.close(); });
-init().catch(error => { renderPhase('error'); report(error); });
+// 建立 SSE 实时监听
+function initSse() {
+  const events = new EventSource('/api/events');
+  events.onmessage = e => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.category && data.message) {
+        appendLog(data.category, data.message, data.cls || '');
+      }
+      if (data.port !== undefined && data.enableProxy !== undefined) {
+        state.settings = { ...state.settings, ...data };
+        proxyToggle.checked = Boolean(data.enableProxy);
+        proxyPortInput.value = data.port;
+        updatePortHighlight(data.port);
+        updateProxyBadge(data.enableProxy, data.port);
+      }
+    } catch {}
+  };
+  events.onerror = () => {
+    // 自动重连由 EventSource 原生支持
+  };
+}
+
+// 主入口初始化
+async function init() {
+  initEvents();
+  initSse();
+
+  try {
+    const status = await api.status();
+    applyStatus(status);
+  } catch (e) {
+    appendLog('ERROR', `加载状态失败: ${e.message}`, 'tag-alert');
+  }
+
+  await loadProjects();
+}
+
+init();
