@@ -7,7 +7,8 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
-const { CdpConnection, getJson } = require('../adapters/desktop/cdp');
+const { CdpConnection } = require('../adapters/desktop/cdp');
+const { waitForBrowserPage } = require('./browser-ready.cjs');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function main() {
@@ -66,7 +67,7 @@ async function main() {
       if (!port) await sleep(100);
     }
     assert.ok(port, 'Browser starts');
-    const page = (await getJson(`http://127.0.0.1:${port}/json/list`)).find(item => item.type === 'page');
+    const page = await waitForBrowserPage(port, browser);
     socket = await new CdpConnection(page.webSocketDebuggerUrl).open();
     const evaluate = async expression => {
       const result = await socket.command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }).catch(error => { throw new Error(`Evaluate ${expression}: ${error.message}`); });

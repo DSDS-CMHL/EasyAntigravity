@@ -7,7 +7,8 @@ const http = require('node:http');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
-const { CdpConnection, getJson } = require('../adapters/desktop/cdp');
+const { CdpConnection } = require('../adapters/desktop/cdp');
+const { waitForBrowserPage } = require('./browser-ready.cjs');
 const { installContextWidget } = require('../features/context-widget');
 const { currentConversationId } = require('../features/conversation-context');
 const id = '11111111-1111-1111-1111-111111111111';
@@ -43,7 +44,7 @@ async function main() {
       catch { await sleep(100); }
     }
     assert.ok(port, 'Browser debug endpoint starts');
-    const target = (await getJson(`http://127.0.0.1:${port}/json/list`)).find(item => item.type === 'page');
+    const target = await waitForBrowserPage(port, browser);
     socket = await new CdpConnection(target.webSocketDebuggerUrl).open();
     const evaluate = async expression => {
       const result = await socket.command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
