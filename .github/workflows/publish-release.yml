@@ -3,103 +3,61 @@ name: Publish Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v4.0.4-lite'
   workflow_dispatch:
 
 permissions:
-  contents: write
-  actions: read
+  contents: read
+
+concurrency:
+  group: release-4.0.4-lite
+  cancel-in-progress: false
 
 jobs:
+  build:
+    uses: ./.github/workflows/tauri-ci.yml
+
   release:
+    needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download Windows artifact from completed build
-        uses: actions/download-artifact@v4
+      - name: Verify release version
+        run: |
+          node -e "const p=require('./package.json');if(p.version!=='4.0.4'||p.edition!=='lite')process.exit(1)"
+      - uses: actions/download-artifact@v4
         with:
-          run-id: 39403116739
-          name: EasyAntigravity-4.0.2-lite-windows-x64
-          path: raw-artifacts/win
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download macOS arm64 artifact from completed build
-        uses: actions/download-artifact@v4
+          name: EasyAntigravity-4.0.4-lite-windows-x64
+          path: release-out
+      - uses: actions/download-artifact@v4
         with:
-          run-id: 39403116739
-          name: EasyAntigravity-4.0.2-lite-macos-arm64-beta
-          path: raw-artifacts/mac-arm64
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download macOS x64 artifact from completed build
-        uses: actions/download-artifact@v4
+          name: EasyAntigravity-4.0.4-lite-macos-arm64-beta
+          path: release-out
+      - uses: actions/download-artifact@v4
         with:
-          run-id: 39403116739
-          name: EasyAntigravity-4.0.2-lite-macos-x64-beta
-          path: raw-artifacts/mac-x64
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Assemble v4.0.3 Lite release packages and SHA256
+          name: EasyAntigravity-4.0.4-lite-macos-x64-beta
+          path: release-out
+      - name: Verify packages and generate SHA256
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p release-out
-          win_dir="release-stage/EasyAntigravity-4.0.3-lite-windows-x64"
-          mkdir -p "$win_dir"
-          cp -r raw-artifacts/win/* "$win_dir/"
-
-          # Sync latest v4.0.3 JS/UI/manifest into Windows portable backend
-          cp -f server.js index.html package.json THIRD-PARTY-NOTICES.md "$win_dir/backend/"
-          cp -rf core features adapters desktop ui dicts assets "$win_dir/backend/"
-
-          (
-            cd release-stage
-            zip -qr "../release-out/EasyAntigravity-4.0.3-lite-windows-x64.zip" "EasyAntigravity-4.0.3-lite-windows-x64"
-          )
-
-          cp "raw-artifacts/mac-arm64/EasyAntigravity-4.0.2-lite-macos-arm64-beta.zip" \
-             "release-out/EasyAntigravity-4.0.3-lite-macos-arm64-beta.zip"
-          cp "raw-artifacts/mac-x64/EasyAntigravity-4.0.2-lite-macos-x64-beta.zip" \
-             "release-out/EasyAntigravity-4.0.3-lite-macos-x64-beta.zip"
-
           cd release-out
+          test "$(find . -maxdepth 1 -name '*.zip' | wc -l)" -eq 3
           for f in *.zip; do
+            unzip -t "$f"
             sha256sum "$f" > "SHA256-${f}.sha256"
           done
-          ls -lh
-
-      - name: Create GitHub Release
+      - name: Publish EasyAG 4.0.4 Lite
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.0.3-lite
-          name: EasyAG v4.0.3 Lite (超轻量版)
+          tag_name: v4.0.4-lite
+          target_commitish: ${{ github.sha }}
+          name: EasyAG v4.0.4 Lite
           make_latest: true
+          fail_on_unmatched_files: true
+          body_path: docs/RELEASE-v4.0.4.md
           files: |
             release-out/*.zip
             release-out/*.sha256
-          body: |
-            ## EasyAntigravity v4.0.3 Lite（单账号超轻量基座版）
-
-            随着 Antigravity 2.23.0 官方内置自动审批（Decide for me）生态的推出，EasyAG 全新推出 **v4.0 Lite 超轻量版**，专注做好核心三件事，**100% 零文件修改**：
-
-            ### ✨ 核心特性
-            - **🚀 免 TUN 进程级代理注入**：无需开启系统全局 TUN 网卡，支持一键切换 `7890 (Mihomo)` / `7897 (Verge)` / `10808 (v2ray)` 及自定义端口。
-            - **🌐 实时可逆 DOM 深度汉化**：内置 3,070+ 条针对 Antigravity 2.23.0 深度校对的汉化词条，随开随关、关闭即刻还原英文原文。
-            - **📊 输入框上下文圆环与速度监控**：在输入框模型选择器旁内嵌非侵入式上下文占用圆环，点击可查看 Token 容量占用、采样模型名称、输出速度（tok/s）与首字延迟（TTFT）。
-            - **⚡ 免重装热更新（Zero-Reinstall Hot Update）**：顶栏内置 `检查更新` 胶囊，支持通过本地代理增量拉取最新汉化词典与内核/UI 热补丁（SHA-256 强校验 + 异常自动回滚），告别频繁重下安装包。
-            - **🎨 原生顶栏与面板主题联动 + macOS 菜单栏优化**：
-              - Windows 顶栏与面板支持浅色/深色双向同步切换；
-              - macOS 支持关闭窗口自动隐藏底部 Dock 栏图标，仅驻留右上角菜单栏后台静默运行。
-
-            ---
-
-            ### 📦 下载说明
-            | 平台 | 文件名 | 说明 |
-            | :--- | :--- | :--- |
-            | **Windows x64 (便携免安装版)** | `EasyAntigravity-4.0.3-lite-windows-x64.zip` | 解压即用，双击 `EasyAntigravity.exe` 启动 |
-            | **macOS Apple Silicon (M1–M4)** | `EasyAntigravity-4.0.3-lite-macos-arm64-beta.zip` | 解压后拖入应用程序，支持右上角菜单栏驻留 |
-            | **macOS Intel (x64)** | `EasyAntigravity-4.0.3-lite-macos-x64-beta.zip` | 适用于 Intel 芯片 Mac |
-
-            > 💡 **老版本留存说明**：如果你仍处于 Antigravity 灰度测试外、需要使用原版「三级防线 + 自定义危险命令拦截规则 + ARES 风险胶囊」，可继续下载下方 **[EasyAG v3.2.4](https://github.com/DSDS-CMHL/EasyAntigravity/releases/tag/v3.2.4)**（代码归档于 `v3-pilot` 分支）。

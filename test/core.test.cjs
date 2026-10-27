@@ -136,6 +136,20 @@ test('Hotfix dictionary overlays bundled entries and tolerates corrupted hotfix 
   assert.deepEqual(loadDictionary(rootDir, dataDir), { Hello: '你好', World: '世界' });
 });
 
+test('Installing a newer full package keeps its version above stale hot-update state', t => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'easyag-updater-version-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const rootDir = path.join(temp, 'root');
+  const dataDir = path.join(temp, 'data');
+  writeJson(path.join(rootDir, 'package.json'), { version: '4.0.4', edition: 'lite' });
+  writeJson(path.join(dataDir, 'hotfix/update-state.json'), { runtimeVersion: '4.0.3', dictVersion: 'saved-dictionary' });
+  const updater = new Updater({ rootDir, dataDir });
+  assert.equal(updater.currentState().version, '4.0.4');
+  assert.equal(updater.currentState().dictVersion, 'saved-dictionary');
+  writeJson(path.join(dataDir, 'hotfix/update-state.json'), { runtimeVersion: '4.0.5' });
+  assert.equal(updater.currentState().version, '4.0.5');
+});
+
 test('Updater verifies SHA-256 for dictionary and runtime overlays and supports rollback', async t => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'easyag-updater-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));

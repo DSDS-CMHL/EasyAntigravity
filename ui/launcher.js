@@ -15,6 +15,9 @@ let currentTargets = {};
 let pathModalDismissed = false;
 const logKeys = new Set();
 
+// Suppress the embedded browser's default menu in the launcher.
+document.addEventListener('contextmenu', event => event.preventDefault());
+
 function appendLog(category, message, cls = '', at) {
   const key = at && `${at}|${category}|${message}`;
   if (key && logKeys.has(key)) return;
@@ -69,7 +72,6 @@ function renderPhase(next, targetName = activeTargetName) {
   const isMissing = !currentObj.exists && next === 'idle';
 
   if (isMissing) {
-    button.disabled = true;
     element('launchIcon').textContent = '⚠️';
     element('launchText').textContent = `请先配置 ${targetName} 路径`;
     button.style.background = 'var(--surface-subtle)';
@@ -101,6 +103,7 @@ function showModalError(msg) {
 function showPathModal(visible, customTitle, customDesc) {
   const modal = element('pathModal');
   if (!modal) return;
+  if (visible && modal.style.display === 'flex') return;
   modal.style.display = visible ? 'flex' : 'none';
   if (visible) {
     const titleEl = element('modalTargetTitle');
@@ -217,6 +220,106 @@ async function launch() {
     report(new Error(`未找到 ${activeTargetName}，请先指定 .exe 路径完成配置`));
     return;
   }
+  launchPending = true;
+  renderPhase('preparing');
+  try {
+    await persistSettings();
+    renderPhase('launching');
+    await api.launch();
+    renderPhase('running');
+  } catch (error) {
+    renderPhase('error');
+    report(error);
+    pathModalDismissed = false;
+    showPathModal(true, `无法启动 ${activeTargetName}`, error.message || '请检查或重新指定可执行文件路径。');
+  }
+  finally { launchPending = false; }
+}
+
+async function checkUpdate() {
+  const btn = element('updateBtn');
+  const actionLabel = element('updateActionText') || btn;
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  if (actionLabel) actionLabel.textContent = '↻ 检查中…';
+  try {
+    const result = await api.checkUpdate();
+    appendLog('SYSTEM', result.message || '检查更新完成', result.updated ? 'tag-proxy' : 'tag-aa');
+    if (result.status) renderStatus(result.status);
+    if (actionLabel) actionLabel.textContent = result.updated ? '✓ 已更新' : '↻ 检查更新';
+  } catch (error) {
+    report(error);
+    if (actionLabel) actionLabel.textContent = '↻ 重试';
+  } finally {
+    setTimeout(() => { if (btn) btn.disabled = false; }, 1200);
+  }
+}
+
+function currentTheme() {
+  const root = document.documentElement;
+  return root.dataset.theme === 'light' || root.dataset.theme === 'dark'
+    ? root.dataset.theme
+    : (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+}
+
+function applyTheme(theme, save = false) {
+  document.documentElement.dataset.theme = theme;
+  if (save) {
+    try { localStorage.setItem('easyag-theme', theme); } catch {}
+    void api.setTheme(theme).catch(() => {});
+  }
+  const btn = element('themeToggleBtn');
+  const label = element('themeToggleText');
+  if (label) label.textContent = theme === 'dark' ? '🌙' : '☀️';
+  if (btn) btn.title = theme === 'dark' ? '当前外观: 深色 (点击切换浅色)' : '当前外观: 浅色 (点击切换深色)';
+}
+
+function toggleTheme() {
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  applyTheme(next, true);
+}
+
+async function copyLogs() {
+  try {
+    await navigator.clipboard.writeText(consoleBox.innerText);
+    appendLog('SYSTEM', '日志已复制', 'tag-proxy');
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents(consoleBox);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    appendLog('SYSTEM', '已选中日志，可手动复制', 'tag-warn');
+  }
+}
+
+// 浏览选择可执行文件
+async function browseTargetExe() {
+  const btn = element('browseExeBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api.browseExe(activeTarget);
+    if (res?.ok && res.path) {
+      appendLog('SYSTEM', `已配置 ${activeTargetName} 路径: ${res.path}`, 'tag-proxy');
+      pathModalDismissed = false;
+      showPathModal(false);
+      if (res.status) renderStatus(res.status);
+    }
+  } catch (err) {
+    report(err);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// 保存手动输入的路径
+async function saveCustomPath() {
+  const input = element('customPathInput');
+  const path = input ? input.value.trim() : '';
+  if (!path) {
+    showModalError('请输入有效的 .exe 文件路径');
+    return;
+  }
   try {
     const res = await api.setTargetPath({ target: activeTarget, path });
     if (res?.ok) {
@@ -226,11 +329,80 @@ async function launch() {
       if (res.status) renderStatus(res.status);
     }
   } catch (err) {
+    report(err);
     showModalError(err.message || '指定的文件路径不存在');
   }
+}
+
+// 恢复默认扫描路径
+async function resetDefaultPath() {
+  try {
+    const res = await api.setTargetPath({ target: activeTarget, path: '' });
+    if (res?.ok) {
+      appendLog('SYSTEM', `已恢复 ${activeTargetName} 默认检测路径`, 'tag-proxy');
+      pathModalDismissed = false;
+      showPathModal(false);
+      const input = element('customPathInput');
+      if (input) input.value = '';
+      if (res.status) renderStatus(res.status);
+    }
+  } catch (err) {
+    report(err);
+  }
+}
+
+const actions = {
+  launch,
+  hide: () => api.hide(),
+  'toggle-theme': toggleTheme,
+  'check-update': checkUpdate,
+  'copy-logs': copyLogs,
+  'clear-logs': () => { consoleBox.replaceChildren(); }
 };
-element('togglePathManualBtn')?.addEventListener('click', handleTogglePath);
-element('togglePathEditBtn')?.addEventListener('click', handleTogglePath);
+
+document.addEventListener('click', event => {
+  const targetBtn = event.target.closest('[data-target]');
+  if (targetBtn && !targetBtn.disabled) {
+    const nextTarget = targetBtn.dataset.target;
+    if (nextTarget && nextTarget !== activeTarget) {
+      activeTarget = nextTarget;
+      activeTargetName = nextTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity';
+      pathModalDismissed = false;
+      showPathModal(false);
+      element('targetHubBtn')?.classList.toggle('active', activeTarget === 'hub');
+      element('targetIdeBtn')?.classList.toggle('active', activeTarget === 'ide');
+      renderTargetsUi(currentTargets, activeTarget);
+      renderPhase(phase, activeTargetName);
+      api.configure({ targetApp: nextTarget }).then(res => {
+        if (res?.targetName) activeTargetName = res.targetName;
+        renderPhase(phase, activeTargetName);
+      }).catch(report);
+    }
+    return;
+  }
+  const control = event.target.closest('[data-action],[data-port]');
+  if (!control || control.disabled) return;
+  const action = control.dataset.port !== undefined ? async () => {
+    element('proxyPortInput').value = control.dataset.port;
+    await persistSettings();
+  } : actions[control.dataset.action];
+  if (action) Promise.resolve().then(() => action(control)).catch(report);
+});
+
+function dismissPathModal() {
+  pathModalDismissed = true;
+  showPathModal(false);
+}
+
+for (const id of ['modalCloseBtn', 'modalCancelBtn']) {
+  element(id)?.addEventListener('click', dismissPathModal);
+}
+element('pathModal')?.addEventListener('click', event => {
+  if (event.target === element('pathModal')) dismissPathModal();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') dismissPathModal();
+});
 
 element('browseExeBtn')?.addEventListener('click', browseTargetExe);
 element('savePathBtn')?.addEventListener('click', saveCustomPath);

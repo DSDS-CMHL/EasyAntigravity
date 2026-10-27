@@ -212,12 +212,13 @@ class Updater {
   }
 
   currentState() {
-    const bundledPkg = readJson(path.join(this.rootDir, 'package.json'), { version: '4.0.2', edition: 'lite' });
+    const bundledPkg = readJson(path.join(this.rootDir, 'package.json'), { version: '4.0.4', edition: 'lite' });
     const saved = readJson(this.stateFile, {});
+    const bundledVersion = bundledPkg.version || '4.0.4';
     return {
       edition: bundledPkg.edition || 'lite',
-      version: saved.runtimeVersion || bundledPkg.version || '4.0.2',
-      bundledVersion: bundledPkg.version || '4.0.2',
+      version: compareVersions(saved.runtimeVersion || '0.0.0', bundledVersion) > 0 ? saved.runtimeVersion : bundledVersion,
+      bundledVersion,
       dictVersion: saved.dictVersion || '内置词典',
       lastCheckedAt: saved.lastCheckedAt || null,
       restartRequired: Boolean(saved.restartRequired)
