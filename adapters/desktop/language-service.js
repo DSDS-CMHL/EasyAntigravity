@@ -61,7 +61,7 @@ class LanguageService {
           const chunks = [];
           response.on('data', chunk => {
             size += chunk.length;
-            if (size > 16 * 1024 * 1024) request.destroy(new Error('统计数据过大'));
+            if (size > 64 * 1024 * 1024) request.destroy(new Error('统计数据过大'));
             else chunks.push(chunk);
           });
           response.on('error', () => reject(new Error('统计连接中断')));
@@ -86,7 +86,7 @@ class LanguageService {
 
   async metadata(id, signal) {
     if (!GUID.test(id)) throw new Error('无效的对话 ID');
-    let first = await this.call('GetCascadeTrajectory', { cascadeId: id, trajectoryVerbosity: 3 }, signal);
+    let first = await this.call('GetCascadeTrajectory', { cascadeId: id, trajectoryVerbosity: 2 }, signal);
     if (first.trajectory?.cascadeId?.toLowerCase() !== id.toLowerCase()) throw new Error('对话统计不匹配');
     const items = first.trajectory.generatorMetadata || [];
     const total = Number(first.numTotalGeneratorMetadata ?? items.length);
