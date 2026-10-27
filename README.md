@@ -28,7 +28,9 @@ EasyAG 是 Antigravity 的轻量启动器，支持桌面版与 IDE 启动选择�
 
 从托盘或顶部菜单栏选择“退出应用”可彻底退出 EasyAG。详细使用方式见 [便携版说明](docs/PORTABLE.md)。
 
-macOS Apple Silicon / Intel 包仍为 Beta，未经过 Apple 公证。Dock 修复涉及原生外壳，需要替换整个应用。已显示内部 4.0.4 的用户也请下载本次完整包，同版本补丁不会由旧更新器重复安装。
+已有 Windows Lite 版用户可点击“检查更新”，完成后从托盘彻底退出 EasyAG 再打开，无需重新下载。
+
+macOS Apple Silicon / Intel 包仍为 Beta，未经过 Apple 公证。要获得 Dock 修复，需要下载完整包并替换整个应用。已显示内部测试版 4.0.4、或“检查更新”按钮无法使用的用户也请下载完整包；旧更新器不会重复安装同版本补丁。
 
 ## 版本说明
 
