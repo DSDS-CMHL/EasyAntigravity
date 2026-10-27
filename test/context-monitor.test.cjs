@@ -133,7 +133,7 @@ test('CDP statistics reject remote origins, wrong conversations, iframe contexts
   const hub = new CdpHub({ source: () => '', onMetrics: async () => { reads++; return { conversationId: id, state: 'live' }; } });
   hub.running = true;
   const connection = { url: 'ws://127.0.0.1:9333/page', pageUrl: href, contexts: new Set([7]), injectGeneration: 1,
-    command: async (_, params) => params.expression === 'location.href' ? { result: { value: href } } : outputs.push(params) };
+    command: async (_, params) => params.expression.startsWith('({ href:') ? { result: { value: { href, conversationId: new URL(href).pathname.match(/\/c\/([^/]+)/)?.[1] } } } : outputs.push(params) };
   const event = { conversationId: id, requestId: '1' };
   await hub.metrics(connection, 7, event); assert.equal(reads, 1); assert.equal(outputs.length, 1);
   for (const location of ['https://external.example/c/' + id, 'http://127.0.0.1:4001/c/' + id, 'http://127.0.0.1:4000/c/' + otherId]) {

@@ -51,6 +51,10 @@ jobs:
         run: |
           node test/launcher-browser.cjs 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node test/context-browser.cjs 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node test/context-browser.cjs 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe' --ide
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Prepare self-contained runtime
         run: node scripts/prepare-tauri.cjs ${{ matrix.target }}
       - name: Include runtime license

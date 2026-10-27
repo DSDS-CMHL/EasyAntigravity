@@ -41,22 +41,46 @@ function parseLsof(text) {
   return ports;
 }
 
-async function discoverProcesses({ platform = process.platform, execute = run, uid = process.getuid?.() } = {}) {
+function ideProcess(command) {
+  return /--subclient_type(?:=|\s+)"?ide(?:"|\s|$)/.test(command)
+    && !/--(?:enable_lsp|standalone)(?:\s|=|$)/.test(command);
+}
+
+function parseIdePs(text, uid, parentPid) {
+  return text.split(/\r?\n/).flatMap(line => {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
+    if (!match || Number(match[2]) !== uid || (parentPid && Number(match[3]) !== parentPid)
+      || !/(?:^|[\/\\])language_server_(?:linux|macos|darwin)(?:_(?:x64|arm64|arm))?(?:\s|$)/.test(match[4])
+      || !ideProcess(match[4])) return [];
+    return [{ pid: Number(match[1]), parentPid: Number(match[3]), command: match[4] }];
+  });
+}
+
+async function discoverProcesses({ platform = process.platform, execute = run, uid = process.getuid?.(), target = 'hub', parentPid } = {}) {
   const options = { windowsHide: true, timeout: 8000, maxBuffer: 4 * 1024 * 1024 };
   if (platform === 'win32') {
     // Current Windows user only. Do not select another user's logged-in backend.
-    const script = '$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; Get-CimInstance Win32_Process -Filter "Name=\'language_server.exe\'" | Where-Object { $_.CommandLine -match "(?:^|\\s)--standalone(?:\\s|=|$)" -and (Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid).Sid -eq $sid } | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress';
+    const processFilter = target === 'ide'
+      ? "Name='language_server_windows_x64.exe' OR Name='language_server_windows_arm.exe'"
+      : "Name='language_server.exe'";
+    const modeFilter = target === 'ide'
+      ? '$_.CommandLine -match "--subclient_type(?:=|\\s+)ide(?:\\s|$)" -and $_.CommandLine -notmatch "--(?:enable_lsp|standalone)(?:\\s|=|$)"'
+      : '$_.CommandLine -match "(?:^|\\s)--standalone(?:\\s|=|$)"';
+    const parentFilter = target === 'ide' && Number.isSafeInteger(parentPid) && parentPid > 0
+      ? ` -and $_.ParentProcessId -eq ${parentPid}` : '';
+    const script = `$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; Get-CimInstance Win32_Process -Filter "${processFilter}" | Where-Object { ${modeFilter}${parentFilter} -and (Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid).Sid -eq $sid } | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress`;
     const { stdout } = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], options);
     const parsed = stdout.trim() ? JSON.parse(stdout.replace(/^\uFEFF/, '')) : [];
-    const rows = (Array.isArray(parsed) ? parsed : [parsed]).filter(row => Number.isSafeInteger(row?.ProcessId) && row.ProcessId > 0);
+    const rows = (Array.isArray(parsed) ? parsed : [parsed]).filter(row => Number.isSafeInteger(row?.ProcessId) && row.ProcessId > 0
+      && (target !== 'ide' || (ideProcess(row.CommandLine || '') && (!parentPid || row.ParentProcessId === parentPid))));
     if (!rows.length) return [];
     const sockets = await execute('netstat.exe', ['-ano', '-p', 'tcp'], options);
     const ports = parseNetstat(sockets.stdout);
     return rows.map(row => ({ pid: row.ProcessId, command: row.CommandLine, ports: ports.get(row.ProcessId) || new Set() }));
   }
   if (!['darwin', 'linux'].includes(platform)) throw new Error('不支持的系统');
-  const { stdout } = await execute('ps', ['-ww', '-axo', 'pid=,uid=,args='], options);
-  const rows = parsePs(stdout, uid);
+  const { stdout } = await execute('ps', ['-ww', '-axo', target === 'ide' ? 'pid=,uid=,ppid=,args=' : 'pid=,uid=,args='], options);
+  const rows = target === 'ide' ? parseIdePs(stdout, uid, parentPid) : parsePs(stdout, uid);
   if (!rows.length) return [];
   if (platform === 'darwin') {
     const sockets = await execute('/usr/sbin/lsof', ['-nP', '-a', '-p', rows.map(row => row.pid).join(','), '-iTCP', '-sTCP:LISTEN', '-Fpn'], options)
@@ -106,4 +130,4 @@ function logPaths(profile) {
   ])];
 }
 
-module.exports = { discoverProcesses, serverFromDiscovery, logPaths, parsePs, parseNetstat, parseLsof };
+module.exports = { discoverProcesses, serverFromDiscovery, logPaths, parsePs, parseIdePs, ideProcess, parseNetstat, parseLsof };

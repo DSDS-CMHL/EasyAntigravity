@@ -32,7 +32,7 @@ test('CDP attaches, serves context-metrics in main-frame, reconnects and removes
       if (request.method === 'Page.getFrameTree') result = { frameTree: { frame: { id: 'main' } } };
       if (request.method === 'Runtime.enable') socket.send(JSON.stringify({ method: 'Runtime.executionContextCreated', params: { context: { id: 7, auxData: { isDefault: true, frameId: 'main' } } } }));
       if (request.method === 'Page.addScriptToEvaluateOnNewDocument') result = { identifier: 'owned-' + connections };
-      if (request.method === 'Runtime.evaluate' && request.params.expression === 'location.href') result = { result: { value: pageUrl } };
+      if (request.method === 'Runtime.evaluate' && request.params.expression.startsWith('({ href:')) result = { result: { value: { href: pageUrl, conversationId } } };
       socket.send(JSON.stringify({ id: request.id, result }));
     });
   });

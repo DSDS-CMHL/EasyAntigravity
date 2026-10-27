@@ -5,6 +5,7 @@ const { randomUUID } = require('node:crypto');
 const WebSocket = require('ws');
 const { disposeSource } = require('./renderer');
 const { GUID } = require('./language-service');
+const { currentConversationId } = require('../../features/conversation-context');
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
 function getJson(url) {
@@ -104,8 +105,8 @@ class CdpConnection {
 }
 
 class CdpHub {
-  constructor({ port = 9333, profile, source, onStatus = () => {}, onMetrics, onStop = () => {}, discover }) {
-    Object.assign(this, { port, profile, source, onStatus, onMetrics, onStop });
+  constructor({ port = 9333, profile, target = 'hub', source, onStatus = () => {}, onMetrics, onStop = () => {}, discover }) {
+    Object.assign(this, { port, profile, target, source, onStatus, onMetrics, onStop });
     this.binding = '__easyagReport_' + randomUUID().replaceAll('-', '');
     this.discover = discover || (() => this.findTargets());
     this.sessions = new Map();
@@ -131,7 +132,12 @@ class CdpHub {
       targets = await getJson(`http://127.0.0.1:${port}/json/list`);
     }
     if (!Array.isArray(targets)) throw new Error('无效的 CDP 页面列表');
-    return targets.filter(target => validTarget(target, port));
+    return targets.filter(target => {
+      if (!validTarget(target, port)) return false;
+      const page = new URL(target.url);
+      const idePage = ['vscode-file:', 'file:'].includes(page.protocol) && /\/workbench\.html$/.test(page.pathname);
+      return this.target === 'ide' ? idePage : !idePage;
+    });
   }
 
   event(message, connection) {
@@ -158,26 +164,26 @@ class CdpHub {
     connection.metricsAt = Date.now();
     const generation = connection.injectGeneration;
     try {
-      const location = await connection.command('Runtime.evaluate', { expression: 'location.href', contextId, returnByValue: true });
-      const href = location.result?.value;
+      const location = await connection.command('Runtime.evaluate', { expression: `({ href: location.href, conversationId: (${currentConversationId.toString()})(window, document, ${JSON.stringify(this.target)}) })`, contextId, returnByValue: true });
+      const href = location.result?.value?.href;
       if (!this.running || !connection.contexts.has(contextId) || !validTarget({ type: 'page', url: href,
         webSocketDebuggerUrl: connection.url }, Number(new URL(connection.url).port))) return;
       const page = new URL(href), initial = new URL(connection.pageUrl);
       if (page.origin !== initial.origin || page.protocol !== initial.protocol
-        || page.pathname.match(/\/c\/([^/]+)/)?.[1]?.toLowerCase() !== event.conversationId.toLowerCase()) return;
+        || location.result?.value?.conversationId !== event.conversationId.toLowerCase()) return;
       const result = await this.onMetrics(event.conversationId.toLowerCase());
       if (!this.running || generation !== connection.injectGeneration || !connection.contexts.has(contextId)) return;
       const payload = JSON.stringify(result);
       if (payload.length > 8192) return;
       await connection.command('Runtime.evaluate', { contextId,
-        expression: `if (location.href === ${JSON.stringify(href)}) window.__easyagContext?.receive(${JSON.stringify(event.requestId)}, ${payload});` });
+        expression: `if (location.href === ${JSON.stringify(href)} && (${currentConversationId.toString()})(window, document, ${JSON.stringify(this.target)}) === ${JSON.stringify(event.conversationId.toLowerCase())}) window.__easyagContext?.receive(${JSON.stringify(event.requestId)}, ${payload});` });
     } catch { /* Stats are optional; never interrupt localization. */ }
     finally { connection.metricsBusy = false; }
   }
 
   async inject(connection) {
     if (!this.running) throw new Error('CDP 已停止');
-    const source = this.source(this.binding);
+    const source = this.source(this.binding, this.target);
     connection.injectGeneration = (connection.injectGeneration || 0) + 1;
     if (connection.script) await connection.command('Page.removeScriptToEvaluateOnNewDocument', { identifier: connection.script });
     connection.script = (await connection.command('Page.addScriptToEvaluateOnNewDocument', { source })).identifier;

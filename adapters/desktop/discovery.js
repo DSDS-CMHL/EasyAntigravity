@@ -148,7 +148,7 @@ function discoverIde(customPath = '') {
       exists,
       isCustom: Boolean(customPath),
       profile,
-      capabilities: { cdp: false, metrics: false }
+      capabilities: { cdp: true, metrics: true, i18n: false }
     };
   }
   if (process.platform === 'darwin') {
@@ -166,7 +166,7 @@ function discoverIde(customPath = '') {
       exists: fs.existsSync(resolved.appExe),
       isCustom: false,
       profile,
-      capabilities: { cdp: false, metrics: false }
+      capabilities: { cdp: true, metrics: true, i18n: false }
     };
   }
   if (process.platform === 'win32') {
@@ -186,7 +186,7 @@ function discoverIde(customPath = '') {
       exists: fs.existsSync(appExe),
       isCustom: false,
       profile,
-      capabilities: { cdp: false, metrics: false }
+      capabilities: { cdp: true, metrics: true, i18n: false }
     };
   }
   const appExe = '/usr/bin/antigravity-ide';
@@ -201,7 +201,7 @@ function discoverIde(customPath = '') {
     exists: fs.existsSync(appExe),
     isCustom: false,
     profile,
-    capabilities: { cdp: false, metrics: false }
+    capabilities: { cdp: true, metrics: true, i18n: false }
   };
 }
 

@@ -11,10 +11,13 @@ function fixture() {
     constructor(rect = { left: 110, right: 210, top: 150, bottom: 178, width: 100, height: 28 }) {
       this.rect = rect; this.style = {}; this.dataset = {}; this.attrs = {}; this.events = {}; this.hidden = false;
       this.isConnected = true; this.scrollWidth = 90;
+      this.children = [];
     }
     addEventListener(type, callback) { this.events[type] = callback; }
     removeEventListener(type) { delete this.events[type]; }
-    setAttribute(key, value) { this.attrs[key] = value; }
+    setAttribute(key, value) { this.attrs[key] = value; if (key === 'hidden') this.hidden = true; }
+    appendChild(child) { this.children.push(child); child.parentElement = this; return child; }
+    set innerHTML(_) { throw new Error('TrustedHTML required'); }
     hasAttribute(key) { return key in this.attrs; }
     matches() { return this.open === true; }
     showPopover() { this.open = true; }
@@ -27,11 +30,12 @@ function fixture() {
     remove() { this.isConnected = false; }
     focus() { this.focused = true; }
     attachShadow() {
-      const elements = {};
-      this.shadow = { activeElement: null, set innerHTML(html) {
-        for (const match of html.matchAll(/id="([^"]+)"/g)) elements[match[1]] = new Element();
-        elements.details.hidden = true;
-      }, getElementById: key => elements[key] };
+      this.shadow = new Element();
+      this.shadow.activeElement = null;
+      this.shadow.getElementById = key => {
+        const queue = [...this.shadow.children];
+        while (queue.length) { const node = queue.pop(); if (node.attrs.id === key) return node; queue.push(...node.children); }
+      };
       return this.shadow;
     }
   }
@@ -47,6 +51,8 @@ function fixture() {
   doc.documentElement = new Element(); doc.body = new Element(); doc.hidden = false;
   doc.querySelectorAll = selector => selector.includes('contenteditable') ? [editor] : anchors;
   doc.createElement = () => new Element();
+  doc.createElementNS = () => new Element();
+  doc.createTextNode = value => Object.assign(new Element(), { textContent: value });
   const timers = new Map(), frames = new Map(), sent = [];
   let sequence = 0;
   class Observer { observe() {} disconnect() { this.disconnected = true; } }

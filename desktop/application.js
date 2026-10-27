@@ -26,7 +26,7 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
   let lastStatus = '';
   const cdp = new CdpHub({
     profile: desktop.profile,
-    source: binding => rendererSource(dictionary, settings.get(), binding),
+    source: (binding, target) => rendererSource(dictionary, settings.get(), binding, target),
     onMetrics: id => settings.get().enableContextMonitor && session?.phase === 'running' && !testMode
       ? contextMonitor.sample(id) : Promise.resolve({ conversationId: id, state: 'unavailable', context: null, speed: null }),
     onStop: () => contextMonitor.reset(),
@@ -37,7 +37,12 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
       events.publish({ status: status.cdpSockets ? '增强功能已连接' : '等待连接', ...session.snapshot(), ...status });
     }
   });
-  session = new Session({ settings, desktop, cdp, events, host, testMode, onStart: () => contextMonitor.reset() });
+  session = new Session({ settings, desktop, cdp, events, host, testMode, onStart: ({ target, pid }) => {
+    contextMonitor.client.profile = target.profile;
+    contextMonitor.client.target = target.id;
+    contextMonitor.client.parentPid = pid;
+    contextMonitor.reset();
+  } });
   const updater = new Updater({
     rootDir, dataDir, settings, events,
     ...(fetchBytes ? { fetchBytes } : {}),

@@ -51,6 +51,7 @@ class Session {
       const settings = this.settings.get();
       this.activeTarget = target;
       if (target.profile && this.cdp) this.cdp.profile = target.profile;
+      if (this.cdp) this.cdp.target = target.id;
       this.change('launching');
       const launch = buildProxyLaunch(settings.port, this.cdp.port, process.env, settings.enableProxy);
       const child = this.spawnProcess(target.appExe, launch.args, {
@@ -70,7 +71,7 @@ class Session {
         throw new Error('启动已取消');
       }
       if (child.exitCode !== null && child.exitCode !== undefined) throw new Error(`${target.name} 启动后立即退出`);
-      this.onStart();
+      this.onStart({ target, pid: child.pid });
       this.change('running');
       if (target.capabilities?.cdp !== false) {
         this.cdp.start();
@@ -101,7 +102,8 @@ class Session {
     if (!runningTarget || this.closed || this.phase !== 'idle') return;
     this.activeTarget = runningTarget;
     if (runningTarget.profile && this.cdp) this.cdp.profile = runningTarget.profile;
-    this.onStart();
+    if (this.cdp) this.cdp.target = runningTarget.id;
+    this.onStart({ target: runningTarget, pid: null });
     this.change('running');
     if (runningTarget.capabilities?.cdp !== false) {
       this.cdp.start();

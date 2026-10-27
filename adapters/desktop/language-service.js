@@ -17,8 +17,8 @@ async function readLogTail(file) {
 
 // Only explicitly allowed read RPCs. No raw service data is returned to a renderer.
 class LanguageService {
-  constructor({ profile, processes = discoverProcesses, readLog = readLogTail, transport = http.request } = {}) {
-    Object.assign(this, { profile, processes, readLog, transport });
+  constructor({ profile, target = 'hub', parentPid, processes = discoverProcesses, readLog = readLogTail, transport = http.request } = {}) {
+    Object.assign(this, { profile, target, parentPid, processes, readLog, transport });
     this.requests = new Set();
     this.generation = 0;
   }
@@ -28,11 +28,29 @@ class LanguageService {
     if (this.discovering) return this.discovering;
     const generation = this.generation;
     const task = (async () => {
-      const rows = await this.processes();
+      const rows = await this.processes({ target: this.target, parentPid: this.parentPid });
+      if (generation !== this.generation) throw new Error('采集已取消');
       let server;
-      for (const file of logPaths(this.profile)) {
-        try { server = serverFromDiscovery(await this.readLog(file, 'utf8'), rows); break; }
-        catch { /* Try the next known host log path; do not expose paths or credentials. */ }
+      if (this.target === 'ide') {
+        if (rows.length !== 1) throw new Error('等待唯一的 IDE 对话后台');
+        const row = rows[0];
+        const csrf = row.command?.match(/--csrf_token(?:=|\s+)"?([^\s"]+)/)?.[1];
+        const candidates = [];
+        if (csrf) for (const port of [...row.ports].slice(0, 16)) {
+          if (generation !== this.generation) throw new Error('采集已取消');
+          if (!Number.isInteger(port) || port < 1 || port > 65535) continue;
+          const candidate = { pid: row.pid, port, csrf };
+          try {
+            const result = await this.request(candidate, 'GetUserStatus', {}, AbortSignal.timeout(2500));
+            if (typeof result?.userStatus?.email === 'string' && result.userStatus.email.trim()) candidates.push(candidate);
+          } catch { /* Only the PID-owned HTTP port speaks the read-only service. */ }
+        }
+        if (candidates.length === 1) server = candidates[0];
+      } else {
+        for (const file of logPaths(this.profile)) {
+          try { server = serverFromDiscovery(await this.readLog(file, 'utf8'), rows); break; }
+          catch { /* Try the next known host log path; do not expose paths or credentials. */ }
+        }
       }
       if (!server) throw new Error(rows.length > 1 ? '多个 AG 后台，暂不采集' : '等待 AG 本地统计接口');
       if (generation !== this.generation) throw new Error('采集已取消');
@@ -50,38 +68,43 @@ class LanguageService {
     const server = await this.discover();
     if (signal?.aborted || generation !== this.generation) throw new Error('采集已取消');
     try {
-      return await new Promise((resolve, reject) => {
-        const data = JSON.stringify(body);
-        const request = this.transport({ hostname: '127.0.0.1', port: server.port, method: 'POST',
-          path: '/exa.language_server_pb.LanguageServerService/' + method, signal,
-          headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1',
-            'x-codeium-csrf-token': server.csrf, 'Content-Length': Buffer.byteLength(data) }
-        }, response => {
-          let size = 0;
-          const chunks = [];
-          response.on('data', chunk => {
-            size += chunk.length;
-            if (size > 64 * 1024 * 1024) request.destroy(new Error('统计数据过大'));
-            else chunks.push(chunk);
-          });
-          response.on('error', () => reject(new Error('统计连接中断')));
-          response.on('aborted', () => reject(new Error('统计连接中断')));
-          response.on('end', () => {
-            if (response.statusCode !== 200) return reject(new Error('当前 AG 统计接口不可用'));
-            try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
-            catch { reject(new Error('AG 统计数据无法解析')); }
-          });
-        });
-        this.requests.add(request);
-        request.on('close', () => this.requests.delete(request));
-        request.on('error', () => reject(new Error('AG 统计采集暂不可用')));
-        request.setTimeout(8000, () => request.destroy(new Error('统计连接超时')));
-        request.end(data);
-      });
+      return await this.request(server, method, body, signal);
     } catch (error) {
       if (generation === this.generation) this.server = null;
       throw error;
     }
+  }
+
+  request(server, method, body, signal) {
+    if (!METHODS.has(method)) return Promise.reject(new Error('不支持的统计接口'));
+    return new Promise((resolve, reject) => {
+      const data = JSON.stringify(body);
+      const request = this.transport({ hostname: '127.0.0.1', port: server.port, method: 'POST',
+        path: '/exa.language_server_pb.LanguageServerService/' + method, signal,
+        headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1',
+          'x-codeium-csrf-token': server.csrf, 'Content-Length': Buffer.byteLength(data) }
+      }, response => {
+        let size = 0;
+        const chunks = [];
+        response.on('data', chunk => {
+          size += chunk.length;
+          if (size > 64 * 1024 * 1024) request.destroy(new Error('统计数据过大'));
+          else chunks.push(chunk);
+        });
+        response.on('error', () => reject(new Error('统计连接中断')));
+        response.on('aborted', () => reject(new Error('统计连接中断')));
+        response.on('end', () => {
+          if (response.statusCode !== 200) return reject(new Error('当前 AG 统计接口不可用'));
+          try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+          catch { reject(new Error('AG 统计数据无法解析')); }
+        });
+      });
+      this.requests.add(request);
+      request.on('close', () => this.requests.delete(request));
+      request.on('error', () => reject(new Error('AG 统计采集暂不可用')));
+      request.setTimeout(8000, () => request.destroy(new Error('统计连接超时')));
+      request.end(data);
+    });
   }
 
   async metadata(id, signal) {
