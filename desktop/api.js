@@ -70,6 +70,35 @@ function createApi(app) {
         await app.configure(data);
         return json(response, { ok: true, settings: app.settings.get() });
       }
+      if (method === 'POST' && route === '/api/browse-exe') {
+        const data = await readBody(request);
+        const target = data.target || 'hub';
+        const title = target === 'ide'
+          ? '选择 Antigravity IDE 可执行文件 (Antigravity IDE.exe)'
+          : '选择 Antigravity 桌面版可执行文件 (Antigravity.exe)';
+        const selected = await app.host.browseExecutable?.({ title });
+        if (selected) {
+          const field = target === 'ide' ? 'customIdePath' : 'customHubPath';
+          await app.configure({ [field]: selected });
+          return json(response, { ok: true, path: selected, settings: app.settings.get(), status: app.status() });
+        }
+        return json(response, { ok: false, canceled: true });
+      }
+      if (method === 'POST' && route === '/api/set-target-path') {
+        const data = await readBody(request);
+        const target = data.target || 'hub';
+        const targetPath = (data.path || '').trim();
+        const field = target === 'ide' ? 'customIdePath' : 'customHubPath';
+        if (!targetPath) {
+          await app.configure({ [field]: '' });
+          return json(response, { ok: true, path: '', settings: app.settings.get(), status: app.status() });
+        }
+        if (!fs.existsSync(targetPath)) {
+          return json(response, { ok: false, error: '指定的文件路径不存在，请检查后重试' }, 400);
+        }
+        await app.configure({ [field]: targetPath });
+        return json(response, { ok: true, path: targetPath, settings: app.settings.get(), status: app.status() });
+      }
       if (method === 'POST' && route === '/api/launch') {
         const result = await app.session.launch();
         return json(response, result, result.ok ? 200 : 409);

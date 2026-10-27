@@ -17,11 +17,13 @@ function createDesktopAdapter(testMode = false) {
     kind: 'desktop',
     profile: defaultTarget.profile,
     capabilities: defaultTarget.capabilities,
-    discoverAllTargets,
-    resolveTarget,
-    detectRunningTarget: testMode ? async () => null : detectRunningTarget,
-    locate(target = 'hub') {
-      const resolved = target === 'ide' ? discoverIde() : (target === 'auto' ? resolveTarget('auto') : discoverStandalone());
+    discoverAllTargets: (settings = {}) => discoverAllTargets(settings),
+    resolveTarget: (target = 'auto', settings = {}) => resolveTarget(target, settings),
+    detectRunningTarget: testMode ? async () => null : ((pref = 'auto', settings = {}) => detectRunningTarget(pref, settings)),
+    locate(target = 'hub', settings = {}) {
+      const resolved = target === 'ide'
+        ? discoverIde(settings.customIdePath)
+        : (target === 'auto' ? resolveTarget('auto', settings) : discoverStandalone(settings.customHubPath));
       return { ...resolved, exists: fs.existsSync(resolved.appExe) };
     },
     running: testMode ? async () => false : desktopRunning

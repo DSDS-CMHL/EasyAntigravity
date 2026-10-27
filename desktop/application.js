@@ -56,11 +56,12 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
   const app = {
     rootDir, dataDir, events, settings, desktop, host, cdp, session, contextMonitor, updater,
     status() {
-      const allTargets = desktop.discoverAllTargets ? desktop.discoverAllTargets() : {};
-      const active = session.activeTarget || (desktop.resolveTarget ? desktop.resolveTarget(settings.get().targetApp) : { id: 'hub', name: 'Antigravity' });
+      const currentSettings = settings.get();
+      const allTargets = desktop.discoverAllTargets ? desktop.discoverAllTargets(currentSettings) : {};
+      const active = session.activeTarget || (desktop.resolveTarget ? desktop.resolveTarget(currentSettings.targetApp, currentSettings) : { id: 'hub', name: 'Antigravity' });
       const bothInstalled = Boolean(allTargets.hub?.exists && allTargets.ide?.exists);
       return {
-        ...settings.get(), ...session.snapshot(), ...cdp.status, ...updater.currentState(),
+        ...currentSettings, ...session.snapshot(), ...cdp.status, ...updater.currentState(),
         dictEntries: Object.keys(dictionary).length,
         capabilities: active.capabilities || desktop.capabilities,
         targets: allTargets,
@@ -88,8 +89,16 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
         events.log('SYSTEM', next.enableProxy ? `免 TUN 代理已开启（127.0.0.1:${next.port}）` : '免 TUN 代理已关闭（直连模式）', 'tag-proxy');
       }
       if (input.targetApp !== undefined && input.targetApp !== previous.targetApp) {
-        const target = desktop.resolveTarget ? desktop.resolveTarget(next.targetApp) : { name: next.targetApp };
+        const target = desktop.resolveTarget ? desktop.resolveTarget(next.targetApp, next) : { name: next.targetApp };
         events.log('SYSTEM', `已切换启动目标为: ${target.fullName || target.name}`, 'tag-proxy');
+        events.publish(app.status());
+      }
+      if (input.customHubPath !== undefined && input.customHubPath !== previous.customHubPath) {
+        events.log('SYSTEM', next.customHubPath ? `已更新桌面版路径: ${next.customHubPath}` : '已恢复桌面版默认检测路径', 'tag-proxy');
+        events.publish(app.status());
+      }
+      if (input.customIdePath !== undefined && input.customIdePath !== previous.customIdePath) {
+        events.log('SYSTEM', next.customIdePath ? `已更新 IDE 路径: ${next.customIdePath}` : '已恢复 IDE 默认检测路径', 'tag-proxy');
         events.publish(app.status());
       }
       return next;

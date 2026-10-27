@@ -35,6 +35,23 @@ test('discoverAllTargets returns both hub and ide specs with correct schemas', (
   assert.equal(typeof targets.ide.appExe, 'string');
 });
 
+test('discoverStandalone and discoverIde respect customPath', () => {
+  const customHub = discoverStandalone('C:\\custom\\Antigravity.exe');
+  assert.equal(customHub.appExe, 'C:\\custom\\Antigravity.exe');
+  assert.equal(customHub.isCustom, true);
+
+  const customIde = discoverIde('D:\\custom\\Antigravity IDE.exe');
+  assert.equal(customIde.appExe, 'D:\\custom\\Antigravity IDE.exe');
+  assert.equal(customIde.isCustom, true);
+
+  const all = discoverAllTargets({
+    customHubPath: 'C:\\custom\\Antigravity.exe',
+    customIdePath: 'D:\\custom\\Antigravity IDE.exe'
+  });
+  assert.equal(all.hub.appExe, 'C:\\custom\\Antigravity.exe');
+  assert.equal(all.ide.appExe, 'D:\\custom\\Antigravity IDE.exe');
+});
+
 test('resolveTarget respects preferences and defaults to hub when both or neither installed', () => {
   const resolvedAuto = resolveTarget('auto');
   assert.ok(['hub', 'ide'].includes(resolvedAuto.id));
@@ -43,7 +60,7 @@ test('resolveTarget respects preferences and defaults to hub when both or neithe
   assert.equal(resolvedHub.id, 'hub');
 
   const resolvedIde = resolveTarget('ide');
-  assert.ok(['hub', 'ide'].includes(resolvedIde.id));
+  assert.equal(resolvedIde.id, 'ide');
 });
 
 test('desktopAdapter expose target-aware locate and detectRunningTarget', async () => {

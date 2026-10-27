@@ -87,18 +87,41 @@
     </div>
   </div>
 
-  <!-- 启动目标切换器：检测到同时安装了桌面版与 IDE 时显示 -->
-  <div class="target-switcher" id="targetSwitcher" hidden>
+  <!-- 启动目标选择器：常显，支持桌面版与 IDE 版随时切换与查看 -->
+  <div class="target-switcher" id="targetSwitcher">
     <span class="switcher-label">启动目标</span>
     <div class="switcher-pills" role="radiogroup" aria-label="选择启动目标">
       <button type="button" class="target-pill active" data-target="hub" id="targetHubBtn" title="启动 Antigravity 官方桌面客户端">
+        <span class="pill-dot" id="hubDot"></span>
         <span class="pill-icon">💻</span>
         <span>桌面版</span>
       </button>
       <button type="button" class="target-pill" data-target="ide" id="targetIdeBtn" title="启动 Antigravity IDE 编辑器版（基于 VS Code）">
+        <span class="pill-dot" id="ideDot"></span>
         <span class="pill-icon">📝</span>
         <span>IDE 版</span>
       </button>
+    </div>
+  </div>
+
+  <!-- 目标路径显示与自定义路径配置面板 -->
+  <div class="target-path-card" id="targetPathCard">
+    <div class="path-ready-bar" id="pathReadyBar">
+      <span class="path-ready-label">程序路径:</span>
+      <span class="path-ready-val" id="currentPathText">检测中...</span>
+      <button type="button" class="btn-text-action" id="togglePathEditBtn" title="修改或自定义可执行文件位置">更改</button>
+    </div>
+    <div class="path-edit-box" id="pathEditBox" style="display: none;">
+      <div class="path-edit-tip">
+        <span class="tip-icon">⚠️</span>
+        <span id="pathTipText">未在默认路径检测到此程序，如安装在非 C 盘请指定 .exe 路径:</span>
+      </div>
+      <div class="path-input-group">
+        <input type="text" id="customPathInput" placeholder="输入或浏览选择 .exe 完整路径" spellcheck="false">
+        <button type="button" class="btn-path-action btn-browse" id="browseExeBtn" title="打开 Windows 文件选择器选择可执行文件">📂 浏览</button>
+        <button type="button" class="btn-path-action btn-save" id="savePathBtn" title="保存自定义路径">保存</button>
+        <button type="button" class="btn-path-action btn-reset" id="resetPathBtn" title="清除自定义，恢复默认检测" style="display: none;">恢复默认</button>
+      </div>
     </div>
   </div>
 

@@ -510,6 +510,154 @@ input:disabled + .slider {
 .target-pill .pill-icon {
   font-size: 12.5px;
 }
+.pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dark);
+  flex-shrink: 0;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+.pill-dot.ready {
+  background: var(--green);
+  box-shadow: 0 0 5px rgba(16, 185, 129, 0.45);
+}
+.pill-dot.missing {
+  background: var(--yellow);
+}
+.pill-dot.custom {
+  background: var(--primary);
+  box-shadow: 0 0 5px var(--primary-glow);
+}
+
+/* 目标路径显示与自定义配置卡片 */
+.target-path-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 6px 12px;
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.path-ready-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.path-ready-label {
+  color: var(--text-dark);
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.path-ready-val {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.path-ready-val.custom-tag::after {
+  content: ' (自定义)';
+  color: var(--primary);
+  font-family: -apple-system, sans-serif;
+  font-weight: 600;
+}
+.btn-text-action {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.btn-text-action:hover {
+  background: var(--primary-glow);
+}
+.path-edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--card-border);
+  animation: fadeIn 0.15s ease-out;
+}
+.path-edit-tip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--yellow);
+  font-weight: 500;
+}
+.path-input-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#customPathInput {
+  flex: 1;
+  min-width: 0;
+  background: var(--input-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: var(--text-main);
+  outline: none;
+}
+#customPathInput:focus {
+  border-color: var(--primary);
+}
+.btn-path-action {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+}
+.btn-browse {
+  background: var(--surface-subtle);
+  border-color: var(--card-border);
+  color: var(--text-main);
+}
+.btn-browse:hover {
+  background: var(--surface-hover);
+}
+.btn-save {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-save:hover {
+  background: var(--primary-hover);
+}
+.btn-reset {
+  background: var(--surface-subtle);
+  border-color: var(--card-border);
+  color: var(--text-dark);
+}
+.btn-reset:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
 
 /* 核心启动大按钮 */
 .launch-btn {

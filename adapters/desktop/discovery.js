@@ -55,12 +55,13 @@ function resolveDarwinBundle(candidate, defaultExeName) {
   return { appDir: candidate, appExe: path.join(candidate, 'Contents/MacOS', executable) };
 }
 
-function discoverStandalone() {
+function discoverStandalone(customPath = '') {
   const profile = process.platform === 'darwin'
     ? path.join(os.homedir(), 'Library/Application Support/Antigravity')
     : path.join(process.env.APPDATA || path.join(os.homedir(), '.config'), 'Antigravity');
-  const explicit = normalizePath(process.env.EASYAG_AG_EXE);
+  const explicit = normalizePath(customPath || process.env.EASYAG_AG_EXE);
   if (explicit) {
+    const exists = fs.existsSync(explicit);
     return {
       id: 'hub',
       name: 'Antigravity',
@@ -69,7 +70,8 @@ function discoverStandalone() {
       appDir: path.dirname(explicit),
       appExe: explicit,
       appName: 'Antigravity',
-      exists: fs.existsSync(explicit),
+      exists,
+      isCustom: Boolean(customPath),
       profile,
       capabilities: { cdp: true, metrics: true }
     };
@@ -87,6 +89,7 @@ function discoverStandalone() {
       appExe: resolved.appExe,
       appName: 'Antigravity',
       exists: fs.existsSync(resolved.appExe),
+      isCustom: false,
       profile,
       capabilities: { cdp: true, metrics: true }
     };
@@ -106,6 +109,7 @@ function discoverStandalone() {
       appExe,
       appName: 'Antigravity',
       exists: fs.existsSync(appExe),
+      isCustom: false,
       profile,
       capabilities: { cdp: true, metrics: true }
     };
@@ -120,17 +124,19 @@ function discoverStandalone() {
     appExe,
     appName: 'Antigravity',
     exists: fs.existsSync(appExe),
+    isCustom: false,
     profile,
     capabilities: { cdp: true, metrics: true }
   };
 }
 
-function discoverIde() {
+function discoverIde(customPath = '') {
   const profile = process.platform === 'darwin'
     ? path.join(os.homedir(), 'Library/Application Support/Antigravity IDE')
     : path.join(process.env.APPDATA || path.join(os.homedir(), '.config'), 'Antigravity IDE');
-  const explicit = normalizePath(process.env.EASYAG_IDE_EXE);
+  const explicit = normalizePath(customPath || process.env.EASYAG_IDE_EXE);
   if (explicit) {
+    const exists = fs.existsSync(explicit);
     return {
       id: 'ide',
       name: 'Antigravity IDE',
@@ -139,7 +145,8 @@ function discoverIde() {
       appDir: path.dirname(explicit),
       appExe: explicit,
       appName: 'Antigravity IDE',
-      exists: fs.existsSync(explicit),
+      exists,
+      isCustom: Boolean(customPath),
       profile,
       capabilities: { cdp: false, metrics: false }
     };
@@ -157,6 +164,7 @@ function discoverIde() {
       appExe: resolved.appExe,
       appName: 'Antigravity IDE',
       exists: fs.existsSync(resolved.appExe),
+      isCustom: false,
       profile,
       capabilities: { cdp: false, metrics: false }
     };
@@ -165,9 +173,7 @@ function discoverIde() {
     const fromReg = findFromRegistry('Antigravity IDE');
     const local = path.join(process.env.LOCALAPPDATA || '', 'Programs/Antigravity IDE/Antigravity IDE.exe');
     const progFiles = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Antigravity IDE/Antigravity IDE.exe');
-    const dDrive = 'D:\\Antigravity IDE\\Antigravity IDE.exe';
-    const cDrive = 'C:\\Antigravity IDE\\Antigravity IDE.exe';
-    const candidates = [fromReg, local, progFiles, dDrive, cDrive].filter(Boolean);
+    const candidates = [fromReg, local, progFiles].filter(Boolean);
     const appExe = candidates.find(cand => fs.existsSync(cand)) || local;
     return {
       id: 'ide',
@@ -178,6 +184,7 @@ function discoverIde() {
       appExe,
       appName: 'Antigravity IDE',
       exists: fs.existsSync(appExe),
+      isCustom: false,
       profile,
       capabilities: { cdp: false, metrics: false }
     };
@@ -192,32 +199,30 @@ function discoverIde() {
     appExe,
     appName: 'Antigravity IDE',
     exists: fs.existsSync(appExe),
+    isCustom: false,
     profile,
     capabilities: { cdp: false, metrics: false }
   };
 }
 
-function discoverDesktop(target = 'hub') {
-  return target === 'ide' ? discoverIde() : discoverStandalone();
+function discoverDesktop(target = 'hub', settings = {}) {
+  const custom = target === 'ide' ? settings.customIdePath : settings.customHubPath;
+  return target === 'ide' ? discoverIde(custom) : discoverStandalone(custom);
 }
 
-function discoverAllTargets() {
+function discoverAllTargets(settings = {}) {
   return {
-    hub: discoverStandalone(),
-    ide: discoverIde()
+    hub: discoverStandalone(settings?.customHubPath),
+    ide: discoverIde(settings?.customIdePath)
   };
 }
 
-function resolveTarget(preference = 'auto') {
-  const targets = discoverAllTargets();
-  if (preference === 'ide') {
-    return targets.ide.exists ? targets.ide : (targets.hub.exists ? targets.hub : targets.ide);
-  }
-  if (preference === 'hub') {
-    return targets.hub.exists ? targets.hub : (targets.ide.exists ? targets.ide : targets.hub);
-  }
+function resolveTarget(preference = 'auto', settings = {}) {
+  const targets = discoverAllTargets(settings);
+  if (preference === 'ide') return targets.ide;
+  if (preference === 'hub') return targets.hub;
   // 'auto'
-  if (targets.hub.exists && targets.ide.exists) return targets.hub;
+  if (targets.hub.exists && !targets.ide.exists) return targets.hub;
   if (targets.ide.exists && !targets.hub.exists) return targets.ide;
   return targets.hub;
 }
@@ -236,8 +241,8 @@ async function desktopRunning(target = 'hub') {
   } catch { return false; }
 }
 
-async function detectRunningTarget(preferred = 'auto') {
-  const targets = discoverAllTargets();
+async function detectRunningTarget(preferred = 'auto', settings = {}) {
+  const targets = discoverAllTargets(settings);
   if (preferred === 'ide') {
     if (await desktopRunning('ide')) return targets.ide;
     return null;

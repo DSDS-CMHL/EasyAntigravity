@@ -14,9 +14,9 @@ class Session {
   resolveTarget() {
     const settings = this.settings.get();
     if (this.desktop?.resolveTarget) {
-      return this.desktop.resolveTarget(settings.targetApp);
+      return this.desktop.resolveTarget(settings.targetApp, settings);
     }
-    const target = this.desktop?.locate ? this.desktop.locate() : { exists: true, appExe: 'Antigravity' };
+    const target = this.desktop?.locate ? this.desktop.locate('hub', settings) : { exists: true, appExe: 'Antigravity' };
     return { id: target.id || 'hub', name: target.appName || target.name || 'Antigravity', ...target };
   }
 
@@ -94,7 +94,7 @@ class Session {
     const settings = this.settings.get();
     let runningTarget = null;
     if (this.desktop?.detectRunningTarget) {
-      runningTarget = await this.desktop.detectRunningTarget(settings.targetApp);
+      runningTarget = await this.desktop.detectRunningTarget(settings.targetApp, settings);
     } else if (await this.desktop?.running()) {
       runningTarget = this.resolveTarget();
     }

@@ -5,7 +5,9 @@ const DEFAULTS = Object.freeze({
   enableI18n: true,
   enableContextMonitor: true,
   enableProxy: true,
-  targetApp: 'auto'
+  targetApp: 'auto',
+  customHubPath: '',
+  customIdePath: ''
 });
 
 function normalizeSettings(input = {}, previous = DEFAULTS) {
@@ -25,6 +27,12 @@ function normalizeSettings(input = {}, previous = DEFAULTS) {
   if (input.targetApp !== undefined) {
     if (!['auto', 'hub', 'ide'].includes(input.targetApp)) throw new Error('启动目标必须是 auto、hub 或 ide');
     result.targetApp = input.targetApp;
+  }
+  for (const key of ['customHubPath', 'customIdePath']) {
+    if (input[key] !== undefined) {
+      if (typeof input[key] !== 'string') throw new Error(`${key} 必须是字符串`);
+      result[key] = input[key].trim();
+    }
   }
   return result;
 }
@@ -53,6 +61,12 @@ function assertLaunchSettingsMutable(input, previous, phase) {
   }
   if (input.targetApp !== undefined && input.targetApp !== previous.targetApp) {
     throw new Error('启动目标将在 AG 退出后才能修改');
+  }
+  if (input.customHubPath !== undefined && input.customHubPath !== previous.customHubPath) {
+    throw new Error('桌面版路径将在 AG 退出后才能修改');
+  }
+  if (input.customIdePath !== undefined && input.customIdePath !== previous.customIdePath) {
+    throw new Error('IDE 路径将在 AG 退出后才能修改');
   }
 }
 

@@ -11,6 +11,8 @@ let launchPending = false;
 let activeTarget = 'hub';
 let activeTargetName = 'Antigravity';
 let clientRunningState = false;
+let currentTargets = {};
+let pathEditOpen = false;
 const logKeys = new Set();
 
 function appendLog(category, message, cls = '', at) {
@@ -62,6 +64,20 @@ function renderPhase(next, targetName = activeTargetName) {
   const proxyEnabled = element('proxyToggle') ? element('proxyToggle').checked : true;
   document.querySelectorAll('[data-port]').forEach(control => { control.disabled = locked || !proxyEnabled; });
   element('proxyPortInput').disabled = locked || !proxyEnabled;
+
+  const currentObj = currentTargets[activeTarget] || {};
+  const isMissing = !currentObj.exists && next === 'idle';
+
+  if (isMissing) {
+    button.disabled = true;
+    element('launchIcon').textContent = '⚠️';
+    element('launchText').textContent = `请先配置 ${targetName} 路径`;
+    button.style.background = 'var(--surface-subtle)';
+    button.style.color = 'var(--text-dark)';
+    return;
+  }
+
+  button.style.color = '';
   element('launchIcon').textContent = busy ? '◌' : next === 'running' ? '●' : next === 'error' ? '↻' : '🚀';
   element('launchText').textContent = {
     preparing: proxyEnabled ? '正在准备代理环境…' : '正在准备启动环境…',
@@ -72,23 +88,71 @@ function renderPhase(next, targetName = activeTargetName) {
   button.style.background = next === 'running' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '';
 }
 
+function renderTargetsUi(targets, currentActive) {
+  const hubTarget = targets.hub || {};
+  const ideTarget = targets.ide || {};
+
+  element('targetHubBtn')?.classList.toggle('active', currentActive === 'hub');
+  element('targetIdeBtn')?.classList.toggle('active', currentActive === 'ide');
+
+  const hubDot = element('hubDot');
+  if (hubDot) {
+    hubDot.className = 'pill-dot ' + (hubTarget.isCustom ? 'custom' : (hubTarget.exists ? 'ready' : 'missing'));
+    hubDot.title = hubTarget.exists ? (hubTarget.isCustom ? '已配置自定义路径' : '已就绪 (默认路径)') : '未在默认路径检测到';
+  }
+  const ideDot = element('ideDot');
+  if (ideDot) {
+    ideDot.className = 'pill-dot ' + (ideTarget.isCustom ? 'custom' : (ideTarget.exists ? 'ready' : 'missing'));
+    ideDot.title = ideTarget.exists ? (ideTarget.isCustom ? '已配置自定义路径' : '已就绪 (默认路径)') : '未在默认路径检测到';
+  }
+
+  const activeObj = currentActive === 'ide' ? ideTarget : hubTarget;
+  const pathVal = element('currentPathText');
+  const pathEditBox = element('pathEditBox');
+  const customInput = element('customPathInput');
+  const resetBtn = element('resetPathBtn');
+  const pathTipText = element('pathTipText');
+
+  if (activeObj.exists) {
+    if (pathVal) {
+      pathVal.textContent = activeObj.appExe || '';
+      pathVal.title = activeObj.appExe || '';
+      pathVal.classList.toggle('custom-tag', Boolean(activeObj.isCustom));
+    }
+    if (resetBtn) resetBtn.style.display = activeObj.isCustom ? 'inline-flex' : 'none';
+    if (!pathEditOpen) {
+      if (pathEditBox) pathEditBox.style.display = 'none';
+    }
+  } else {
+    if (pathVal) {
+      pathVal.textContent = '未在默认路径检测到可执行文件';
+      pathVal.title = '请点击右侧“更改”或在下方指定可执行文件位置';
+      pathVal.classList.remove('custom-tag');
+    }
+    if (pathTipText) {
+      pathTipText.textContent = `未在默认路径检测到 ${activeTargetName}，请指定其 .exe 路径:`;
+    }
+    if (pathEditBox) pathEditBox.style.display = 'flex';
+    if (resetBtn) resetBtn.style.display = activeObj.isCustom ? 'inline-flex' : 'none';
+  }
+
+  if (customInput && !pathEditOpen) {
+    customInput.value = activeObj.appExe || '';
+  }
+}
+
 function renderStatus(status) {
   if (status.activeTarget) {
     activeTarget = status.activeTarget;
     activeTargetName = status.targetName || (status.activeTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity');
   }
+  if (status.targets) {
+    currentTargets = status.targets;
+    renderTargetsUi(currentTargets, activeTarget);
+  }
   if (status.enableProxy !== undefined && element('proxyToggle')) {
     element('proxyToggle').checked = status.enableProxy;
     updateProxyUi(status.enableProxy);
-  }
-  if (status.bothInstalled) {
-    const switcher = element('targetSwitcher');
-    if (switcher) switcher.hidden = false;
-    element('targetHubBtn')?.classList.toggle('active', activeTarget === 'hub');
-    element('targetIdeBtn')?.classList.toggle('active', activeTarget === 'ide');
-  } else {
-    const switcher = element('targetSwitcher');
-    if (switcher) switcher.hidden = true;
   }
   if (status.phase && !(launchPending && status.phase === 'idle')) renderPhase(status.phase, activeTargetName);
   if (status.dictEntries !== undefined) {
@@ -117,6 +181,9 @@ function loadSettings(status) {
     activeTarget = status.activeTarget;
     activeTargetName = status.targetName || (status.activeTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity');
   }
+  if (status.targets) {
+    currentTargets = status.targets;
+  }
   element('proxyPortInput').value = status.port;
   if (element('proxyToggle')) element('proxyToggle').checked = status.enableProxy !== false;
   element('i18nToggle').checked = status.enableI18n;
@@ -139,6 +206,11 @@ function persistSettings() {
 
 async function launch() {
   if (['preparing', 'launching', 'running'].includes(phase)) return;
+  const currentObj = currentTargets[activeTarget] || {};
+  if (!currentObj.exists) {
+    report(new Error(`未找到 ${activeTargetName}，请先点击“浏览”或输入路径完成配置`));
+    return;
+  }
   launchPending = true;
   renderPhase('preparing');
   try {
@@ -158,41 +230,34 @@ async function checkUpdate() {
   if (actionLabel) actionLabel.textContent = '↻ 检查中…';
   try {
     const result = await api.checkUpdate();
-    renderStatus(result);
-    if (actionLabel) actionLabel.textContent = result.updated ? '✨ 已更新' : '✓ 已是最新';
-    if (result.runtimeFilesUpdated > 0) {
-      setTimeout(() => location.reload(), 400);
-      return;
-    }
-    setTimeout(() => { if (actionLabel) actionLabel.textContent = '↻ 检查更新'; }, 2500);
+    appendLog('SYSTEM', result.message || '检查更新完成', result.updated ? 'tag-proxy' : 'tag-aa');
+    if (result.status) renderStatus(result.status);
+    if (actionLabel) actionLabel.textContent = result.updated ? '✓ 已更新' : '↻ 检查更新';
   } catch (error) {
-    if (actionLabel) actionLabel.textContent = '↻ 检查更新';
-    throw error;
+    report(error);
+    if (actionLabel) actionLabel.textContent = '↻ 重试';
   } finally {
-    btn.disabled = false;
+    setTimeout(() => { if (btn) btn.disabled = false; }, 1200);
   }
 }
 
 function currentTheme() {
-  const attr = document.documentElement.dataset.theme;
-  if (attr === 'light' || attr === 'dark') return attr;
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  const root = document.documentElement;
+  return root.dataset.theme === 'light' || root.dataset.theme === 'dark'
+    ? root.dataset.theme
+    : (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 }
 
-function applyTheme(theme, persist = false) {
+function applyTheme(theme, save = false) {
   document.documentElement.dataset.theme = theme;
-  if (persist) {
+  if (save) {
     try { localStorage.setItem('easyag-theme', theme); } catch {}
+    void api.setTheme(theme).catch(() => {});
   }
-  const textNode = element('themeToggleText');
-  if (textNode) {
-    textNode.textContent = theme === 'dark' ? '🌙' : '☀️';
-  }
-  const btnNode = element('themeToggleBtn');
-  if (btnNode) {
-    btnNode.title = theme === 'dark' ? '当前深色外观，点击切换为浅色' : '当前浅色外观，点击切换为深色';
-  }
-  api.setTheme?.(theme).catch(() => {});
+  const btn = element('themeToggleBtn');
+  const label = element('themeToggleText');
+  if (label) label.textContent = theme === 'dark' ? '🌙' : '☀️';
+  if (btn) btn.title = theme === 'dark' ? '当前外观: 深色 (点击切换浅色)' : '当前外观: 浅色 (点击切换深色)';
 }
 
 function toggleTheme() {
@@ -214,6 +279,60 @@ async function copyLogs() {
   }
 }
 
+// 浏览选择可执行文件
+async function browseTargetExe() {
+  const btn = element('browseExeBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api.browseExe(activeTarget);
+    if (res?.ok && res.path) {
+      appendLog('SYSTEM', `已配置 ${activeTargetName} 路径: ${res.path}`, 'tag-proxy');
+      pathEditOpen = false;
+      if (res.status) renderStatus(res.status);
+    }
+  } catch (err) {
+    report(err);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// 保存手动输入的路径
+async function saveCustomPath() {
+  const input = element('customPathInput');
+  const path = input ? input.value.trim() : '';
+  if (!path) {
+    report(new Error('请输入有效的 .exe 文件路径'));
+    return;
+  }
+  try {
+    const res = await api.setTargetPath({ target: activeTarget, path });
+    if (res?.ok) {
+      appendLog('SYSTEM', `已保存 ${activeTargetName} 路径: ${res.path}`, 'tag-proxy');
+      pathEditOpen = false;
+      if (res.status) renderStatus(res.status);
+    }
+  } catch (err) {
+    report(err);
+  }
+}
+
+// 恢复默认扫描路径
+async function resetDefaultPath() {
+  try {
+    const res = await api.setTargetPath({ target: activeTarget, path: '' });
+    if (res?.ok) {
+      appendLog('SYSTEM', `已恢复 ${activeTargetName} 默认检测路径`, 'tag-proxy');
+      pathEditOpen = false;
+      const input = element('customPathInput');
+      if (input) input.value = '';
+      if (res.status) renderStatus(res.status);
+    }
+  } catch (err) {
+    report(err);
+  }
+}
+
 const actions = {
   launch,
   hide: () => api.hide(),
@@ -230,8 +349,10 @@ document.addEventListener('click', event => {
     if (nextTarget && nextTarget !== activeTarget) {
       activeTarget = nextTarget;
       activeTargetName = nextTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity';
+      pathEditOpen = false;
       element('targetHubBtn')?.classList.toggle('active', activeTarget === 'hub');
       element('targetIdeBtn')?.classList.toggle('active', activeTarget === 'ide');
+      renderTargetsUi(currentTargets, activeTarget);
       renderPhase(phase, activeTargetName);
       api.configure({ targetApp: nextTarget }).then(res => {
         if (res?.targetName) activeTargetName = res.targetName;
@@ -247,6 +368,31 @@ document.addEventListener('click', event => {
     await persistSettings();
   } : actions[control.dataset.action];
   if (action) Promise.resolve().then(() => action(control)).catch(report);
+});
+
+// 绑定路径编辑与配置按钮事件
+element('togglePathEditBtn')?.addEventListener('click', () => {
+  pathEditOpen = !pathEditOpen;
+  const box = element('pathEditBox');
+  if (box) box.style.display = pathEditOpen ? 'flex' : 'none';
+  if (pathEditOpen) {
+    const input = element('customPathInput');
+    const activeObj = currentTargets[activeTarget] || {};
+    if (input) {
+      input.value = activeObj.appExe || '';
+      input.focus();
+    }
+  }
+});
+
+element('browseExeBtn')?.addEventListener('click', browseTargetExe);
+element('savePathBtn')?.addEventListener('click', saveCustomPath);
+element('resetPathBtn')?.addEventListener('click', resetDefaultPath);
+element('customPathInput')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    saveCustomPath();
+  }
 });
 
 element('proxyPortInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, ''); });

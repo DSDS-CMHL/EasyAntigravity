@@ -18,6 +18,8 @@ export const api = {
   status: () => request('/api/status'),
   logs: () => request('/api/logs?limit=200'),
   configure: body => request('/api/config', { body }),
+  browseExe: target => request('/api/browse-exe', { body: { target } }),
+  setTargetPath: ({ target, path }) => request('/api/set-target-path', { body: { target, path } }),
   launch: () => request('/api/launch', { method: 'POST' }),
   checkUpdate: body => request('/api/update', { body: body || {}, method: 'POST', timeoutMs: 60000 }),
   setTheme: theme => request('/api/theme', { body: { theme }, method: 'POST' }),

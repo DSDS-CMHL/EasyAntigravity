@@ -69,7 +69,11 @@ test('Settings validate values and lock port only while running', () => {
   assert.throws(() => normalizeSettings({ enableContextMonitor: 'true' }));
   assert.throws(() => normalizeSettings({ enableProxy: 'true' }));
   const normalized = normalizeSettings({ port: 7897, enableI18n: false, enableContextMonitor: true });
-  assert.deepEqual(normalized, { port: 7897, enableI18n: false, enableContextMonitor: true, enableProxy: true, targetApp: 'auto' });
+  assert.deepEqual(normalized, { port: 7897, enableI18n: false, enableContextMonitor: true, enableProxy: true, targetApp: 'auto', customHubPath: '', customIdePath: '' });
+  assert.throws(() => normalizeSettings({ customHubPath: 123 }));
+  assert.throws(() => normalizeSettings({ customIdePath: true }));
+  assert.throws(() => assertLaunchSettingsMutable({ customHubPath: 'D:\\custom' }, normalized, 'running'));
+  assert.doesNotThrow(() => assertLaunchSettingsMutable({ customHubPath: 'D:\\custom' }, normalized, 'idle'));
   assert.throws(() => assertLaunchSettingsMutable({ enableProxy: false }, normalized, 'running'));
   assert.doesNotThrow(() => assertLaunchSettingsMutable({ enableProxy: false }, normalized, 'idle'));
 test('buildProxyLaunch respects enableProxy=false for direct connection', () => {
