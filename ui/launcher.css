@@ -601,8 +601,17 @@ input:disabled + .slider {
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  color: var(--yellow);
   font-weight: 500;
+  transition: all 0.2s ease;
+}
+.path-edit-tip.warning {
+  color: var(--yellow);
+}
+.path-edit-tip.error {
+  color: var(--red);
+}
+.path-edit-tip.neutral {
+  color: var(--text-dark);
 }
 .path-input-group {
   display: flex;

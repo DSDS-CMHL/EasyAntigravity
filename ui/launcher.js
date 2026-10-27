@@ -111,7 +111,10 @@ function renderTargetsUi(targets, currentActive) {
   const pathEditBox = element('pathEditBox');
   const customInput = element('customPathInput');
   const resetBtn = element('resetPathBtn');
+  const pathEditTip = element('pathEditTip');
+  const pathTipIcon = element('pathTipIcon');
   const pathTipText = element('pathTipText');
+  const toggleBtn = element('togglePathEditBtn');
 
   if (activeObj.exists) {
     if (pathVal) {
@@ -120,20 +123,38 @@ function renderTargetsUi(targets, currentActive) {
       pathVal.classList.toggle('custom-tag', Boolean(activeObj.isCustom));
     }
     if (resetBtn) resetBtn.style.display = activeObj.isCustom ? 'inline-flex' : 'none';
+
+    // 正常状态已找到程序：不显示任何警告条
+    if (pathEditTip) {
+      pathEditTip.style.display = 'none';
+      pathEditTip.className = 'path-edit-tip neutral';
+    }
+
     if (!pathEditOpen) {
       if (pathEditBox) pathEditBox.style.display = 'none';
+      if (toggleBtn) toggleBtn.textContent = '更改';
+    } else {
+      if (pathEditBox) pathEditBox.style.display = 'flex';
+      if (toggleBtn) toggleBtn.textContent = '收起';
     }
   } else {
+    // 只有在未检测到程序时，才显示警告提示
     if (pathVal) {
-      pathVal.textContent = '未在默认路径检测到可执行文件';
-      pathVal.title = '请点击右侧“更改”或在下方指定可执行文件位置';
+      pathVal.textContent = '未在默认路径检测到程序';
+      pathVal.title = '未找到程序，请点击右侧指定其位置';
       pathVal.classList.remove('custom-tag');
     }
+    if (pathEditTip) {
+      pathEditTip.style.display = 'flex';
+      pathEditTip.className = 'path-edit-tip warning';
+    }
+    if (pathTipIcon) pathTipIcon.textContent = '⚠️';
     if (pathTipText) {
-      pathTipText.textContent = `未在默认路径检测到 ${activeTargetName}，请指定其 .exe 路径:`;
+      pathTipText.textContent = `未在默认路径检测到 ${activeTargetName}，如安装在非 C 盘请指定 .exe 路径:`;
     }
     if (pathEditBox) pathEditBox.style.display = 'flex';
     if (resetBtn) resetBtn.style.display = activeObj.isCustom ? 'inline-flex' : 'none';
+    if (toggleBtn) toggleBtn.textContent = '收起';
   }
 
   if (customInput && !pathEditOpen) {
@@ -314,6 +335,15 @@ async function saveCustomPath() {
     }
   } catch (err) {
     report(err);
+    const pathEditTip = element('pathEditTip');
+    const pathTipIcon = element('pathTipIcon');
+    const pathTipText = element('pathTipText');
+    if (pathEditTip) {
+      pathEditTip.style.display = 'flex';
+      pathEditTip.className = 'path-edit-tip error';
+    }
+    if (pathTipIcon) pathTipIcon.textContent = '❌';
+    if (pathTipText) pathTipText.textContent = err.message || '指定的文件路径不存在';
   }
 }
 
@@ -373,8 +403,7 @@ document.addEventListener('click', event => {
 // 绑定路径编辑与配置按钮事件
 element('togglePathEditBtn')?.addEventListener('click', () => {
   pathEditOpen = !pathEditOpen;
-  const box = element('pathEditBox');
-  if (box) box.style.display = pathEditOpen ? 'flex' : 'none';
+  renderTargetsUi(currentTargets, activeTarget);
   if (pathEditOpen) {
     const input = element('customPathInput');
     const activeObj = currentTargets[activeTarget] || {};

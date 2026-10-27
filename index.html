@@ -78,7 +78,7 @@
         <span class="slider"></span>
       </label>
     </div>
-    <div class="row">
+    <div class="row" id="contextMonitorRow">
       <span style="font-weight: 500;">AG 内上下文圆环 <span style="font-size: 11px; color: var(--text-dark);">· 速度在详情中</span></span>
       <label class="switch" title="只读采集最近请求的上下文估算；关闭后移除 AG 内标记">
         <input type="checkbox" id="contextMonitorToggle" aria-label="AG 内上下文圆环" checked>
@@ -112,8 +112,8 @@
       <button type="button" class="btn-text-action" id="togglePathEditBtn" title="修改或自定义可执行文件位置">更改</button>
     </div>
     <div class="path-edit-box" id="pathEditBox" style="display: none;">
-      <div class="path-edit-tip">
-        <span class="tip-icon">⚠️</span>
+      <div class="path-edit-tip" id="pathEditTip" style="display: none;">
+        <span class="tip-icon" id="pathTipIcon">⚠️</span>
         <span id="pathTipText">未在默认路径检测到此程序，如安装在非 C 盘请指定 .exe 路径:</span>
       </div>
       <div class="path-input-group">
