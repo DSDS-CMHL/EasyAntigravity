@@ -7,6 +7,9 @@ const { createApplication } = require('../desktop/application');
 
 test('CLI Application & API: full integration smoke test', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'easyag-cli-api-'));
+  const testProjectsDir = path.join(tmpDir, 'projects');
+  process.env.EASYAG_PROJECTS_DIR = testProjectsDir;
+
   const rootDir = path.resolve(__dirname, '..');
   const app = createApplication({
     rootDir,
@@ -78,6 +81,7 @@ test('CLI Application & API: full integration smoke test', async () => {
     const jsRes = await fetch(`${baseUrl}/ui/launcher.js`);
     assert.equal(jsRes.status, 200);
   } finally {
+    delete process.env.EASYAG_PROJECTS_DIR;
     await app.close('测试完毕');
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

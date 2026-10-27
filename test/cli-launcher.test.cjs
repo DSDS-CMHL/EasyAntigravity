@@ -52,6 +52,8 @@ test('CLI Launcher: createProject validates input and registers project', () => 
   assert.equal(invalid.ok, false);
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'easyag-cli-proj-'));
+  const testProjectsDir = path.join(tmpDir, 'projects');
+  process.env.EASYAG_PROJECTS_DIR = testProjectsDir;
   try {
     const res = createProject({ name: 'TestProject', folderPath: tmpDir });
     assert.equal(res.ok, true);
@@ -59,6 +61,7 @@ test('CLI Launcher: createProject validates input and registers project', () => 
     assert.equal(res.project.path.toLowerCase(), tmpDir.toLowerCase());
     assert.equal(Array.isArray(res.project.conversations), true);
   } finally {
+    delete process.env.EASYAG_PROJECTS_DIR;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

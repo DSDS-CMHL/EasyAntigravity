@@ -3,6 +3,14 @@ const path = require('node:path');
 const { spawn, execSync } = require('node:child_process');
 const crypto = require('node:crypto');
 
+function getProjectsDir() {
+  if (process.env.EASYAG_PROJECTS_DIR) {
+    return process.env.EASYAG_PROJECTS_DIR;
+  }
+  const userProfile = process.env.USERPROFILE || process.env.HOME || '';
+  return path.join(userProfile, '.gemini', 'config', 'projects');
+}
+
 function findAgyExe() {
   const localAppData = process.env.LOCALAPPDATA || '';
   const standardPath = path.join(localAppData, 'agy', 'bin', 'agy.exe');
@@ -38,7 +46,7 @@ function localPathToUri(p) {
 
 function getProjectsAndConversations() {
   const userProfile = process.env.USERPROFILE || process.env.HOME || '';
-  const projectsDir = path.join(userProfile, '.gemini', 'config', 'projects');
+  const projectsDir = getProjectsDir();
   const metadataFile = path.join(userProfile, '.gemini', 'antigravity-cli', 'cache', 'conversation_metadata.json');
   const lastConvsFile = path.join(userProfile, '.gemini', 'antigravity-cli', 'cache', 'last_conversations.json');
   const trustedFile = path.join(userProfile, '.gemini', 'antigravity-cli', 'settings.json');
@@ -76,7 +84,7 @@ function getProjectsAndConversations() {
     } catch {}
   }
 
-  // 2. Discover defined projects in ~/.gemini/config/projects/
+  // 2. Discover defined projects in projectsDir
   const projects = [];
   const registeredPaths = new Set();
 
@@ -166,8 +174,7 @@ function createProject({ name, folderPath }) {
   }
   const id = crypto.randomUUID();
   const projectName = name?.trim() || path.basename(targetDir);
-  const userProfile = process.env.USERPROFILE || process.env.HOME || '';
-  const projectsDir = path.join(userProfile, '.gemini', 'config', 'projects');
+  const projectsDir = getProjectsDir();
   fs.mkdirSync(projectsDir, { recursive: true });
 
   const projectJson = {
