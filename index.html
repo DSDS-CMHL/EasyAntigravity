@@ -89,10 +89,7 @@
 
   <!-- 启动目标选择器：常显，支持桌面版与 IDE 版随时切换与查看 -->
   <div class="target-switcher" id="targetSwitcher">
-    <div class="switcher-label-wrap">
-      <span class="switcher-label">启动目标</span>
-      <button type="button" class="btn-config-path" id="togglePathManualBtn" title="手动配置或修改程序路径（正常时无需配置）">⚙️</button>
-    </div>
+    <span class="switcher-label">启动目标</span>
     <div class="switcher-pills" role="radiogroup" aria-label="选择启动目标">
       <button type="button" class="target-pill active" data-target="hub" id="targetHubBtn" title="启动 Antigravity 官方桌面客户端">
         <span class="pill-dot" id="hubDot"></span>
@@ -107,26 +104,7 @@
     </div>
   </div>
 
-  <!-- 目标路径兜底配置面板（平时完全隐藏，仅在未找到程序或启动报错时自动弹出） -->
-  <div class="target-path-card" id="targetPathCard" style="display: none;">
-    <div class="path-ready-bar" id="pathReadyBar" style="display: none;">
-      <span class="path-ready-label">程序路径:</span>
-      <span class="path-ready-val" id="currentPathText">检测中...</span>
-      <button type="button" class="btn-text-action" id="togglePathEditBtn" title="收起路径面板">收起</button>
-    </div>
-    <div class="path-edit-box" id="pathEditBox">
-      <div class="path-edit-tip" id="pathEditTip" style="display: none;">
-        <span class="tip-icon" id="pathTipIcon">⚠️</span>
-        <span id="pathTipText">未在默认路径检测到此程序，如安装在非 C 盘请指定 .exe 路径:</span>
-      </div>
-      <div class="path-input-group">
-        <input type="text" id="customPathInput" placeholder="输入或浏览选择 .exe 完整路径" spellcheck="false">
-        <button type="button" class="btn-path-action btn-browse" id="browseExeBtn" title="打开 Windows 文件选择器选择可执行文件">📂 浏览</button>
-        <button type="button" class="btn-path-action btn-save" id="savePathBtn" title="保存自定义路径">保存</button>
-        <button type="button" class="btn-path-action btn-reset" id="resetPathBtn" title="清除自定义，恢复默认检测" style="display: none;">恢复默认</button>
-      </div>
-    </div>
-  </div>
+
 
   <!-- 核心启动按钮 -->
   <button class="launch-btn" id="launchBtn" data-action="launch">
@@ -147,6 +125,37 @@
       <div class="console-pane">
         <div class="console" id="consoleBox">
           <div class="log-line" style="color: var(--text-dark);">[SYSTEM] EasyAG 已就绪。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 路径选择兜底模态弹窗（仅在未找到程序或启动报错时弹出，平时完全不占空间） -->
+  <div class="modal-backdrop" id="pathModal" style="display: none;">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTargetTitle">
+      <div class="modal-head">
+        <div class="modal-title">
+          <span class="modal-icon">⚠️</span>
+          <span id="modalTargetTitle">未找到可执行程序</span>
+        </div>
+        <button type="button" class="modal-close-btn" id="modalCloseBtn" aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc" id="pathTipText">未在默认路径检测到程序。如安装在非 C 盘，请点击“浏览”指定 .exe 文件路径：</p>
+        <div class="modal-input-row">
+          <input type="text" id="customPathInput" placeholder="输入或浏览选择 .exe 完整路径" spellcheck="false">
+          <button type="button" class="btn-path-action btn-browse" id="browseExeBtn" title="打开 Windows 文件选择器选择可执行文件">📂 浏览</button>
+        </div>
+        <div class="modal-error-tip" id="pathEditTip" style="display: none;">
+          <span id="pathTipIcon">❌</span>
+          <span id="pathErrorText">指定的文件路径不存在</span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn-path-action btn-reset" id="resetPathBtn" style="display: none;">恢复默认</button>
+        <div class="modal-foot-right">
+          <button type="button" class="btn-modal-cancel" id="modalCancelBtn">取消</button>
+          <button type="button" class="btn-path-action btn-save" id="savePathBtn">确定保存</button>
         </div>
       </div>
     </div>

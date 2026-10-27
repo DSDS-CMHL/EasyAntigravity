@@ -465,28 +465,6 @@ input:disabled + .slider {
 .target-switcher[hidden] {
   display: none !important;
 }
-.switcher-label-wrap {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-.btn-config-path {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 1px 4px;
-  border-radius: 4px;
-  font-size: 11px;
-  opacity: 0.38;
-  transition: all 0.2s ease;
-  line-height: 1;
-}
-.btn-config-path:hover {
-  opacity: 1;
-  background: var(--surface-subtle);
-  transform: rotate(30deg);
-}
 .switcher-label {
   font-size: 12px;
   font-weight: 650;
@@ -552,102 +530,88 @@ input:disabled + .slider {
   box-shadow: 0 0 5px var(--primary-glow);
 }
 
-/* 目标路径显示与自定义配置卡片 */
-.target-path-card {
+
+/* 路径配置兜底模态弹窗 */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: modalFadeIn 0.18s ease-out;
+}
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.modal-card {
   background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 10px;
-  padding: 6px 12px;
-  box-shadow: var(--card-shadow);
+  border: 1px solid var(--card-border-hover);
+  border-radius: 14px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
+  width: 100%;
+  max-width: 440px;
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
+  gap: 12px;
+  animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.path-ready-bar {
+@keyframes modalPop {
+  from { transform: scale(0.94); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.modal-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.modal-title {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  font-size: 11.5px;
-  line-height: 1.4;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
 }
-.path-ready-label {
-  color: var(--text-dark);
-  font-weight: 500;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.path-ready-val {
-  flex: 1;
-  min-width: 0;
-  color: var(--text-muted);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.path-ready-val.custom-tag::after {
-  content: ' (自定义)';
-  color: var(--primary);
-  font-family: -apple-system, sans-serif;
-  font-weight: 600;
-}
-.btn-text-action {
+.modal-close-btn {
   background: none;
   border: none;
-  color: var(--primary);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  padding: 2px 4px;
-  border-radius: 4px;
-  transition: background 0.15s;
-}
-.btn-text-action:hover {
-  background: var(--primary-glow);
-}
-.path-edit-box {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 4px;
-  border-top: 1px dashed var(--card-border);
-  animation: fadeIn 0.15s ease-out;
-}
-.path-edit-tip {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-.path-edit-tip.warning {
-  color: var(--yellow);
-}
-.path-edit-tip.error {
-  color: var(--red);
-}
-.path-edit-tip.neutral {
+  font-size: 18px;
   color: var(--text-dark);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  line-height: 1;
+  transition: all 0.15s;
 }
-.path-input-group {
+.modal-close-btn:hover {
+  background: var(--surface-subtle);
+  color: var(--text-main);
+}
+.modal-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+.modal-input-row {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: 8px;
+  margin-top: 6px;
 }
 #customPathInput {
   flex: 1;
   min-width: 0;
   background: var(--input-bg);
   border: 1px solid var(--card-border);
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 11.5px;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   color: var(--text-main);
   outline: none;
@@ -655,10 +619,48 @@ input:disabled + .slider {
 #customPathInput:focus {
   border-color: var(--primary);
 }
+.modal-error-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--red);
+  margin-top: 4px;
+  font-weight: 500;
+}
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--card-border);
+}
+.modal-foot-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.btn-modal-cancel {
+  background: var(--surface-subtle);
+  border: 1px solid var(--card-border);
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-modal-cancel:hover {
+  background: var(--surface-hover);
+  color: var(--text-main);
+}
 .btn-path-action {
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 11px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;

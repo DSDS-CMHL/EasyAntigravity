@@ -12,7 +12,7 @@ let activeTarget = 'hub';
 let activeTargetName = 'Antigravity';
 let clientRunningState = false;
 let currentTargets = {};
-let pathEditOpen = false;
+let pathModalDismissed = false;
 const logKeys = new Set();
 
 function appendLog(category, message, cls = '', at) {
@@ -88,6 +88,39 @@ function renderPhase(next, targetName = activeTargetName) {
   button.style.background = next === 'running' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '';
 }
 
+
+function showModalError(msg) {
+  const tip = element('pathEditTip');
+  const txt = element('pathErrorText') || element('pathTipText');
+  if (tip) {
+    tip.style.display = 'flex';
+  }
+  if (txt) txt.textContent = msg || '指定的文件路径不存在';
+}
+
+function showPathModal(visible, customTitle, customDesc) {
+  const modal = element('pathModal');
+  if (!modal) return;
+  modal.style.display = visible ? 'flex' : 'none';
+  if (visible) {
+    const titleEl = element('modalTargetTitle');
+    const descEl = element('pathTipText');
+    const input = element('customPathInput');
+    const resetBtn = element('resetPathBtn');
+    const errorTip = element('pathEditTip');
+    const activeObj = currentTargets[activeTarget] || {};
+
+    if (titleEl) titleEl.textContent = customTitle || `未找到 ${activeTargetName}`;
+    if (descEl) descEl.textContent = customDesc || `未在默认路径检测到 ${activeTargetName}。如安装在非 C 盘，请点击“浏览”指定 .exe 文件路径：`;
+    if (input) {
+      input.value = activeObj.appExe || '';
+      input.focus();
+    }
+    if (resetBtn) resetBtn.style.display = activeObj.isCustom ? 'inline-flex' : 'none';
+    if (errorTip) errorTip.style.display = 'none';
+  }
+}
+
 function renderTargetsUi(targets, currentActive) {
   const hubTarget = targets.hub || {};
   const ideTarget = targets.ide || {};
@@ -98,75 +131,17 @@ function renderTargetsUi(targets, currentActive) {
   const hubDot = element('hubDot');
   if (hubDot) {
     hubDot.className = 'pill-dot ' + (hubTarget.isCustom ? 'custom' : (hubTarget.exists ? 'ready' : 'missing'));
-    hubDot.title = hubTarget.exists ? (hubTarget.isCustom ? '已配置自定义路径' : '已就绪 (默认路径)') : '未在默认路径检测到';
+    hubDot.title = hubTarget.exists ? (hubTarget.isCustom ? '已配置自定义路径' : '已就绪 (默认路径)') : '未在默认路径检测到，点击配置';
   }
   const ideDot = element('ideDot');
   if (ideDot) {
     ideDot.className = 'pill-dot ' + (ideTarget.isCustom ? 'custom' : (ideTarget.exists ? 'ready' : 'missing'));
-    ideDot.title = ideTarget.exists ? (ideTarget.isCustom ? '已配置自定义路径' : '已就绪 (默认路径)') : '未在默认路径检测到';
+    ideDot.title = ideTarget.exists ? (ideTarget.isCustom ? '已配置自定义路径' : '已就绪 (默认路径)') : '未在默认路径检测到，点击配置';
   }
 
   const activeObj = currentActive === 'ide' ? ideTarget : hubTarget;
-  const targetPathCard = element('targetPathCard');
-  const pathReadyBar = element('pathReadyBar');
-  const pathVal = element('currentPathText');
-  const pathEditBox = element('pathEditBox');
-  const customInput = element('customPathInput');
-  const resetBtn = element('resetPathBtn');
-  const pathEditTip = element('pathEditTip');
-  const pathTipIcon = element('pathTipIcon');
-  const pathTipText = element('pathTipText');
-  const toggleBtn = element('togglePathEditBtn');
-
-  if (activeObj.exists) {
-    if (pathVal) {
-      pathVal.textContent = activeObj.appExe || '';
-      pathVal.title = activeObj.appExe || '';
-      pathVal.classList.toggle('custom-tag', Boolean(activeObj.isCustom));
-    }
-    if (resetBtn) resetBtn.style.display = activeObj.isCustom ? 'inline-flex' : 'none';
-
-    // 正常状态已找到程序：不显示任何警告条
-    if (pathEditTip) {
-      pathEditTip.style.display = 'none';
-      pathEditTip.className = 'path-edit-tip neutral';
-    }
-
-    if (!pathEditOpen) {
-      if (targetPathCard) targetPathCard.style.display = 'none';
-      if (pathReadyBar) pathReadyBar.style.display = 'none';
-      if (pathEditBox) pathEditBox.style.display = 'none';
-      if (toggleBtn) toggleBtn.textContent = '更改';
-    } else {
-      if (targetPathCard) targetPathCard.style.display = 'flex';
-      if (pathReadyBar) pathReadyBar.style.display = 'flex';
-      if (pathEditBox) pathEditBox.style.display = 'flex';
-      if (toggleBtn) toggleBtn.textContent = '收起';
-    }
-  } else {
-    if (targetPathCard) targetPathCard.style.display = 'flex';
-    if (pathReadyBar) pathReadyBar.style.display = 'none';
-    // 只有在未检测到程序时，才显示警告提示
-    if (pathVal) {
-      pathVal.textContent = '未在默认路径检测到程序';
-      pathVal.title = '未找到程序，请点击右侧指定其位置';
-      pathVal.classList.remove('custom-tag');
-    }
-    if (pathEditTip) {
-      pathEditTip.style.display = 'flex';
-      pathEditTip.className = 'path-edit-tip warning';
-    }
-    if (pathTipIcon) pathTipIcon.textContent = '⚠️';
-    if (pathTipText) {
-      pathTipText.textContent = `未在默认路径检测到 ${activeTargetName}，如安装在非 C 盘请指定 .exe 路径:`;
-    }
-    if (pathEditBox) pathEditBox.style.display = 'flex';
-    if (resetBtn) resetBtn.style.display = activeObj.isCustom ? 'inline-flex' : 'none';
-    if (toggleBtn) toggleBtn.textContent = '收起';
-  }
-
-  if (customInput && !pathEditOpen) {
-    customInput.value = activeObj.appExe || '';
+  if (!activeObj.exists && !pathModalDismissed) {
+    showPathModal(true);
   }
 }
 
@@ -237,190 +212,21 @@ async function launch() {
   if (['preparing', 'launching', 'running'].includes(phase)) return;
   const currentObj = currentTargets[activeTarget] || {};
   if (!currentObj.exists) {
-    pathEditOpen = true;
-    renderTargetsUi(currentTargets, activeTarget);
-    report(new Error(`未找到 ${activeTargetName}，请先点击“浏览”或输入路径完成配置`));
-    return;
-  }
-  launchPending = true;
-  renderPhase('preparing');
-  try {
-    await persistSettings();
-    renderPhase('launching');
-    await api.launch();
-    renderPhase('running');
-  } catch (error) { renderPhase('error'); report(error); }
-  finally { launchPending = false; }
-}
-
-async function checkUpdate() {
-  const btn = element('updateBtn');
-  const actionLabel = element('updateActionText') || btn;
-  if (!btn || btn.disabled) return;
-  btn.disabled = true;
-  if (actionLabel) actionLabel.textContent = '↻ 检查中…';
-  try {
-    const result = await api.checkUpdate();
-    appendLog('SYSTEM', result.message || '检查更新完成', result.updated ? 'tag-proxy' : 'tag-aa');
-    if (result.status) renderStatus(result.status);
-    if (actionLabel) actionLabel.textContent = result.updated ? '✓ 已更新' : '↻ 检查更新';
-  } catch (error) {
-    report(error);
-    if (actionLabel) actionLabel.textContent = '↻ 重试';
-  } finally {
-    setTimeout(() => { if (btn) btn.disabled = false; }, 1200);
-  }
-}
-
-function currentTheme() {
-  const root = document.documentElement;
-  return root.dataset.theme === 'light' || root.dataset.theme === 'dark'
-    ? root.dataset.theme
-    : (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-}
-
-function applyTheme(theme, save = false) {
-  document.documentElement.dataset.theme = theme;
-  if (save) {
-    try { localStorage.setItem('easyag-theme', theme); } catch {}
-    void api.setTheme(theme).catch(() => {});
-  }
-  const btn = element('themeToggleBtn');
-  const label = element('themeToggleText');
-  if (label) label.textContent = theme === 'dark' ? '🌙' : '☀️';
-  if (btn) btn.title = theme === 'dark' ? '当前外观: 深色 (点击切换浅色)' : '当前外观: 浅色 (点击切换深色)';
-}
-
-function toggleTheme() {
-  const next = currentTheme() === 'dark' ? 'light' : 'dark';
-  applyTheme(next, true);
-}
-
-async function copyLogs() {
-  try {
-    await navigator.clipboard.writeText(consoleBox.innerText);
-    appendLog('SYSTEM', '日志已复制', 'tag-proxy');
-  } catch {
-    const range = document.createRange();
-    range.selectNodeContents(consoleBox);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-    appendLog('SYSTEM', '已选中日志，可手动复制', 'tag-warn');
-  }
-}
-
-// 浏览选择可执行文件
-async function browseTargetExe() {
-  const btn = element('browseExeBtn');
-  if (btn) btn.disabled = true;
-  try {
-    const res = await api.browseExe(activeTarget);
-    if (res?.ok && res.path) {
-      appendLog('SYSTEM', `已配置 ${activeTargetName} 路径: ${res.path}`, 'tag-proxy');
-      pathEditOpen = false;
-      if (res.status) renderStatus(res.status);
-    }
-  } catch (err) {
-    report(err);
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-// 保存手动输入的路径
-async function saveCustomPath() {
-  const input = element('customPathInput');
-  const path = input ? input.value.trim() : '';
-  if (!path) {
-    report(new Error('请输入有效的 .exe 文件路径'));
+    pathModalDismissed = false;
+    showPathModal(true);
+    report(new Error(`未找到 ${activeTargetName}，请先指定 .exe 路径完成配置`));
     return;
   }
   try {
     const res = await api.setTargetPath({ target: activeTarget, path });
     if (res?.ok) {
       appendLog('SYSTEM', `已保存 ${activeTargetName} 路径: ${res.path}`, 'tag-proxy');
-      pathEditOpen = false;
+      pathModalDismissed = false;
+      showPathModal(false);
       if (res.status) renderStatus(res.status);
     }
   } catch (err) {
-    report(err);
-    const pathEditTip = element('pathEditTip');
-    const pathTipIcon = element('pathTipIcon');
-    const pathTipText = element('pathTipText');
-    if (pathEditTip) {
-      pathEditTip.style.display = 'flex';
-      pathEditTip.className = 'path-edit-tip error';
-    }
-    if (pathTipIcon) pathTipIcon.textContent = '❌';
-    if (pathTipText) pathTipText.textContent = err.message || '指定的文件路径不存在';
-  }
-}
-
-// 恢复默认扫描路径
-async function resetDefaultPath() {
-  try {
-    const res = await api.setTargetPath({ target: activeTarget, path: '' });
-    if (res?.ok) {
-      appendLog('SYSTEM', `已恢复 ${activeTargetName} 默认检测路径`, 'tag-proxy');
-      pathEditOpen = false;
-      const input = element('customPathInput');
-      if (input) input.value = '';
-      if (res.status) renderStatus(res.status);
-    }
-  } catch (err) {
-    report(err);
-  }
-}
-
-const actions = {
-  launch,
-  hide: () => api.hide(),
-  'toggle-theme': toggleTheme,
-  'check-update': checkUpdate,
-  'copy-logs': copyLogs,
-  'clear-logs': () => { consoleBox.replaceChildren(); }
-};
-
-document.addEventListener('click', event => {
-  const targetBtn = event.target.closest('[data-target]');
-  if (targetBtn && !targetBtn.disabled) {
-    const nextTarget = targetBtn.dataset.target;
-    if (nextTarget && nextTarget !== activeTarget) {
-      activeTarget = nextTarget;
-      activeTargetName = nextTarget === 'ide' ? 'Antigravity IDE' : 'Antigravity';
-      pathEditOpen = false;
-      element('targetHubBtn')?.classList.toggle('active', activeTarget === 'hub');
-      element('targetIdeBtn')?.classList.toggle('active', activeTarget === 'ide');
-      renderTargetsUi(currentTargets, activeTarget);
-      renderPhase(phase, activeTargetName);
-      api.configure({ targetApp: nextTarget }).then(res => {
-        if (res?.targetName) activeTargetName = res.targetName;
-        renderPhase(phase, activeTargetName);
-      }).catch(report);
-    }
-    return;
-  }
-  const control = event.target.closest('[data-action],[data-port]');
-  if (!control || control.disabled) return;
-  const action = control.dataset.port !== undefined ? async () => {
-    element('proxyPortInput').value = control.dataset.port;
-    await persistSettings();
-  } : actions[control.dataset.action];
-  if (action) Promise.resolve().then(() => action(control)).catch(report);
-});
-
-// 绑定路径编辑与配置按钮事件
-const handleTogglePath = () => {
-  pathEditOpen = !pathEditOpen;
-  renderTargetsUi(currentTargets, activeTarget);
-  if (pathEditOpen) {
-    const input = element('customPathInput');
-    const activeObj = currentTargets[activeTarget] || {};
-    if (input) {
-      input.value = activeObj.appExe || '';
-      input.focus();
-    }
+    showModalError(err.message || '指定的文件路径不存在');
   }
 };
 element('togglePathManualBtn')?.addEventListener('click', handleTogglePath);
