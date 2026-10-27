@@ -465,6 +465,28 @@ input:disabled + .slider {
 .target-switcher[hidden] {
   display: none !important;
 }
+.switcher-label-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.btn-config-path {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 11px;
+  opacity: 0.38;
+  transition: all 0.2s ease;
+  line-height: 1;
+}
+.btn-config-path:hover {
+  opacity: 1;
+  background: var(--surface-subtle);
+  transform: rotate(30deg);
+}
 .switcher-label {
   font-size: 12px;
   font-weight: 650;

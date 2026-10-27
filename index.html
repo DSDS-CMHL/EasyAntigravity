@@ -89,7 +89,10 @@
 
   <!-- 启动目标选择器：常显，支持桌面版与 IDE 版随时切换与查看 -->
   <div class="target-switcher" id="targetSwitcher">
-    <span class="switcher-label">启动目标</span>
+    <div class="switcher-label-wrap">
+      <span class="switcher-label">启动目标</span>
+      <button type="button" class="btn-config-path" id="togglePathManualBtn" title="手动配置或修改程序路径（正常时无需配置）">⚙️</button>
+    </div>
     <div class="switcher-pills" role="radiogroup" aria-label="选择启动目标">
       <button type="button" class="target-pill active" data-target="hub" id="targetHubBtn" title="启动 Antigravity 官方桌面客户端">
         <span class="pill-dot" id="hubDot"></span>
@@ -104,14 +107,14 @@
     </div>
   </div>
 
-  <!-- 目标路径显示与自定义路径配置面板 -->
-  <div class="target-path-card" id="targetPathCard">
-    <div class="path-ready-bar" id="pathReadyBar">
+  <!-- 目标路径兜底配置面板（平时完全隐藏，仅在未找到程序或启动报错时自动弹出） -->
+  <div class="target-path-card" id="targetPathCard" style="display: none;">
+    <div class="path-ready-bar" id="pathReadyBar" style="display: none;">
       <span class="path-ready-label">程序路径:</span>
       <span class="path-ready-val" id="currentPathText">检测中...</span>
-      <button type="button" class="btn-text-action" id="togglePathEditBtn" title="修改或自定义可执行文件位置">更改</button>
+      <button type="button" class="btn-text-action" id="togglePathEditBtn" title="收起路径面板">收起</button>
     </div>
-    <div class="path-edit-box" id="pathEditBox" style="display: none;">
+    <div class="path-edit-box" id="pathEditBox">
       <div class="path-edit-tip" id="pathEditTip" style="display: none;">
         <span class="tip-icon" id="pathTipIcon">⚠️</span>
         <span id="pathTipText">未在默认路径检测到此程序，如安装在非 C 盘请指定 .exe 路径:</span>

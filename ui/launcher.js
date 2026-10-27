@@ -107,6 +107,8 @@ function renderTargetsUi(targets, currentActive) {
   }
 
   const activeObj = currentActive === 'ide' ? ideTarget : hubTarget;
+  const targetPathCard = element('targetPathCard');
+  const pathReadyBar = element('pathReadyBar');
   const pathVal = element('currentPathText');
   const pathEditBox = element('pathEditBox');
   const customInput = element('customPathInput');
@@ -131,13 +133,19 @@ function renderTargetsUi(targets, currentActive) {
     }
 
     if (!pathEditOpen) {
+      if (targetPathCard) targetPathCard.style.display = 'none';
+      if (pathReadyBar) pathReadyBar.style.display = 'none';
       if (pathEditBox) pathEditBox.style.display = 'none';
       if (toggleBtn) toggleBtn.textContent = '更改';
     } else {
+      if (targetPathCard) targetPathCard.style.display = 'flex';
+      if (pathReadyBar) pathReadyBar.style.display = 'flex';
       if (pathEditBox) pathEditBox.style.display = 'flex';
       if (toggleBtn) toggleBtn.textContent = '收起';
     }
   } else {
+    if (targetPathCard) targetPathCard.style.display = 'flex';
+    if (pathReadyBar) pathReadyBar.style.display = 'none';
     // 只有在未检测到程序时，才显示警告提示
     if (pathVal) {
       pathVal.textContent = '未在默认路径检测到程序';
@@ -229,6 +237,8 @@ async function launch() {
   if (['preparing', 'launching', 'running'].includes(phase)) return;
   const currentObj = currentTargets[activeTarget] || {};
   if (!currentObj.exists) {
+    pathEditOpen = true;
+    renderTargetsUi(currentTargets, activeTarget);
     report(new Error(`未找到 ${activeTargetName}，请先点击“浏览”或输入路径完成配置`));
     return;
   }
@@ -401,7 +411,7 @@ document.addEventListener('click', event => {
 });
 
 // 绑定路径编辑与配置按钮事件
-element('togglePathEditBtn')?.addEventListener('click', () => {
+const handleTogglePath = () => {
   pathEditOpen = !pathEditOpen;
   renderTargetsUi(currentTargets, activeTarget);
   if (pathEditOpen) {
@@ -412,7 +422,9 @@ element('togglePathEditBtn')?.addEventListener('click', () => {
       input.focus();
     }
   }
-});
+};
+element('togglePathManualBtn')?.addEventListener('click', handleTogglePath);
+element('togglePathEditBtn')?.addEventListener('click', handleTogglePath);
 
 element('browseExeBtn')?.addEventListener('click', browseTargetExe);
 element('savePathBtn')?.addEventListener('click', saveCustomPath);
