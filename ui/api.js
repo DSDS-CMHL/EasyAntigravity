@@ -21,6 +21,7 @@ export const api = {
   browseExe: target => request('/api/browse-exe', { body: { target } }),
   setTargetPath: ({ target, path }) => request('/api/set-target-path', { body: { target, path } }),
   launch: () => request('/api/launch', { method: 'POST' }),
+  restart: () => request('/api/restart', { method: 'POST', timeoutMs: 30000 }),
   checkUpdate: body => request('/api/update', { body: body || {}, method: 'POST', timeoutMs: 60000 }),
   setTheme: theme => request('/api/theme', { body: { theme }, method: 'POST' }),
   hide: () => request('/api/hide', { method: 'POST' })

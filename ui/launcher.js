@@ -8,6 +8,7 @@ let refreshing = false;
 let stream;
 let pollTimer;
 let launchPending = false;
+let restartPending = false;
 let activeTarget = 'hub';
 let activeTargetName = 'Antigravity';
 let clientRunningState = false;
@@ -40,7 +41,7 @@ function report(error) { appendLog('SYSTEM', error.message || String(error), 'ta
 function updateProxyUi(enabled) {
   const row = element('proxyPortRow');
   const badge = element('patchStatusBadge');
-  const busyOrRunning = ['preparing', 'launching', 'running'].includes(phase);
+  const busyOrRunning = ['preparing', 'launching', 'running', 'restarting'].includes(phase);
   if (row) row.classList.toggle('disabled', !enabled);
   document.querySelectorAll('[data-port]').forEach(control => {
     control.disabled = !enabled || busyOrRunning;
@@ -57,11 +58,22 @@ function updateProxyUi(enabled) {
 function renderPhase(next, targetName = activeTargetName) {
   phase = next;
   document.body.dataset.uiState = next;
-  const busy = ['preparing', 'launching'].includes(next);
+  const busy = ['preparing', 'launching', 'restarting'].includes(next);
   const locked = busy || next === 'running';
   const button = element('launchBtn');
+  const restartButton = element('restartBtn');
+  const restartBusy = next === 'restarting';
   button.disabled = locked;
   button.classList.toggle('busy', busy);
+  if (restartButton) {
+    restartButton.hidden = !['running', 'restarting'].includes(next);
+    restartButton.disabled = next !== 'running';
+    restartButton.classList.toggle('busy', restartBusy);
+    const restartIcon = element('restartIcon');
+    const restartText = element('restartText');
+    if (restartIcon) restartIcon.textContent = restartBusy ? '◌' : '↻';
+    if (restartText) restartText.textContent = restartBusy ? '正在关闭并重启…' : '关闭后重启';
+  }
   if (element('proxyToggle')) element('proxyToggle').disabled = locked;
   document.querySelectorAll('[data-target]').forEach(control => { control.disabled = locked; });
   const proxyEnabled = element('proxyToggle') ? element('proxyToggle').checked : true;
@@ -84,6 +96,7 @@ function renderPhase(next, targetName = activeTargetName) {
   element('launchText').textContent = {
     preparing: proxyEnabled ? '正在准备代理环境…' : '正在准备启动环境…',
     launching: `正在启动 ${targetName}…`,
+    restarting: `正在关闭并重启 ${targetName}…`,
     running: `${targetName} 运行中`,
     error: '启动失败，点击重试'
   }[next] || `启动 ${targetName}`;
@@ -161,7 +174,11 @@ function renderStatus(status) {
     element('proxyToggle').checked = status.enableProxy;
     updateProxyUi(status.enableProxy);
   }
-  if (status.phase && !(launchPending && status.phase === 'idle')) renderPhase(status.phase, activeTargetName);
+  if (status.phase
+    && !(launchPending && status.phase === 'idle')
+    && !(restartPending && status.phase === 'idle')) {
+    renderPhase(status.phase, activeTargetName);
+  }
   if (status.dictEntries !== undefined) {
     element('dictCountBadge').textContent = `· 已载入 ${status.dictEntries} 词条`;
   }
@@ -212,7 +229,7 @@ function persistSettings() {
 }
 
 async function launch() {
-  if (['preparing', 'launching', 'running'].includes(phase)) return;
+  if (['preparing', 'launching', 'running', 'restarting'].includes(phase)) return;
   const currentObj = currentTargets[activeTarget] || {};
   if (!currentObj.exists) {
     pathModalDismissed = false;
@@ -234,6 +251,21 @@ async function launch() {
     showPathModal(true, `无法启动 ${activeTargetName}`, error.message || '请检查或重新指定可执行文件路径。');
   }
   finally { launchPending = false; }
+}
+
+async function restart() {
+  if (phase !== 'running' || restartPending) return;
+  restartPending = true;
+  renderPhase('restarting');
+  try {
+    await api.restart();
+    renderPhase('running');
+  } catch (error) {
+    renderPhase('error');
+    report(error);
+  } finally {
+    restartPending = false;
+  }
 }
 
 async function checkUpdate() {
@@ -353,6 +385,7 @@ async function resetDefaultPath() {
 
 const actions = {
   launch,
+  restart,
   hide: () => api.hide(),
   'toggle-theme': toggleTheme,
   'check-update': checkUpdate,

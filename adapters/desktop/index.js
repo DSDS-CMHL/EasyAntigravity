@@ -10,6 +10,7 @@ const {
   desktopRunning,
   detectRunningTarget
 } = require('./discovery');
+const { stopDesktop } = require('./process-control');
 
 function createDesktopAdapter(testMode = false) {
   const defaultTarget = resolveTarget('auto');
@@ -26,7 +27,8 @@ function createDesktopAdapter(testMode = false) {
         : (target === 'auto' ? resolveTarget('auto', settings) : discoverStandalone(settings.customHubPath));
       return { ...resolved, exists: fs.existsSync(resolved.appExe) };
     },
-    running: testMode ? async () => false : desktopRunning
+    running: testMode ? async () => false : desktopRunning,
+    stop: testMode ? async () => ({ ok: true, initialPids: [], remainingPids: [] }) : stopDesktop
   };
 }
 

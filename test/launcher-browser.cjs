@@ -107,6 +107,10 @@ async function main() {
     await waitFor("document.body.dataset.uiState === 'running'");
     assert.ok(calls.some(call => call.route === '/api/launch'));
     assert.equal(await evaluate("document.getElementById('targetIdeBtn').disabled"), true);
+    assert.equal(await evaluate("document.getElementById('restartBtn').hidden"), false);
+    await click('restartBtn');
+    await waitFor("document.body.dataset.uiState === 'running'");
+    assert.ok(calls.some(call => call.route === '/api/restart'));
     await waitFor("document.body.dataset.uiState === 'idle'");
     failLaunch = true;
     await click('launchBtn');

@@ -36,7 +36,7 @@ class Session {
     this.events.publish(this.snapshot());
   }
 
-  async launch() {
+  async launch({ skipRunningCheck = false } = {}) {
     if (this.closed) return { ok: false, error: 'EasyAG 正在退出' };
     if (this.phase === 'running') return { ok: true, alreadyRunning: true };
     if (this.phase === 'preparing' || this.phase === 'launching') return { ok: false, error: '正在启动，请稍候' };
@@ -45,8 +45,10 @@ class Session {
     try {
       const target = this.resolveTarget();
       if (!target.exists) throw new Error(`未找到 ${target.name}: ` + target.appExe);
-      const isRunning = await this.desktop.running(target.id);
-      if (isRunning) throw new Error(`请先退出已打开的 ${target.name}，再通过 EasyAG 启动以接入代理环境`);
+      if (!skipRunningCheck) {
+        const isRunning = await this.desktop.running(target.id);
+        if (isRunning) throw new Error(`请先退出已打开的 ${target.name}，再通过 EasyAG 启动以接入代理环境`);
+      }
       if (this.closed || generation !== this.generation) throw new Error('启动已取消');
       const settings = this.settings.get();
       this.activeTarget = target;
@@ -86,6 +88,52 @@ class Session {
       this.activeTarget = null;
       if (!this.closed) this.change('error');
       this.events.log('SYSTEM', error.message, 'tag-alert');
+      return { ok: false, error: error.message };
+    }
+  }
+
+  async restart() {
+    if (this.closed) return { ok: false, error: 'EasyAG 正在退出' };
+    if (['preparing', 'launching', 'restarting'].includes(this.phase)) {
+      return { ok: false, error: '正在关闭并重启，请稍候' };
+    }
+    if (this.phase !== 'running') {
+      return { ok: false, error: 'Antigravity 当前未处于运行状态' };
+    }
+
+    const generation = ++this.generation;
+    const target = this.activeTarget || this.resolveTarget();
+    const settings = this.settings.get();
+    this.child = null;
+    clearInterval(this.monitor);
+    this.monitor = null;
+    this.change('restarting');
+    this.events.log('SYSTEM', `${target.name} 正在关闭并清理后台进程…`, 'tag-proxy');
+
+    try {
+      await this.cdp.stop();
+      const result = this.desktop.stop
+        ? await this.desktop.stop(target.id, settings)
+        : { ok: true };
+      if (!result?.ok) {
+        const remaining = result?.remainingPids?.length
+          ? `（剩余进程: ${result.remainingPids.join(', ')}）`
+          : '';
+        throw new Error(`${target.name} 未能完全关闭${remaining}`);
+      }
+      if (this.closed || generation !== this.generation) throw new Error('重启已取消');
+
+      this.activeTarget = null;
+      this.change('idle');
+      const launched = await this.launch({ skipRunningCheck: true });
+      if (!launched.ok) throw new Error(launched.error || `${target.name} 重新启动失败`);
+      this.events.log('SYSTEM', `${target.name} 已关闭并重新启动`, 'tag-proxy');
+      return { ...launched, restarted: true };
+    } catch (error) {
+      this.child = null;
+      this.activeTarget = null;
+      if (!this.closed) this.change('error');
+      this.events.log('SYSTEM', `关闭后重启失败: ${error.message}`, 'tag-alert');
       return { ok: false, error: error.message };
     }
   }

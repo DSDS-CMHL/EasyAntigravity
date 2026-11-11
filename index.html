@@ -107,10 +107,16 @@
 
 
   <!-- 核心启动按钮 -->
-  <button class="launch-btn" id="launchBtn" data-action="launch">
-    <span class="launch-icon" id="launchIcon">🚀</span>
-    <span id="launchText">启动 Antigravity</span>
-  </button>
+  <div class="launch-actions">
+    <button class="launch-btn" id="launchBtn" data-action="launch">
+      <span class="launch-icon" id="launchIcon">🚀</span>
+      <span id="launchText">启动 Antigravity</span>
+    </button>
+    <button class="restart-btn" id="restartBtn" data-action="restart" hidden>
+      <span class="restart-icon" id="restartIcon">↻</span>
+      <span id="restartText">关闭后重启</span>
+    </button>
+  </div>
 
   <!-- 运行日志：常显卡片，不折叠 -->
   <div class="advanced" id="advancedPanel">

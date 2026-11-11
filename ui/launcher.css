@@ -692,7 +692,13 @@ input:disabled + .slider {
   border-color: var(--red);
 }
 
-/* 核心启动大按钮 */
+/* 核心启动操作 */
+.launch-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .launch-btn {
   background: linear-gradient(135deg, #818cf8 0%, #6366f1 100%);
   border: none;
@@ -726,6 +732,35 @@ input:disabled + .slider {
   transform: none;
 }
 .launch-btn.busy .launch-icon { animation: spin 900ms linear infinite; }
+.restart-btn {
+  background: var(--surface-subtle);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+.restart-btn:hover:not(:disabled) {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-glow);
+  transform: translateY(-1px);
+}
+.restart-btn:active:not(:disabled) { transform: translateY(0); }
+.restart-btn:disabled {
+  color: var(--text-dark);
+  cursor: wait;
+  opacity: 0.72;
+}
+.restart-btn.busy .restart-icon { animation: spin 900ms linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* 页面滚动条也收细，避免系统大灰条 */
