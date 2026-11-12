@@ -2,42 +2,138 @@ name: Publish Release
 
 on:
   push:
-    tags:
-      - 'v4.0.4-lite'
+    tags: ['v4.0.5-lite']
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: release-4.0.4-lite
+  group: release-4.0.5-lite
   cancel-in-progress: false
 
 jobs:
-  build:
-    uses: ./.github/workflows/tauri-ci.yml
+  repack:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            name: windows-x64
+            source_run: '43170020778'
+            artifact_id: '13921449275'
+          - runner: macos-15
+            name: macos-arm64-beta
+            source_run: '43172572400'
+            artifact_id: '13922169512'
+          - runner: macos-15-intel
+            name: macos-x64-beta
+            source_run: '43170020778'
+            artifact_id: '13922675155'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify native source compatibility and backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code 0551d5d3b735db126ab58fbcfe02fc0b8482bcf8 HEAD -- src-tauri/src src-tauri/capabilities src-tauri/Entitlements.plist
+          node -e "if(require('./package.json').version!=='4.0.5')process.exit(1)"
+          npm ci
+          npm run check
+          npm test
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ matrix.artifact_id }}
+          run-id: ${{ matrix.source_run }}
+          github-token: ${{ github.token }}
+          path: original
+          merge-multiple: true
+      - name: Repack Windows without native compilation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'EasyAntigravity-4.0.5-lite-windows-x64'
+          Expand-Archive -LiteralPath 'original/EasyAntigravity-4.0.4-lite-windows-x64.zip' -DestinationPath dist-release
+          Rename-Item -LiteralPath 'dist-release/EasyAntigravity-4.0.4-lite-windows-x64' -NewName $name
+          $stage = "dist-release/$name"
+          $exeHash = (Get-FileHash -LiteralPath "$stage/EasyAntigravity.exe").Hash
+          $nodeHash = (Get-FileHash -LiteralPath "$stage/easyag-node.exe").Hash
+          node scripts/repack-release-backend.cjs "$stage/backend"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item -LiteralPath 'docs/PORTABLE.md','LICENSE' -Destination $stage -Force
+          $env:EASYAG_TEST_NODE = (Resolve-Path "$stage/easyag-node.exe").Path
+          $env:EASYAG_TEST_SERVER = (Resolve-Path "$stage/backend/server.js").Path
+          node test/tauri-lifecycle.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node test/launcher-browser.cjs 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-FileHash -LiteralPath "$stage/EasyAntigravity.exe").Hash -ne $exeHash) { throw 'Native EXE changed' }
+          if ((Get-FileHash -LiteralPath "$stage/easyag-node.exe").Hash -ne $nodeHash) { throw 'Node runtime changed' }
+          New-Item -ItemType Directory -Path outgoing | Out-Null
+          Compress-Archive -LiteralPath $stage -DestinationPath "outgoing/$name.zip"
+          Expand-Archive -LiteralPath "outgoing/$name.zip" -DestinationPath dist-release/verified
+          $env:EASYAG_TEST_NODE = (Resolve-Path "dist-release/verified/$name/easyag-node.exe").Path
+          $env:EASYAG_TEST_SERVER = (Resolve-Path "dist-release/verified/$name/backend/server.js").Path
+          node test/tauri-lifecycle.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Repack and sign macOS without native compilation
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip="original/EasyAntigravity-4.0.4-lite-${{ matrix.name }}.zip"
+          unzip -t "$zip"
+          mkdir -p dist-release outgoing
+          ditto -x -k "$zip" dist-release
+          app="dist-release/EasyAntigravity.app"
+          native_before=$(shasum -a 256 "$app/Contents/MacOS/EasyAntigravity" | cut -d ' ' -f 1)
+          node scripts/repack-release-backend.cjs "$app/Contents/Resources/backend"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 4.0.5' "$app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 4.0.5' "$app/Contents/Info.plist"
+          test "$(shasum -a 256 "$app/Contents/MacOS/EasyAntigravity" | cut -d ' ' -f 1)" = "$native_before"
+          codesign --force --options runtime --sign - --entitlements src-tauri/Entitlements.plist "$app/Contents/MacOS/easyag-node"
+          codesign --force --options runtime --deep --sign - --entitlements src-tauri/Entitlements.plist "$app"
+          codesign --verify --deep --strict "$app"
+          "$app/Contents/MacOS/easyag-node" -e "console.log('Packaged V8 runtime OK:', process.versions.v8)"
+          export EASYAG_TEST_NODE="$PWD/$app/Contents/MacOS/easyag-node"
+          export EASYAG_TEST_SERVER="$PWD/$app/Contents/Resources/backend/server.js"
+          node test/tauri-lifecycle.test.cjs
+          name="EasyAntigravity-4.0.5-lite-${{ matrix.name }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "outgoing/$name"
+          unzip -t "outgoing/$name"
+          mkdir dist-release/verified
+          ditto -x -k "outgoing/$name" dist-release/verified
+          codesign --verify --deep --strict dist-release/verified/EasyAntigravity.app
+          test -f dist-release/verified/EasyAntigravity.app/Contents/Resources/backend/adapters/desktop/process-control.js
+          test -x dist-release/verified/EasyAntigravity.app/Contents/MacOS/easyag-node
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EasyAntigravity-4.0.5-lite-${{ matrix.name }}
+          path: outgoing/*.zip
+          if-no-files-found: error
+          retention-days: 14
 
   release:
-    needs: build
+    needs: repack
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
-      - name: Verify release version
-        run: |
-          node -e "const p=require('./package.json');if(p.version!=='4.0.4'||p.edition!=='lite')process.exit(1)"
       - uses: actions/download-artifact@v4
         with:
-          name: EasyAntigravity-4.0.4-lite-windows-x64
-          path: release-out
-      - uses: actions/download-artifact@v4
-        with:
-          name: EasyAntigravity-4.0.4-lite-macos-arm64-beta
-          path: release-out
-      - uses: actions/download-artifact@v4
-        with:
-          name: EasyAntigravity-4.0.4-lite-macos-x64-beta
+          pattern: EasyAntigravity-4.0.5-lite-*
+          merge-multiple: true
           path: release-out
       - name: Verify packages and generate SHA256
         shell: bash
@@ -49,16 +145,15 @@ jobs:
             unzip -t "$f"
             sha256sum "$f" > "SHA256-${f}.sha256"
           done
-      - name: Publish EasyAG 4.0.4 Lite
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.0.4-lite
+          tag_name: v4.0.5-lite
           target_commitish: ${{ github.sha }}
-          name: EasyAG v4.0.4 Lite · 新增 IDE 支持
+          name: EasyAG v4.0.5 Lite · AG 后台残留进程处理
           make_latest: true
           overwrite_files: true
           fail_on_unmatched_files: true
-          body_path: docs/RELEASE-v4.0.4.md
+          body_path: docs/RELEASE-v4.0.5.md
           files: |
             release-out/*.zip
             release-out/*.sha256

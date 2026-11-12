@@ -1,0 +1,18 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const { copyBackendResources } = require('./backend-resources.cjs');
+const root = path.resolve(__dirname, '..');
+const destination = path.resolve(process.argv[2] || '');
+const stage = path.join(root, 'dist-release') + path.sep;
+assert.ok(destination.startsWith(stage) && path.basename(destination) === 'backend', 'Only replace the extracted release backend');
+assert.ok(fs.realpathSync(destination).startsWith(fs.realpathSync(path.join(root, 'dist-release')) + path.sep));
+const license = fs.readFileSync(path.join(destination, 'NODE-LICENSE.txt'));
+fs.rmSync(destination, { recursive: true, force: true });
+copyBackendResources(root, destination);
+fs.writeFileSync(path.join(destination, 'NODE-LICENSE.txt'), license);
+const pkg = JSON.parse(fs.readFileSync(path.join(destination, 'package.json'), 'utf8'));
+assert.equal(pkg.version, '4.0.5');
+assert.ok(fs.existsSync(path.join(destination, 'adapters/desktop/process-control.js')));
+assert.equal(Object.keys(require('../features/i18n').loadDictionary(destination)).length, 3376);
+console.log('Release backend verified:', pkg.version, destination);
