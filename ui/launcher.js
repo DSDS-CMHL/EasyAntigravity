@@ -55,6 +55,20 @@ function updateProxyUi(enabled) {
   }
 }
 
+function updateEnhancementMonitorUi() {
+  const master = element('enhancementMonitorToggle');
+  const i18n = element('i18nToggle');
+  const context = element('contextMonitorToggle');
+  if (!master || !i18n || !context) return;
+  const i18nEnabled = i18n.checked;
+  const contextEnabled = context.checked;
+  master.checked = i18nEnabled && contextEnabled;
+  master.indeterminate = i18nEnabled !== contextEnabled;
+  master.title = master.indeterminate
+    ? '总开关：界面深度汉化或 AG 内监控处于部分开启状态'
+    : '总开关：同时启用或关闭界面深度汉化和 AG 内上下文、模型用量监控';
+}
+
 function renderPhase(next, targetName = activeTargetName) {
   phase = next;
   document.body.dataset.uiState = next;
@@ -164,6 +178,11 @@ function renderStatus(status) {
     element('proxyToggle').checked = status.enableProxy;
     updateProxyUi(status.enableProxy);
   }
+  if (status.enableI18n !== undefined && element('i18nToggle')) element('i18nToggle').checked = status.enableI18n;
+  if (status.enableContextMonitor !== undefined && element('contextMonitorToggle')) {
+    element('contextMonitorToggle').checked = status.enableContextMonitor;
+  }
+  updateEnhancementMonitorUi();
   if (status.phase && !(launchPending && status.phase === 'idle')) renderPhase(status.phase, activeTargetName);
   if (status.dictEntries !== undefined) {
     element('dictCountBadge').textContent = `· 已载入 ${status.dictEntries} 词条`;
@@ -198,6 +217,7 @@ function loadSettings(status) {
   if (element('proxyToggle')) element('proxyToggle').checked = status.enableProxy !== false;
   element('i18nToggle').checked = status.enableI18n;
   element('contextMonitorToggle').checked = status.enableContextMonitor;
+  updateEnhancementMonitorUi();
   updateProxyUi(status.enableProxy !== false);
   renderStatus(status);
 }
@@ -460,9 +480,15 @@ element('customPathInput')?.addEventListener('keydown', e => {
 });
 
 element('proxyPortInput').addEventListener('input', event => { event.target.value = event.target.value.replace(/\D/g, ''); });
-for (const id of ['proxyPortInput', 'proxyToggle', 'i18nToggle', 'contextMonitorToggle']) {
+for (const id of ['proxyPortInput', 'proxyToggle', 'i18nToggle', 'contextMonitorToggle', 'enhancementMonitorToggle']) {
   element(id)?.addEventListener('change', () => {
     if (id === 'proxyToggle') updateProxyUi(element('proxyToggle').checked);
+    if (id === 'enhancementMonitorToggle') {
+      const enabled = element('enhancementMonitorToggle').checked;
+      element('i18nToggle').checked = enabled;
+      element('contextMonitorToggle').checked = enabled;
+    }
+    updateEnhancementMonitorUi();
     persistSettings().catch(report);
   });
 }

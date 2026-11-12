@@ -36,6 +36,7 @@ const runtimeFiles = [
   'core/settings.js',
   'core/storage.js',
   'features/context-monitor.js',
+  'features/quota-monitor.js',
   'features/context-widget.js',
   'features/conversation-context.js',
   'features/i18n.js',

@@ -68,9 +68,15 @@
     </div>
   </div>
 
-  <!-- 卡片 2: 本地化汉化与上下文圆环 -->
+  <!-- 卡片 2: 本地化汉化与上下文、模型用量圆环 -->
   <div class="card">
-    <div class="card-label">界面深度汉化与监控</div>
+    <div class="row" id="enhancementMonitorRow">
+      <span style="font-weight: 500;">界面深度汉化与监控 <span style="font-size: 11px; color: var(--text-dark);">· 汉化和 AG 内监控</span></span>
+      <label class="switch" title="总开关：同时启用或关闭界面深度汉化和 AG 内上下文、模型用量监控">
+        <input type="checkbox" id="enhancementMonitorToggle" aria-label="界面深度汉化与监控" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
     <div class="row">
       <span style="font-weight: 500;">实时 DOM 字典翻译 <span id="dictCountBadge" class="dict-badge">· 已载入词条</span></span>
       <label class="switch">
@@ -79,9 +85,9 @@
       </label>
     </div>
     <div class="row" id="contextMonitorRow">
-      <span style="font-weight: 500;">AG 内上下文圆环 <span style="font-size: 11px; color: var(--text-dark);">· 速度在详情中</span></span>
-      <label class="switch" title="只读采集最近请求的上下文估算；关闭后移除 AG 内标记">
-        <input type="checkbox" id="contextMonitorToggle" aria-label="AG 内上下文圆环" checked>
+      <span style="font-weight: 500;">AG 内上下文与模型用量 <span style="font-size: 11px; color: var(--text-dark);">· 速度和额度在详情中</span></span>
+      <label class="switch" title="只读采集最近请求的上下文估算和当前模型额度；关闭后移除 AG 内两个标记">
+        <input type="checkbox" id="contextMonitorToggle" aria-label="AG 内上下文与模型用量" checked>
         <span class="slider"></span>
       </label>
     </div>

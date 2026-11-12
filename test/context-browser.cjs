@@ -26,8 +26,8 @@ async function main() {
     [contenteditable]{height:80px;background:transparent}#actions{display:flex;flex-direction:row;align-items:center;gap:6px;height:32px}
     button{white-space:nowrap;background:#333;color:#eee;border:1px solid #555;padding:5px}#send{margin-left:auto}
   </style></head><body><div class="antigravity-agent-side-panel"><div class="composer" id="${ide ? 'antigravity.agentSidePanelInputBox' : 'composer'}"><div contenteditable="true" role="textbox">Synthetic host; no real conversation.</div>
-  <div id="actions"><button data-testid="model-selector-trigger">Model selection</button><button id="send">Send</button></div></div></div>
-  <script>window.calls=[];window.sample=(event)=>({conversationId:event.conversationId,state:'live',sampledAt:Date.now(),context:{usedTokens:110000,maxTokens:256000,usedFraction:110000/256000,model:'Synthetic model',endpointModel:'gemini-3.8-flash-k'},speed:{tokensPerSecond:52,ttftSeconds:0.7,basis:'response',model:'Synthetic model',endpointModel:'gemini-3.8-flash-k'}});
+  <div id="actions"><button data-testid="model-selector-trigger">Gemini 4 Argon</button><button id="send">Send</button></div></div></div>
+  <script>window.calls=[];window.sample=(event)=>({conversationId:event.conversationId??null,state:event.conversationId?'live':'unavailable',sampledAt:Date.now(),context:event.conversationId?{usedTokens:110000,maxTokens:256000,usedFraction:110000/256000,model:'Gemini 4 Argon',endpointModel:'gemini-3.8-flash-k'}:null,speed:event.conversationId?{tokensPerSecond:52,ttftSeconds:0.7,basis:'response',model:'Gemini 4 Argon',endpointModel:'gemini-3.8-flash-k'}:null,quota:{state:'live',source:'summary',groups:[{id:'gemini-argon',displayName:'Gemini 4 Argon',family:'gemini',modelKeys:['Gemini 4 Argon'],buckets:[{id:'weekly',displayName:'Weekly limit',remainingFraction:0.67,resetAt:'2030-01-02T00:00:00Z'}]}]}});
   window.ideOwner={props:{cascadeId:'${id}'}};
   if (${ide}) document.querySelector('.antigravity-agent-side-panel').__k={__k:[{__e:document.getElementById('antigravity.agentSidePanelInputBox'),__:ideOwner}]};
   (${installContextWidget.toString()})(window,document,true,event=>{calls.push(event);queueMicrotask(()=>window.__easyagContext?.receive(event.requestId,sample(event)));},${ide ? `(win,doc)=>(${currentConversationId.toString()})(win,doc,'ide')` : 'undefined'});</script></body></html>`;
@@ -54,23 +54,45 @@ async function main() {
     await socket.command('Emulation.setDeviceMetricsOverride', { width: 900, height: 700, deviceScaleFactor: 1, mobile: false });
     const fixtureFile = path.join(profile, 'workbench.html');
     if (ide) fs.writeFileSync(fixtureFile, html);
+    if (!ide) {
+      await socket.command('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` });
+      for (let attempt = 0; attempt < 50; attempt++) {
+        if (await evaluate("Boolean(document.getElementById('easyag-context-monitor'))")) break;
+        await sleep(100);
+      }
+      assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('context-value').textContent"), '—');
+      assert.equal(await evaluate('calls.length'), 1, 'A new conversation requests quota statistics without a conversation ID');
+      assert.equal(await evaluate('calls[0].type'), 'quota-metrics');
+      assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('quota-value').textContent"), '67');
+    }
     await socket.command('Page.navigate', { url: ide ? pathToFileURL(fixtureFile).href : `http://127.0.0.1:${server.address().port}/c/${id}` });
     for (let attempt = 0; attempt < 50; attempt++) {
       if (await evaluate("Boolean(document.getElementById('easyag-context-monitor'))")) break;
       await sleep(100);
     }
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('context-value').textContent"), '43');
+    assert.match(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('quota-trigger').getAttribute('aria-label')"), /67%/);
+    assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('quota-value').textContent"), '67');
+    assert.equal(await evaluate("getComputedStyle(document.getElementById('easyag-context-monitor').shadowRoot.getElementById('quota-trigger')).color"), 'rgb(22, 163, 74)');
     if (ide) assert.equal(await evaluate("(()=>{try{document.createElement('div').innerHTML='';return false}catch(error){return error instanceof TypeError}})()"), true, 'Fixture must enforce Trusted Types');
     assert.doesNotMatch(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('strip').textContent"), /上下文|风险/);
     const layout = await evaluate("(()=>{const n=document.getElementById('easyag-context-monitor');n.style.display='flex';const b=n.shadowRoot.getElementById('trigger');return {hidden:n.hidden,node:n.getBoundingClientRect().toJSON(),button:b.getBoundingClientRect().toJSON(),scroll:b.scrollWidth,controls:[...document.querySelectorAll('#actions button')].map(c=>({rect:c.getBoundingClientRect().toJSON(),scroll:c.scrollWidth,width:c.clientWidth}))};})()");
     assert.equal(layout.hidden, false, JSON.stringify(layout));
     const nativeHit = "(()=>{const b=document.getElementById('send'),r=b.getBoundingClientRect();return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)===b;})()";
     assert.equal(await evaluate(nativeHit), true);
+    const beforeSend = await evaluate('calls.length');
+    await evaluate("document.getElementById('send').click()");
+    await sleep(1000);
+    assert.ok(await evaluate('calls.length') > beforeSend, 'Sending a message refreshes usage');
+    assert.equal(await evaluate('calls.at(-1).forceQuota'), true);
     await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('trigger').click()");
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('details').matches(':popover-open')"), true);
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('speed').textContent"), '52.0 tok/s');
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('endpoint').textContent"), 'gemini-3.8-flash-k');
-    await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('close').click()");
+    await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('close').click();document.getElementById('easyag-context-monitor').shadowRoot.getElementById('quota-trigger').click()");
+    assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('quota-details').matches(':popover-open')"), true);
+    assert.match(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('quota-body').textContent"), /Weekly limit/);
+    await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('quota-close').click()");
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('details').hidden"), true);
     await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('trigger').click();document.getElementById('send').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,composed:true}))");
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('details').hidden"), true);

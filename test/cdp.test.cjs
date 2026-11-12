@@ -57,6 +57,10 @@ test('CDP attaches, serves context-metrics in main-frame, reconnects and removes
   send(7, { type: 'context-metrics', requestId: '3', conversationId });
   await new Promise(resolve => setTimeout(resolve, 40));
   assert.deepEqual(sampled, [conversationId], 'Only valid main-frame context-metrics requests are processed');
+  await new Promise(resolve => setTimeout(resolve, 1300));
+  send(7, { type: 'quota-metrics', requestId: '4' });
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.deepEqual(sampled, [conversationId, null], 'Quota-only requests can run without a conversation ID');
   discoveryError = true;
   await hub.tick();
   assert.equal(hub.running, true, 'Temporary discovery failure must not end the session');

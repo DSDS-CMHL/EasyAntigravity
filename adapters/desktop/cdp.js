@@ -150,7 +150,9 @@ class CdpHub {
       && connection.contexts.has(params.executionContextId) && this.running && params.payload?.length < 20000) {
       try {
         const event = JSON.parse(params.payload);
-        if (event.type === 'context-metrics' && this.onMetrics && GUID.test(event.conversationId)
+        const contextMetrics = event.type === 'context-metrics' && GUID.test(event.conversationId);
+        const quotaMetrics = event.type === 'quota-metrics' && event.conversationId === undefined;
+        if ((contextMetrics || quotaMetrics) && this.onMetrics
           && typeof event.requestId === 'string' && /^\d{1,10}$/.test(event.requestId)) {
           void this.metrics(connection, params.executionContextId, event);
         }
@@ -163,6 +165,10 @@ class CdpHub {
     connection.metricsBusy = true;
     connection.metricsAt = Date.now();
     const generation = connection.injectGeneration;
+    // Direct callers from the existing bridge/tests omit `type`; preserve their
+    // historical context-metrics behavior while quota-only bridge events opt in.
+    const contextMetrics = event.type !== 'quota-metrics';
+    const conversationId = contextMetrics ? event.conversationId?.toLowerCase() : null;
     try {
       const location = await connection.command('Runtime.evaluate', { expression: `({ href: location.href, conversationId: (${currentConversationId.toString()})(window, document, ${JSON.stringify(this.target)}) })`, contextId, returnByValue: true });
       const href = location.result?.value?.href;
@@ -170,13 +176,19 @@ class CdpHub {
         webSocketDebuggerUrl: connection.url }, Number(new URL(connection.url).port))) return;
       const page = new URL(href), initial = new URL(connection.pageUrl);
       if (page.origin !== initial.origin || page.protocol !== initial.protocol
-        || location.result?.value?.conversationId !== event.conversationId.toLowerCase()) return;
-      const result = await this.onMetrics(event.conversationId.toLowerCase());
+        || (contextMetrics && location.result?.value?.conversationId !== conversationId)) return;
+      const result = await this.onMetrics(conversationId, {
+        forceQuota: event.forceQuota === true,
+        quotaOnly: !contextMetrics
+      });
       if (!this.running || generation !== connection.injectGeneration || !connection.contexts.has(contextId)) return;
       const payload = JSON.stringify(result);
       if (payload.length > 8192) return;
+      const routeCheck = contextMetrics
+        ? `(${currentConversationId.toString()})(window, document, ${JSON.stringify(this.target)}) === ${JSON.stringify(conversationId)}`
+        : 'true';
       await connection.command('Runtime.evaluate', { contextId,
-        expression: `if (location.href === ${JSON.stringify(href)} && (${currentConversationId.toString()})(window, document, ${JSON.stringify(this.target)}) === ${JSON.stringify(event.conversationId.toLowerCase())}) window.__easyagContext?.receive(${JSON.stringify(event.requestId)}, ${payload});` });
+        expression: `if (location.href === ${JSON.stringify(href)} && ${routeCheck}) window.__easyagContext?.receive(${JSON.stringify(event.requestId)}, ${payload});` });
     } catch { /* Stats are optional; never interrupt localization. */ }
     finally { connection.metricsBusy = false; }
   }

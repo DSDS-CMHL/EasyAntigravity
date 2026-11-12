@@ -13,6 +13,7 @@ const { createHost } = require('./host');
 const { createApi } = require('./api');
 const { LanguageService } = require('../adapters/desktop/language-service');
 const { ContextMonitor } = require('../features/context-monitor');
+const { QuotaMonitor } = require('../features/quota-monitor');
 
 function createApplication({ rootDir, dataDir, native = false, testMode = false, fetchBytes, onClose = () => {} }) {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -21,15 +22,34 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
   const desktop = createDesktopAdapter(testMode);
   let dictionary = loadDictionary(rootDir, dataDir);
   const host = createHost({ native, testMode, events });
-  const contextMonitor = new ContextMonitor(new LanguageService({ profile: desktop.profile }));
+  const languageService = new LanguageService({ profile: desktop.profile });
+  const contextMonitor = new ContextMonitor(languageService);
+  const quotaMonitor = new QuotaMonitor(languageService);
   let session;
   let lastStatus = '';
   const cdp = new CdpHub({
     profile: desktop.profile,
     source: (binding, target) => rendererSource(dictionary, settings.get(), binding, target),
-    onMetrics: id => settings.get().enableContextMonitor && session?.phase === 'running' && !testMode
-      ? contextMonitor.sample(id) : Promise.resolve({ conversationId: id, state: 'unavailable', context: null, speed: null }),
-    onStop: () => contextMonitor.reset(),
+    onMetrics: (id, options = {}) => {
+      if (!settings.get().enableContextMonitor || session?.phase !== 'running' || testMode) {
+        return Promise.resolve({
+          conversationId: id,
+          state: 'unavailable',
+          context: null,
+          speed: null,
+          quota: { state: 'unavailable', source: null, groups: [] }
+        });
+      }
+      const context = id
+        ? contextMonitor.sample(id)
+        : Promise.resolve({ conversationId: null, state: 'unavailable', context: null, speed: null });
+      return Promise.all([context, quotaMonitor.sample(options.forceQuota === true)])
+        .then(([contextResult, quota]) => ({ ...contextResult, sampledAt: contextResult.sampledAt || Date.now(), quota }));
+    },
+    onStop: () => {
+      contextMonitor.reset();
+      quotaMonitor.reset();
+    },
     onStatus: status => {
       const key = JSON.stringify([status.cdpSockets, status.cdpTargets, status.cdpError]);
       if (key === lastStatus) return;
@@ -42,6 +62,7 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
     contextMonitor.client.target = target.id;
     contextMonitor.client.parentPid = pid;
     contextMonitor.reset();
+    quotaMonitor.reset();
   } });
   const updater = new Updater({
     rootDir, dataDir, settings, events,
@@ -59,7 +80,7 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
   });
   let closing;
   const app = {
-    rootDir, dataDir, events, settings, desktop, host, cdp, session, contextMonitor, updater,
+    rootDir, dataDir, events, settings, desktop, host, cdp, session, contextMonitor, quotaMonitor, updater,
     status() {
       const currentSettings = settings.get();
       const allTargets = desktop.discoverAllTargets ? desktop.discoverAllTargets(currentSettings) : {};
@@ -86,10 +107,13 @@ function createApplication({ rootDir, dataDir, native = false, testMode = false,
       const previous = settings.get();
       assertLaunchSettingsMutable(input, previous, session.phase);
       const next = settings.update(input);
-      if (next.enableContextMonitor !== previous.enableContextMonitor) contextMonitor.reset();
+      if (next.enableContextMonitor !== previous.enableContextMonitor) {
+        contextMonitor.reset();
+        quotaMonitor.reset();
+      }
       await cdp.refresh();
       if (next.enableI18n !== previous.enableI18n) events.log('I18N', next.enableI18n ? '汉化已开启' : '汉化已关闭，原文已恢复', 'tag-i18n');
-      if (next.enableContextMonitor !== previous.enableContextMonitor) events.log('SYSTEM', next.enableContextMonitor ? '上下文监控已开启（只读）' : '上下文监控已关闭，上下文圆环已移除', 'tag-proxy');
+      if (next.enableContextMonitor !== previous.enableContextMonitor) events.log('SYSTEM', next.enableContextMonitor ? '上下文与模型用量监控已开启（只读）' : '上下文监控已关闭，上下文与模型用量圆环已移除', 'tag-proxy');
       if (input.enableProxy !== undefined && input.enableProxy !== previous.enableProxy) {
         events.log('SYSTEM', next.enableProxy ? `免 TUN 代理已开启（127.0.0.1:${next.port}）` : '免 TUN 代理已关闭（直连模式）', 'tag-proxy');
       }

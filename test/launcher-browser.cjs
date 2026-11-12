@@ -87,6 +87,17 @@ async function main() {
     await socket.command('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` });
     await waitFor("document.body.dataset.uiState === 'idle'");
     assert.equal(await evaluate("document.getElementById('launchBtn').disabled"), false);
+    assert.match(await evaluate("document.getElementById('enhancementMonitorRow').textContent"), /界面深度汉化与监控/);
+    assert.equal(await evaluate("document.getElementById('enhancementMonitorToggle').checked"), true);
+    assert.equal(await evaluate("document.getElementById('enhancementMonitorToggle').indeterminate"), false);
+    await click('contextMonitorToggle');
+    assert.equal(await evaluate("document.getElementById('enhancementMonitorToggle').indeterminate"), true);
+    await click('enhancementMonitorToggle');
+    assert.equal(await evaluate("document.getElementById('i18nToggle').checked"), true);
+    assert.equal(await evaluate("document.getElementById('contextMonitorToggle').checked"), true);
+    await click('enhancementMonitorToggle');
+    assert.equal(await evaluate("document.getElementById('i18nToggle').checked"), false);
+    assert.equal(await evaluate("document.getElementById('contextMonitorToggle').checked"), false);
     const theme = await evaluate('document.documentElement.dataset.theme');
     await click('themeToggleBtn');
     await waitFor(`document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`);
