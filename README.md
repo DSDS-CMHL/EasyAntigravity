@@ -33,6 +33,10 @@ EasyAG 是 Antigravity 的轻量启动器，支持桌面版与 IDE 启动选择�
 
 macOS Apple Silicon / Intel 包仍为 Beta，未经过 Apple 公证。要获得 Dock 修复，需要下载完整包并替换整个应用。本次后台、界面与词典更新也支持 macOS Lite 热更新；检查更新按钮无法使用时，请下载完整包。
 
+## 反重力账号与登录指南
+
+遇到 Antigravity 账号注册、登录受限等问题，可以参考社区整理的 [Antigravity 账号登录与常见问题指南（飞书知识库）](https://zcn91ppq6ur7.feishu.cn/wiki/L748wAHTriwwGVkc7TSc3TSennb)。
+
 ## 版本说明
 
 当前 Lite 版专注代理、汉化与上下文监控。Turbo Pilot、ARES 风险提示等历史功能属于 [v3.2.4](https://github.com/DSDS-CMHL/EasyAntigravity/releases/tag/v3.2.4)，代码保留在 `v3-pilot` 分支。
