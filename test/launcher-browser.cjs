@@ -26,6 +26,8 @@ async function main() {
     }
   };
   let failLaunch = false;
+  let conflict = false;
+  let cleanupFails = false;
   const server = http.createServer(async (req, res) => {
     const route = new URL(req.url, 'http://localhost').pathname;
     if (!route.startsWith('/api/')) {
@@ -52,7 +54,9 @@ async function main() {
         result = { ok: true, path: exe, status };
       }
     }
-    if (route === '/api/launch' && failLaunch) { res.statusCode = 409; result = { ok: false, error: 'Synthetic launch failure' }; }
+    if (route === '/api/launch' && failLaunch) { res.statusCode = 409; result = { ok: false, error: 'Synthetic launch failure', code: 'TARGET_NOT_FOUND' }; }
+    if (route === '/api/launch' && conflict) { res.statusCode = 409; result = { ok: false, code: 'PROCESS_CONFLICT', error: '已有 AG 进程' }; }
+    if (route === '/api/clean-and-launch' && cleanupFails) { res.statusCode = 409; result = { ok: false, code: 'CLEANUP_FAILED', error: '进程未退出' }; }
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify(result));
   });
@@ -107,11 +111,26 @@ async function main() {
     await waitFor("document.body.dataset.uiState === 'running'");
     assert.ok(calls.some(call => call.route === '/api/launch'));
     assert.equal(await evaluate("document.getElementById('targetIdeBtn').disabled"), true);
-    assert.equal(await evaluate("document.getElementById('restartBtn').hidden"), false);
-    await click('restartBtn');
-    await waitFor("document.body.dataset.uiState === 'running'");
-    assert.ok(calls.some(call => call.route === '/api/restart'));
     await waitFor("document.body.dataset.uiState === 'idle'");
+    conflict = true;
+    await click('launchBtn');
+    await waitFor("document.getElementById('processModal').style.display === 'flex'");
+    assert.equal(await evaluate("document.getElementById('pathModal').style.display"), 'none');
+    await click('processCancelBtn');
+    await click('launchBtn');
+    await waitFor("document.getElementById('processModal').style.display === 'flex'");
+    cleanupFails = true;
+    await click('processCleanBtn');
+    await waitFor("document.getElementById('processError').textContent.includes('进程未退出')");
+    assert.equal(await evaluate("document.getElementById('processCleanBtn').disabled"), false);
+    cleanupFails = false;
+    await click('processCleanBtn');
+    await waitFor("document.body.dataset.uiState === 'running'");
+    await click('launchBtn');
+    await waitFor("document.getElementById('processModal').style.display === 'flex'");
+    await click('processCancelBtn');
+    await waitFor("document.body.dataset.uiState === 'idle'");
+    conflict = false;
     failLaunch = true;
     await click('launchBtn');
     await waitFor(visible);

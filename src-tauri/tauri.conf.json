@@ -34,8 +34,7 @@
       "binaries/easyag-node"
     ],
     "resources": {
-      "backend/": "backend/",
-      "binaries/libnode.dylib": "libnode.dylib"
+      "backend/": "backend/"
     },
     "macOS": {
       "minimumSystemVersion": "11.0",

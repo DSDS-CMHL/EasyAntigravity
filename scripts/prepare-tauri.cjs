@@ -24,19 +24,6 @@ if (process.platform === 'darwin') {
   try {
     const { execFileSync } = require('node:child_process');
     const entPath = path.join(root, 'src-tauri', 'Entitlements.plist');
-    const nodeLib = fs.readdirSync(path.dirname(process.execPath).replace(/\/bin$/, '/lib'))
-      .find(name => /^libnode\..+\.dylib$/.test(name));
-    if (nodeLib) {
-      const nodeLibSource = path.join(path.dirname(process.execPath).replace(/\/bin$/, '/lib'), nodeLib);
-      const bundledNodeLibName = 'libnode.dylib';
-      const nodeLibDestination = path.join(root, 'src-tauri', 'binaries', bundledNodeLibName);
-      fs.copyFileSync(nodeLibSource, nodeLibDestination);
-      execFileSync('install_name_tool', ['-change', `@rpath/${nodeLib}`, `@rpath/${bundledNodeLibName}`, runtime]);
-      execFileSync('install_name_tool', ['-add_rpath', '@loader_path/../Resources', runtime]);
-      console.log('Bundled Node runtime library:', nodeLib, 'as', bundledNodeLibName);
-    } else {
-      console.warn('Warning: Could not locate libnode.dylib beside the selected Node runtime');
-    }
     if (fs.existsSync(entPath)) {
       execFileSync('codesign', ['--force', '--options', 'runtime', '--sign', '-', '--entitlements', entPath, runtime]);
       console.log('Signed easyag-node with JIT entitlements');

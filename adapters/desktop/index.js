@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { stopTarget, canonicalTarget } = require('./process-control');
 const {
   discoverDesktop,
   discoverStandalone,
@@ -10,7 +11,6 @@ const {
   desktopRunning,
   detectRunningTarget
 } = require('./discovery');
-const { stopDesktop } = require('./process-control');
 
 function createDesktopAdapter(testMode = false) {
   const defaultTarget = resolveTarget('auto');
@@ -28,7 +28,7 @@ function createDesktopAdapter(testMode = false) {
       return { ...resolved, exists: fs.existsSync(resolved.appExe) };
     },
     running: testMode ? async () => false : desktopRunning,
-    stop: testMode ? async () => ({ ok: true, initialPids: [], remainingPids: [] }) : stopDesktop
+    stop: testMode ? async () => ({ ok: true }) : (target, options) => stopTarget(canonicalTarget(target), options)
   };
 }
 

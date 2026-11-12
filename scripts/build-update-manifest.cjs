@@ -44,6 +44,7 @@ const runtimeFiles = [
   'adapters/desktop/cdp.js',
   'adapters/desktop/discovery.js',
   'adapters/desktop/index.js',
+  'adapters/desktop/process-control.js',
   'adapters/desktop/language-service.js',
   'adapters/desktop/language-service-discovery.js',
   'adapters/desktop/renderer.js',

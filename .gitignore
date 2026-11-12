@@ -1,5 +1,4 @@
 # Build outputs
-.build/
 EasyAntigravity.exe
 EasyAntigravity-dist/
 EasyAntigravity*.zip
@@ -36,7 +35,6 @@ src-tauri/target/
 src-tauri/gen/
 src-tauri/backend/
 src-tauri/binaries/easyag-node-*
-src-tauri/binaries/libnode.dylib
 easyag.log*
 settings.json
 

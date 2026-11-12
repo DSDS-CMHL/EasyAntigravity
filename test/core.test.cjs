@@ -63,38 +63,6 @@ test('An already open AG is not re-spawned on launch', async () => {
   assert.equal(running.calls.includes('spawn'), false);
 });
 
-test('Session closes the target process set before restarting without a running preflight', async () => {
-  const calls = [];
-  const child = new EventEmitter();
-  child.pid = 789; child.exitCode = null; child.kill = () => calls.push('kill');
-  const target = { id: 'hub', name: 'Antigravity', exists: true, appExe: 'test' };
-  const session = new Session({
-    settings: { get: () => ({ port: 7890, enableI18n: true, enableContextMonitor: true }) },
-    desktop: {
-      resolveTarget: () => target,
-      running: async () => { calls.push('running'); return true; },
-      stop: async () => { calls.push('stop'); return { ok: true }; }
-    },
-    cdp: { port: 9333, start: () => calls.push('cdp'), stop: async () => calls.push('stop-cdp') },
-    events: { log() {}, publish() {} }, host: { hide() {} },
-    spawnProcess() {
-      calls.push('spawn');
-      process.nextTick(() => child.emit('spawn'));
-      return child;
-    }
-  });
-  session.activeTarget = target;
-  session.phase = 'running';
-
-  const result = await session.restart();
-
-  assert.equal(result.ok, true);
-  assert.equal(result.restarted, true);
-  assert.equal(session.phase, 'running');
-  assert.equal(calls.includes('running'), false, 'restart should use the verified stop result before launching');
-  assert.deepEqual(calls.slice(0, 4), ['stop-cdp', 'stop', 'spawn', 'cdp']);
-});
-
 test('Settings validate values and lock port only while running', () => {
   assert.throws(() => normalizeSettings({ port: '7890xyz' }));
   assert.throws(() => normalizeSettings({ enableI18n: 'false' }));
