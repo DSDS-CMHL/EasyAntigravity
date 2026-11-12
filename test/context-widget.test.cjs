@@ -72,8 +72,8 @@ function fixture() {
 }
 
 const result = (conversationId = id) => ({ conversationId, state: 'live', sampledAt: Date.now(),
-  context: { usedTokens: 40000, maxTokens: 100000, usedFraction: .4, model: 'Model <not html>' },
-  speed: { tokensPerSecond: 50, ttftSeconds: .5, basis: 'response', shortSample: false } });
+  context: { usedTokens: 40000, maxTokens: 100000, usedFraction: .4, model: 'Model <not html>', endpointModel: 'gemini-3.8-flash-k' },
+  speed: { tokensPerSecond: 50, ttftSeconds: .5, basis: 'response', shortSample: false, model: 'Model <not html>', endpointModel: 'gemini-3.8-flash-k' } });
 
 test('widget has a compact context marker; speed appears only in closable details', () => {
   const f = fixture(); f.install();
@@ -86,6 +86,8 @@ test('widget has a compact context marker; speed appears only in closable detail
   assert.doesNotMatch(f.shadow.getElementById('context-value').textContent, /tok\/s|上下文/);
   assert.equal(f.shadow.getElementById('speed').textContent, '50.0 tok/s');
   assert.equal(f.shadow.getElementById('model').textContent, 'Model <not html>', 'Model names stay text, not HTML');
+  assert.equal(f.shadow.getElementById('endpoint').textContent, 'gemini-3.8-flash-k');
+  assert.match(trigger.title, /gemini-3.8-flash-k/);
   trigger.events.click(); assert.equal(card.hidden, false); assert.equal(card.open, true);
   f.shadow.getElementById('close').events.click(); assert.equal(card.hidden, true);
   trigger.events.click(); assert.equal(card.hidden, false, 'Can reopen after closing');
@@ -142,5 +144,18 @@ test('a full context fills the circle and unknown capacity never invents a perce
   f.win.__easyagContext.receive(f.sent.at(-1).requestId, unknown);
   assert.equal(f.shadow.getElementById('context-value').textContent, '—');
   assert.equal(f.shadow.getElementById('context-fill').style.strokeDashoffset, '62.832');
+  f.win.__easyagContext.dispose();
+});
+
+test('endpoint model does not leak across a model switch when new endpoint is pending', () => {
+  const f = fixture(); f.install();
+  f.win.__easyagContext.receive(f.sent[0].requestId, {
+    conversationId: id,
+    state: 'live',
+    sampledAt: Date.now(),
+    context: { usedTokens: 10, maxTokens: 100, usedFraction: .1, model: 'Claude Sonnet', endpointModel: null },
+    speed: { tokensPerSecond: 40, ttftSeconds: .4, basis: 'response', shortSample: false, model: 'Gemini 3.8 Flash', endpointModel: 'gemini-3.8-flash-k' }
+  });
+  assert.equal(f.shadow.getElementById('endpoint').textContent, '—');
   f.win.__easyagContext.dispose();
 });

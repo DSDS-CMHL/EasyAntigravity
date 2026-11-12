@@ -30,6 +30,45 @@ function resolveModelName(chat, modelMap) {
   return null;
 }
 
+// Extract underlying endpoint/response model string (Protobuf GeneratorMetadata field 1.19: response_model).
+function resolveEndpointModel(item) {
+  const chat = item?.chatModel;
+  if (!chat || typeof chat !== 'object') return null;
+  const directFields = [
+    chat.responseModel,
+    chat.response_model,
+    chat.usage?.responseModel,
+    chat.usage?.response_model,
+    chat.chatStartMetadata?.responseModel,
+    chat.chatStartMetadata?.response_model,
+    chat.servedModel,
+    chat.served_model,
+    chat.modelEndpoint,
+    chat.endpointModel,
+    chat.actualModel,
+    chat.backendModel,
+    chat.modelId,
+    item?.responseModel,
+    item?.response_model
+  ];
+  for (const candidate of directFields) {
+    if (typeof candidate !== 'string') continue;
+    const value = candidate.trim();
+    if (!value || value.length > 100 || /[\x00-\x1f\x7f<>]/.test(value)) continue;
+    if (/^MODEL_PLACEHOLDER_/i.test(value)) continue;
+    return value;
+  }
+  for (const raw of [chat.usage?.model, chat.model, chat.chatStartMetadata?.model, chat.modelOrAlias?.model]) {
+    if (typeof raw !== 'string') continue;
+    const value = raw.trim();
+    if (!value || value.length > 100 || /^MODEL_/i.test(value)) continue;
+    if (/^[a-z0-9][a-z0-9._:/-]{2,99}$/i.test(value) && /[a-z]/i.test(value) && /[-/:]/.test(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
 function extractModelMap(status) {
   const map = new Map();
   const configs = status?.userStatus?.cascadeModelConfigData?.clientModelConfigs;
@@ -46,14 +85,16 @@ function extractModelMap(status) {
 }
 
 function summarizeMetadata(generators, modelMap) {
-  const latestChat = generators.findLast(item => item?.chatModel)?.chatModel;
+  const latestItem = generators.findLast(item => item?.chatModel);
+  const latestChat = latestItem?.chatModel;
   const rawContext = latestChat?.chatStartMetadata?.contextWindowMetadata;
   const used = tokenCount(rawContext?.estimatedTokensUsed), capacity = tokenCount(rawContext?.maxContextTokens);
   const max = capacity > 0 ? capacity : null;
   const fallbackModel = resolveModelName(latestChat, modelMap)
     || resolveModelName(generators.findLast(item => resolveModelName(item?.chatModel, modelMap))?.chatModel, modelMap);
   const model = fallbackModel;
-  const context = used === null ? null : { usedTokens: used, maxTokens: max, usedFraction: max ? used / max : null, model };
+  const endpointModel = resolveEndpointModel(latestItem);
+  const context = used === null ? null : { usedTokens: used, maxTokens: max, usedFraction: max ? used / max : null, model, endpointModel };
   const seen = new Set();
   let speed = null;
   for (const [index, item] of generators.entries()) {
@@ -68,7 +109,8 @@ function summarizeMetadata(generators, modelMap) {
     if (tokens === null || !(duration > 0)) continue;
     speed = { tokensPerSecond: tokens / duration, ttftSeconds: seconds(chat.timeToFirstToken),
       basis: visible !== null || (output !== null && thinking !== null) ? 'response' : 'all-output',
-      shortSample: duration < 1, model: resolveModelName(chat, modelMap) || fallbackModel };
+      shortSample: duration < 1, model: resolveModelName(chat, modelMap) || fallbackModel,
+      endpointModel: resolveEndpointModel(item) };
     if (!Number.isFinite(speed.tokensPerSecond)) speed = null;
   }
   return { context, speed };
@@ -125,4 +167,4 @@ class ContextMonitor {
   }
 }
 
-module.exports = { ContextMonitor, summarizeMetadata, tokenCount, seconds };
+module.exports = { ContextMonitor, summarizeMetadata, resolveEndpointModel, tokenCount, seconds };

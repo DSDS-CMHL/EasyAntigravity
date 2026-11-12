@@ -72,14 +72,23 @@ function installContextWidget(win, doc, enabled, report, readConversationId) {
     const percentage = typeof context?.usedFraction === 'number' ? Math.round(context.usedFraction * 100) : null;
     shadow.getElementById('context-value').textContent = percentage !== null ? String(Math.min(999, percentage)) + (percentage > 999 ? '+' : '') : '—';
     shadow.getElementById('context-fill').style.strokeDashoffset = String(62.832 * (1 - Math.max(0, Math.min(1, context?.usedFraction ?? 0))));
-    button.setAttribute('aria-label', percentage !== null ? `上下文估算 ${percentage}%，点击查看详情` : '上下文估算暂不可用，点击查看详情');
+    const resolvedEndpoint = context?.endpointModel
+      || ((!context?.model || !speed?.model || context.model === speed.model) ? speed?.endpointModel : '')
+      || '';
+    button.setAttribute('aria-label', percentage !== null
+      ? `上下文估算 ${percentage}%${resolvedEndpoint ? '，底层模型 ' + resolvedEndpoint : ''}，点击查看详情`
+      : '上下文估算暂不可用，点击查看详情');
     button.dataset.tone = percentage >= 90 ? 'high' : percentage >= 75 ? 'medium' : 'normal';
-    button.title = percentage !== null ? `EasyAG 上下文估算 ${percentage}% · 点击查看详情` : 'EasyAG 上下文估算暂不可用 · 点击查看详情';
+    button.title = percentage !== null
+      ? `EasyAG 上下文估算 ${percentage}%${resolvedEndpoint ? ' · ' + resolvedEndpoint : ''} · 点击查看详情`
+      : 'EasyAG 上下文估算暂不可用 · 点击查看详情';
     shadow.getElementById('usage').textContent = context
       ? `${compact(context.usedTokens)} / ${context.maxTokens === null ? '容量未知' : compact(context.maxTokens)} tokens` : '暂不可用';
     const domModel = typeof composer?.anchor?.textContent === 'string' ? composer.anchor.textContent.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
     const resolvedModel = context?.model || speed?.model || domModel || '—';
     shadow.getElementById('model').textContent = resolvedModel;
+    const endpointNode = shadow.getElementById('endpoint');
+    if (endpointNode) endpointNode.textContent = resolvedEndpoint || '—';
     shadow.getElementById('speed').textContent = speed ? `${speed.tokensPerSecond.toFixed(1)} tok/s` : '等待有效请求';
     shadow.getElementById('ttft').textContent = speed?.ttftSeconds !== null && speed?.ttftSeconds !== undefined ? `${speed.ttftSeconds.toFixed(2)} 秒` : '—';
     const noteModel = speed?.model || context?.model || domModel;
@@ -132,6 +141,10 @@ function installContextWidget(win, doc, enabled, report, readConversationId) {
         make("div", {},
           make("dt", {}, "采样模型"),
           make("dd", {"id": "model"})
+        ),
+        make("div", {"id": "endpoint-row"},
+          make("dt", {}, "底层端点模型"),
+          make("dd", {"id": "endpoint"})
         ),
         make("div", {},
           make("dt", {}, "最近有效请求速度"),

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { once } = require('node:events');
-const { ContextMonitor, summarizeMetadata, seconds } = require('../features/context-monitor');
+const { ContextMonitor, summarizeMetadata, resolveEndpointModel, seconds } = require('../features/context-monitor');
 const { LanguageService } = require('../adapters/desktop/language-service');
 const { serverFromDiscovery, parseNetstat, parsePs, parseLsof } = require('../adapters/desktop/language-service-discovery');
 const { CdpHub } = require('../adapters/desktop/cdp');
@@ -147,4 +147,25 @@ test('CDP statistics reject remote origins, wrong conversations, iframe contexts
   await new Promise(done => setImmediate(done));
   connection.injectGeneration++; resolve({ conversationId: id }); await pending;
   assert.equal(outputs.length, 1);
+});
+
+test('endpoint model extracts Protobuf 1.19 responseModel separately from UI display label and rejects unsafe values', () => {
+  const modelMap = new Map([['MODEL_PLACEHOLDER_M26', 'Gemini 3.8 Flash (UI)']]);
+  const sample = {
+    chatModel: {
+      model: 'MODEL_PLACEHOLDER_M26',
+      responseModel: 'gemini-3.8-flash-k',
+      usage: { messageId: 'm1', responseOutputTokens: '60' },
+      streamingDuration: '1.5s',
+      chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 50, maxContextTokens: 200 } }
+    }
+  };
+  const summary = summarizeMetadata([sample], modelMap);
+  assert.equal(summary.context.model, 'Gemini 3.8 Flash (UI)');
+  assert.equal(summary.context.endpointModel, 'gemini-3.8-flash-k');
+  assert.equal(summary.speed.endpointModel, 'gemini-3.8-flash-k');
+  assert.equal(resolveEndpointModel({ chatModel: { model: 'MODEL_PLACEHOLDER_M26' } }), null);
+  assert.equal(resolveEndpointModel({ chatModel: { model: 'gemini-3.8-flash-k' } }), 'gemini-3.8-flash-k');
+  assert.equal(resolveEndpointModel({ chatModel: { responseModel: 'bad\nvalue' } }), null);
+  assert.equal(resolveEndpointModel({ chatModel: { responseModel: '<script>' } }), null);
 });

@@ -27,7 +27,7 @@ async function main() {
     button{white-space:nowrap;background:#333;color:#eee;border:1px solid #555;padding:5px}#send{margin-left:auto}
   </style></head><body><div class="antigravity-agent-side-panel"><div class="composer" id="${ide ? 'antigravity.agentSidePanelInputBox' : 'composer'}"><div contenteditable="true" role="textbox">Synthetic host; no real conversation.</div>
   <div id="actions"><button data-testid="model-selector-trigger">Model selection</button><button id="send">Send</button></div></div></div>
-  <script>window.calls=[];window.sample=(event)=>({conversationId:event.conversationId,state:'live',sampledAt:Date.now(),context:{usedTokens:110000,maxTokens:256000,usedFraction:110000/256000,model:'Synthetic model'},speed:{tokensPerSecond:52,ttftSeconds:0.7,basis:'response'}});
+  <script>window.calls=[];window.sample=(event)=>({conversationId:event.conversationId,state:'live',sampledAt:Date.now(),context:{usedTokens:110000,maxTokens:256000,usedFraction:110000/256000,model:'Synthetic model',endpointModel:'gemini-3.8-flash-k'},speed:{tokensPerSecond:52,ttftSeconds:0.7,basis:'response',model:'Synthetic model',endpointModel:'gemini-3.8-flash-k'}});
   window.ideOwner={props:{cascadeId:'${id}'}};
   if (${ide}) document.querySelector('.antigravity-agent-side-panel').__k={__k:[{__e:document.getElementById('antigravity.agentSidePanelInputBox'),__:ideOwner}]};
   (${installContextWidget.toString()})(window,document,true,event=>{calls.push(event);queueMicrotask(()=>window.__easyagContext?.receive(event.requestId,sample(event)));},${ide ? `(win,doc)=>(${currentConversationId.toString()})(win,doc,'ide')` : 'undefined'});</script></body></html>`;
@@ -69,6 +69,7 @@ async function main() {
     await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('trigger').click()");
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('details').matches(':popover-open')"), true);
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('speed').textContent"), '52.0 tok/s');
+    assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('endpoint').textContent"), 'gemini-3.8-flash-k');
     await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('close').click()");
     assert.equal(await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('details').hidden"), true);
     await evaluate("document.getElementById('easyag-context-monitor').shadowRoot.getElementById('trigger').click();document.getElementById('send').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,composed:true}))");
