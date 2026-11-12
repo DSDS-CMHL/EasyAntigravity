@@ -103,6 +103,10 @@ function createApi(app) {
         const result = await app.session.launch();
         return json(response, result, result.ok ? 200 : 409);
       }
+      if (method === 'POST' && route === '/api/clean-and-launch') {
+        const result = await app.session.cleanAndLaunch();
+        return json(response, result, result.ok ? 200 : 409);
+      }
       if (method === 'POST' && route === '/api/update') {
         const data = await readBody(request);
         const result = await app.updater.checkAndApply({ manifestUrl: data.manifestUrl });

@@ -52,7 +52,7 @@ function createSettings(file) {
 }
 
 function assertLaunchSettingsMutable(input, previous, phase) {
-  if (!['running', 'preparing', 'launching'].includes(phase)) return;
+  if (!['running', 'preparing', 'launching', 'cleaning'].includes(phase)) return;
   if (input.port !== undefined && Number(input.port) !== previous.port) {
     throw new Error('代理端口将在 AG 退出后才能修改');
   }

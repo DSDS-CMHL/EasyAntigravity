@@ -161,6 +161,22 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="processModal" style="display:none;">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="processModalTitle">
+      <div class="modal-head">
+        <div class="modal-title" id="processModalTitle">检测到已有 AG 进程</div>
+        <button type="button" class="modal-close-btn" data-action="dismiss-process" aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc" id="processModalDesc">如果你已关闭 AG，可能仍有后台进程未退出。清理会结束当前用户在此安装目录下的 AG 主程序及相关后台进程，请先保存工作并确认没有需要保留的任务。</p>
+        <p class="modal-desc" id="processError" role="alert"></p>
+      </div>
+      <div class="modal-foot"><div class="modal-foot-right">
+        <button type="button" class="btn-modal-cancel" data-action="dismiss-process" id="processCancelBtn">取消</button>
+        <button type="button" class="btn-path-action btn-save" data-action="clean-process" id="processCleanBtn">清理并重新启动</button>
+      </div></div>
+    </div>
+  </div>
   <script type="module" src="/ui/launcher.js"></script>
 </body>
 </html>

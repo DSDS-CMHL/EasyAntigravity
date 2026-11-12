@@ -9,7 +9,7 @@ export async function request(route, { body, method = body === undefined ? 'GET'
       signal: controller.signal
     });
     const data = await response.json();
-    if (!response.ok || data?.ok === false) throw new Error(data?.error || `请求失败 (${response.status})`);
+    if (!response.ok || data?.ok === false) throw Object.assign(new Error(data?.error || `请求失败 (${response.status})`), { code: data?.code });
     return data;
   } finally { clearTimeout(timeout); }
 }
@@ -21,6 +21,7 @@ export const api = {
   browseExe: target => request('/api/browse-exe', { body: { target } }),
   setTargetPath: ({ target, path }) => request('/api/set-target-path', { body: { target, path } }),
   launch: () => request('/api/launch', { method: 'POST' }),
+  cleanAndLaunch: () => request('/api/clean-and-launch', { method: 'POST', timeoutMs: 60000 }),
   checkUpdate: body => request('/api/update', { body: body || {}, method: 'POST', timeoutMs: 60000 }),
   setTheme: theme => request('/api/theme', { body: { theme }, method: 'POST' }),
   hide: () => request('/api/hide', { method: 'POST' })

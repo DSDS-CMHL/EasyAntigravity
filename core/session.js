@@ -39,14 +39,14 @@ class Session {
   async launch() {
     if (this.closed) return { ok: false, error: 'EasyAG 正在退出' };
     if (this.phase === 'running') return { ok: true, alreadyRunning: true };
-    if (this.phase === 'preparing' || this.phase === 'launching') return { ok: false, error: '正在启动，请稍候' };
+    if (['preparing', 'launching', 'cleaning'].includes(this.phase)) return { ok: false, error: '正在启动，请稍候' };
     const generation = ++this.generation;
     this.change('preparing');
     try {
       const target = this.resolveTarget();
-      if (!target.exists) throw new Error(`未找到 ${target.name}: ` + target.appExe);
+      if (!target.exists) throw Object.assign(new Error(`未找到 ${target.name}: ` + target.appExe), { code: 'TARGET_NOT_FOUND' });
       const isRunning = await this.desktop.running(target.id);
-      if (isRunning) throw new Error(`请先退出已打开的 ${target.name}，再通过 EasyAG 启动以接入代理环境`);
+      if (isRunning) throw Object.assign(new Error(`检测到已有 ${target.name} 进程，请先退出；如窗口已经关闭，可清理后重新启动。`), { code: 'PROCESS_CONFLICT' });
       if (this.closed || generation !== this.generation) throw new Error('启动已取消');
       const settings = this.settings.get();
       this.activeTarget = target;
@@ -86,7 +86,38 @@ class Session {
       this.activeTarget = null;
       if (!this.closed) this.change('error');
       this.events.log('SYSTEM', error.message, 'tag-alert');
-      return { ok: false, error: error.message };
+      return { ok: false, error: error.message, code: error.code || 'LAUNCH_FAILED' };
+    }
+  }
+
+  async cleanAndLaunch() {
+    if (this.closed || ['preparing', 'launching', 'cleaning'].includes(this.phase)) return { ok: false, error: '当前正在处理启动，请稍候', code: 'BUSY' };
+    const target = this.activeTarget || this.resolveTarget();
+    if (!target.exists) return { ok: false, error: '可执行文件不存在，请重新指定路径', code: 'TARGET_NOT_FOUND' };
+    const generation = ++this.generation;
+    this.change('cleaning');
+    // Detach the old child first: its exit must not reset a new launch's state.
+    this.child = null;
+    clearInterval(this.monitor);
+    try {
+      if (this.finishing) await this.finishing;
+      this.change('cleaning');
+      await this.cdp.stop();
+      if (!this.desktop.stop) throw new Error('当前环境不支持进程清理');
+      const result = await this.desktop.stop(target, { cancelled: () => this.closed || generation !== this.generation });
+      if (!result?.ok) throw new Error('仍有进程未退出，已停止重新启动，请检查权限或稍后重试');
+      if (this.closed || generation !== this.generation) throw new Error('清理已取消');
+      // Keep the normal running preflight; never bypass verification after cleanup.
+      if (await this.desktop.running(target.id)) throw new Error('仍检测到同名进程，已停止重新启动');
+      this.activeTarget = null;
+      this.events.log('SYSTEM', `${target.name} 进程已清理，正在重新启动`, 'tag-proxy');
+      this.change('idle');
+      return this.launch();
+    } catch (error) {
+      this.activeTarget = null;
+      if (!this.closed) this.change('error');
+      this.events.log('SYSTEM', `清理失败: ${error.message}`, 'tag-alert');
+      return { ok: false, error: error.message, code: 'CLEANUP_FAILED' };
     }
   }
 
@@ -109,11 +140,13 @@ class Session {
       this.cdp.start();
     }
     this.events.log('SYSTEM', `已连接现有 ${runningTarget.name} 实例`, 'tag-proxy');
+    const monitorGeneration = this.generation;
     this.monitor = setInterval(async () => {
       if (this.monitoring || this.closed) return;
       this.monitoring = true;
       try {
-        if (!await this.desktop.running(runningTarget.id)) await this.finish(`${runningTarget.name} 已关闭`);
+        const running = await this.desktop.running(runningTarget.id);
+        if (monitorGeneration === this.generation && !this.closed && !running) await this.finish(`${runningTarget.name} 已关闭`);
       } finally { this.monitoring = false; }
     }, 3000);
     this.monitor.unref();
