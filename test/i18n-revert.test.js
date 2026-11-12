@@ -65,6 +65,21 @@ window.__easyagI18n.dispose();
 assert.equal(nodes[0].nodeValue, 'Search...', 'Restore the latest host text after dynamic changes');
 
 const vm = require('node:vm');
+const quotaText = 'You have used some of your weekly limit, it will fully refresh in 5 days, 1 hour.';
+const dynamicNodes = [text(quotaText, body), text('2 active conversations', body),
+  text(quotaText, code), text('You have used some of your weekly limit, it will fully refresh in unknown.', body)];
+nodes.push(...dynamicNodes);
+installI18n(window, document, dictionary, true);
+assert.equal(dynamicNodes[0].nodeValue, '你已使用部分每周额度，将在 5 天、1 小时后完全恢复。');
+assert.equal(dynamicNodes[1].nodeValue, '2 个进行中的对话');
+assert.equal(dynamicNodes[2].nodeValue, quotaText, 'Code remains untouched even for known UI patterns');
+assert.equal(dynamicNodes[3].nodeValue, 'You have used some of your weekly limit, it will fully refresh in unknown.');
+dynamicNodes[0].nodeValue = 'You have used some of your 5-hour limit, it will fully refresh in 3 hours, 4 minutes.';
+callbacks.at(-1).callback([{ type: 'characterData', target: dynamicNodes[0] }]);
+assert.equal(dynamicNodes[0].nodeValue, '你已使用部分 5 小时额度，将在 3 小时、4 分钟后完全恢复。');
+window.__easyagI18n.dispose();
+assert.equal(dynamicNodes[0].nodeValue, 'You have used some of your 5-hour limit, it will fully refresh in 3 hours, 4 minutes.');
+assert.equal(dynamicNodes[1].nodeValue, '2 active conversations');
 const { rendererSource, disposeSource } = require('../adapters/desktop/renderer');
 const mounts = [];
 const frameWindow = { MutationObserver: Observer, NodeFilter: { SHOW_TEXT: 4 } };

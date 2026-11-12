@@ -41,13 +41,31 @@ function installI18n(window, document, dictionary, enabled) {
   const attributes = new Map();
   const ignored = 'script,style,pre,code,textarea,[contenteditable="true"],[data-testid*="message-content"]';
   const ignoredElement = element => element?.closest?.(ignored);
+  function lookup(key) {
+    if (typeof dictionary[key] === 'string') return dictionary[key];
+    // Only match known UI counters; never substitute arbitrary message text.
+    const count = key.match(/^(\d+) active conversations$/);
+    if (count && dictionary['{count} active conversations']) {
+      return dictionary['{count} active conversations'].replace('{count}', count[1]);
+    }
+    const quota = key.match(/^(You have used some of your (?:weekly|5-hour) limit, it will fully refresh in )(.+)\.$/);
+    if (!quota) return null;
+    const template = dictionary[quota[1] + '{time}.'];
+    if (!template || !/^\d+ (?:days?|hours?|minutes?|seconds?)(?:, \d+ (?:days?|hours?|minutes?|seconds?))*$/.test(quota[2])) return null;
+    const parts = quota[2].split(', ').map(part => {
+      const [, number, unit] = part.match(/^(\d+) (\w+)$/);
+      return dictionary['{count} ' + unit]?.replace('{count}', number);
+    });
+    return parts.every(Boolean) ? template.replace('{time}', parts.join('、')) : null;
+  }
   function translateText(node) {
     if (ignoredElement(node.parentElement)) return;
     const raw = node.nodeValue;
     if (texts.get(node)?.translated === raw) return;
     const key = raw?.trim();
-    if (!key || typeof dictionary[key] !== 'string' || dictionary[key] === key) return;
-    const translated = raw.replace(key, dictionary[key]);
+    const value = key && lookup(key);
+    if (!value || value === key) return;
+    const translated = raw.replace(key, value);
     texts.set(node, { original: raw, translated });
     node.nodeValue = translated;
   }
@@ -57,8 +75,9 @@ function installI18n(window, document, dictionary, enabled) {
       const original = element.getAttribute(name);
       if (attributes.get(element)?.get(name)?.translated === original) continue;
       const key = original?.trim();
-      if (!key || !dictionary[key] || dictionary[key] === key) continue;
-      const translated = original.replace(key, dictionary[key]);
+      const value = key && lookup(key);
+      if (!value || value === key) continue;
+      const translated = original.replace(key, value);
       if (!attributes.has(element)) attributes.set(element, new Map());
       attributes.get(element).set(name, { original, translated });
       element.setAttribute(name, translated);
