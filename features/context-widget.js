@@ -94,6 +94,11 @@ function installContextWidget(win, doc, enabled, report, readConversationId) {
   };
   const clampFraction = value => typeof value === 'number' && Number.isFinite(value)
     ? Math.max(0, Math.min(1, value)) : null;
+  const quotaPercentage = value => {
+    const fraction = clampFraction(value);
+    if (fraction === null) return null;
+    return fraction < 0.01 ? 0 : Math.round(fraction * 100);
+  };
   const normalizeModel = value => String(value || '')
     .replace(/\b(?:high|medium|low|new|notice)\b/gi, '')
     .replace(/[高低中]/g, '')
@@ -173,12 +178,14 @@ function installContextWidget(win, doc, enabled, report, readConversationId) {
       body.appendChild(heading);
       for (const bucket of group.buckets || []) {
         const fraction = clampFraction(bucket.remainingFraction);
-        const percent = fraction === null || bucket.disabled ? '—' : `${Math.round(fraction * 100)}% 剩余`;
+        const percentValue = bucket.disabled ? null : quotaPercentage(fraction);
+        const percent = percentValue === null ? '—' : `${percentValue}% 剩余`;
         const reset = resetText(bucket);
         const left = make('div', { class: 'quota-window-left' },
           make('div', { class: 'quota-window-name' }, bucket.displayName),
           ...(reset ? [make('div', { class: 'quota-reset' }, reset)] : []));
-        const right = make('div', { class: 'quota-window-value' }, make('span', {}, percent), quotaRing(fraction));
+        const right = make('div', { class: 'quota-window-value' }, make('span', {}, percent),
+          quotaRing(percentValue === 0 ? 0 : fraction));
         body.appendChild(make('div', { class: 'quota-window' }, left, right));
       }
     }
@@ -219,7 +226,7 @@ function installContextWidget(win, doc, enabled, report, readConversationId) {
         : !route ? '打开或新建对话后读取上下文统计；模型用量会自动更新。'
           : '当前统计不可用，将自动重试；不影响其他增强功能。';
     const quota = quotaSelection();
-    const quotaPercent = quota.remainingFraction === null ? null : Math.round(quota.remainingFraction * 100);
+    const quotaPercent = quotaPercentage(quota.remainingFraction);
     const quotaValue = shadow.getElementById('quota-value');
     if (quotaValue) quotaValue.textContent = quotaPercent === null
       ? '—'
@@ -232,7 +239,8 @@ function installContextWidget(win, doc, enabled, report, readConversationId) {
       ? 'EasyAG 模型用量暂不可用 · 点击查看详情'
       : `EasyAG 当前模型剩余用量 ${quotaPercent}% · 点击查看详情`;
     const quotaFill = shadow.getElementById('quota-fill');
-    if (quotaFill) quotaFill.style.strokeDashoffset = String(62.832 * (1 - (quota.remainingFraction ?? 0)));
+    const quotaFillFraction = quotaPercent === 0 ? 0 : quota.remainingFraction;
+    if (quotaFill) quotaFill.style.strokeDashoffset = String(62.832 * (1 - (quotaFillFraction ?? 0)));
     renderQuotaDetails(quota);
     positionCard(card, button);
     positionCard(quotaCard, quotaButton);

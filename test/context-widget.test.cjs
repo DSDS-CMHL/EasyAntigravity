@@ -269,6 +269,23 @@ test('model usage ring falls back to a shared family quota and keeps unknown dis
   f.win.__easyagContext.dispose();
 });
 
+test('model usage ring shows a sub-percent exhausted quota as zero', () => {
+  const f = fixture(); f.install();
+  f.win.__easyagContext.receive(f.sent[0].requestId, quotaResult([{
+    id: 'gemini-argon',
+    displayName: 'Gemini 4 Argon',
+    family: 'gemini',
+    modelKeys: ['Gemini 4 Argon'],
+    buckets: [{ id: 'weekly', displayName: 'Weekly limit', remainingFraction: .005 }]
+  }]));
+  const quotaButton = f.shadow.getElementById('quota-trigger');
+  assert.equal(f.shadow.getElementById('quota-value').textContent, '0');
+  assert.match(quotaButton.attrs['aria-label'], /0%/);
+  assert.equal(f.shadow.getElementById('quota-fill').style.strokeDashoffset, '62.832');
+  assert.match(allText(f.shadow.getElementById('quota-body')), /0% 剩余/);
+  f.win.__easyagContext.dispose();
+});
+
 test('model usage refreshes every minute and after sending a message', () => {
   const f = fixture(); f.install();
   assert.equal(f.sent.length, 1);
