@@ -18,7 +18,7 @@ EasyAG 是 Antigravity 的轻量启动器，支持桌面版与 IDE 启动选择�
 - **热更新**：检查更新可拉取词典与后台/UI 补丁，执行 SHA-256 校验；原生外壳升级仍需下载完整包。
 - **后台驻留**：关闭窗口后继续驻留托盘或 macOS 顶部菜单栏；macOS 隐藏窗口时隐藏 Dock 图标。
 
-桌面版与 IDE 均支持启动、代理配置和上下文、模型用量圆环（含模型、速度与额度详情）。界面汉化仍仅用于桌面版。CLI Companion 在 [cli-edition 分支](https://github.com/DSDS-CMHL/EasyAntigravity/tree/cli-edition) 独立开发，不集成到本程序。
+桌面版与 IDE 均支持启动、代理配置和上下文、模型用量圆环（含模型、速度与额度详情）。界面汉化仍仅用于桌面版。
 
 ## 下载与使用
 

@@ -39,6 +39,4 @@ EasyAG 检测到已有进程时，会显示专用弹窗，提供 **“清理并�
 
 Windows 完整解压后运行 `EasyAntigravity.exe`，保留同目录运行环境和 backend 文件夹。macOS 包仍为 Beta，未经过 Apple 公证。每个平台均提供 SHA-256 校验文件。
 
-CLI Companion 独立开发和发布，不包含在本次更新中。
-
 </details>
