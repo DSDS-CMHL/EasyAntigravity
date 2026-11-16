@@ -1,11 +1,11 @@
 {
   "edition": "lite",
   "version": "4.0.5",
-  "dictVersion": "2026-11-12-ag231",
+  "dictVersion": "2026-11-16-shortcuts",
   "dicts": {
     "ui_v2.json": {
-      "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/v4.0.5-lite/dicts/ui_v2.json",
-      "sha256": "0d2f983788d010bdff6680d2f170d852dcc12b0ee916b3ec34907b68bdd5d5e7"
+      "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/f50129170743eb9921e2f3929402adea01dbadb7/dicts/ui_v2.json",
+      "sha256": "f274c8c68c0a5c2b453331ba2c893fff98d1a2133b1e9d92e50593b0abeb54a2"
     },
     "common.json": {
       "url": "https://raw.githubusercontent.com/DSDS-CMHL/EasyAntigravity/v4.0.5-lite/dicts/common.json",
