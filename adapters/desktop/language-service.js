@@ -21,6 +21,7 @@ class LanguageService {
     Object.assign(this, { profile, target, parentPid, processes, readLog, transport });
     this.requests = new Set();
     this.generation = 0;
+    this.supportsIncrementalMetadata = true;
   }
 
   async discover() {
@@ -94,7 +95,11 @@ class LanguageService {
         response.on('error', () => reject(new Error('统计连接中断')));
         response.on('aborted', () => reject(new Error('统计连接中断')));
         response.on('end', () => {
-          if (response.statusCode !== 200) return reject(new Error('当前 AG 统计接口不可用'));
+          if (response.statusCode !== 200) {
+            const error = new Error('当前 AG 统计接口不可用');
+            error.statusCode = response.statusCode;
+            return reject(error);
+          }
           try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
           catch { reject(new Error('AG 统计数据无法解析')); }
         });
@@ -107,15 +112,13 @@ class LanguageService {
     });
   }
 
-  async metadata(id, signal) {
-    if (!GUID.test(id)) throw new Error('无效的对话 ID');
+  async legacyMetadata(id, signal) {
     let first = await this.call('GetCascadeTrajectory', { cascadeId: id, trajectoryVerbosity: 2 }, signal);
     if (first.trajectory?.cascadeId?.toLowerCase() !== id.toLowerCase()) throw new Error('对话统计不匹配');
     const items = first.trajectory.generatorMetadata || [];
     const total = Number(first.numTotalGeneratorMetadata ?? items.length);
     first = null;
     if (!Array.isArray(items) || !Number.isSafeInteger(total) || total < items.length || total > 10000) throw new Error('统计样本范围不支持');
-    // Discard steps/body immediately. Never persist trajectories or enumerate conversations.
     let pages = 0;
     while (items.length < total) {
       if (++pages > 32) throw new Error('统计分页超过上限');
@@ -125,6 +128,54 @@ class LanguageService {
       items.push(...entries);
     }
     return items;
+  }
+
+  async metadata(id, signal, { offset = 0 } = {}) {
+    if (!GUID.test(id)) throw new Error('无效的对话 ID');
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 10000) throw new Error('统计样本范围不支持');
+    const items = [];
+    let cursor = offset;
+    let total = null;
+    let pages = 0;
+    // Query lightweight generator metadata directly (no full trajectory steps serialization).
+    while (total === null || cursor < total) {
+      if (++pages > 64) throw new Error('统计分页超过上限');
+      let page;
+      try {
+        page = await this.call('GetCascadeTrajectoryGeneratorMetadata', {
+          cascadeId: id,
+          generatorMetadataOffset: cursor
+        }, signal);
+      } catch (error) {
+        if (pages === 1 && offset === 0 && [404, 405, 501].includes(error?.statusCode)) {
+          return this.legacyMetadata(id, signal);
+        }
+        throw error;
+      }
+      if (page?.trajectory?.cascadeId && page.trajectory.cascadeId.toLowerCase() !== id.toLowerCase()) {
+        throw new Error('对话统计不匹配');
+      }
+      const entries = page?.generatorMetadata ?? page?.generatorMetadatas ?? [];
+      if (!Array.isArray(entries)) throw new Error('统计分页不完整');
+      if (page?.numTotalGeneratorMetadata !== undefined && page?.numTotalGeneratorMetadata !== null) {
+        const parsedTotal = Number(page.numTotalGeneratorMetadata);
+        if (!Number.isSafeInteger(parsedTotal) || parsedTotal < 0 || parsedTotal > 10000) {
+          throw new Error('统计样本范围不支持');
+        }
+        total = parsedTotal;
+        if (total < offset) return { items: [], truncated: true, total };
+      }
+      if (!entries.length) {
+        if (total !== null && cursor < total) throw new Error('统计分页不完整');
+        break;
+      }
+      if (cursor + entries.length > 10000 || (total !== null && cursor + entries.length > total)) {
+        throw new Error('统计样本范围不支持');
+      }
+      items.push(...entries);
+      cursor += entries.length;
+    }
+    return offset > 0 ? { items, truncated: false, total } : items;
   }
 
   reset() {

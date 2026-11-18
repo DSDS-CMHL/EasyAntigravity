@@ -37,6 +37,12 @@ const document = {
 };
 const window = { MutationObserver: Observer, NodeFilter: { SHOW_TEXT: 4 } };
 
+installI18n(window, document, dictionary, true);
+const ignoredSubtree = new Element({}, true);
+ignoredSubtree.querySelectorAll = () => { throw new Error('Ignored message subtree must not be scanned'); };
+callbacks.at(-1).callback([{ type: 'childList', addedNodes: [ignoredSubtree], removedNodes: [] }]);
+installI18n(window, document, dictionary, false);
+
 for (let index = 0; index < 5; index++) {
   installI18n(window, document, dictionary, true);
   assert.equal(nodes[0].nodeValue, '  关于  ');
