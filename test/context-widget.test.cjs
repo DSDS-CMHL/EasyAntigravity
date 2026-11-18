@@ -75,6 +75,24 @@ const result = (conversationId = id) => ({ conversationId, state: 'live', sample
   context: { usedTokens: 40000, maxTokens: 100000, usedFraction: .4, model: 'Model <not html>', endpointModel: 'gemini-3.8-flash-k' },
   speed: { tokensPerSecond: 50, ttftSeconds: .5, basis: 'response', shortSample: false, model: 'Model <not html>', endpointModel: 'gemini-3.8-flash-k' } });
 
+test('layout work does not scale with historical buttons or run on idle ticks and closed-card scrolling', () => {
+  const f = fixture();
+  const query = f.doc.querySelectorAll;
+  let scans = 0;
+  f.doc.querySelectorAll = selector => {
+    assert.notEqual(selector, 'button,input,[role="button"],[role="combobox"]', 'Never scan historical controls');
+    scans++;
+    return query(selector);
+  };
+  f.install();
+  const initial = scans;
+  for (let i = 0; i < 60; i++) f.tick();
+  for (let i = 0; i < 60; i++) f.doc.events.scroll();
+  assert.equal(scans, initial);
+  assert.equal(f.frames.size, 0);
+  f.win.__easyagContext.dispose();
+});
+
 test('widget has a compact context marker; speed appears only in closable details', () => {
   const f = fixture(); f.install();
   assert.equal(f.sent.length, 1);

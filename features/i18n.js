@@ -87,24 +87,46 @@ function installI18n(window, document, dictionary, enabled) {
     if (!enabled || !root) return;
     if (root.nodeType === 3) return translateText(root);
     if (root.nodeType !== 1 && root.nodeType !== 9) return;
+    if (root.nodeType === 1 && ignoredElement(root)) return;
     if (root.nodeType === 1) translateElement(root);
-    for (const element of root.querySelectorAll('[placeholder],[title],[aria-label]')) translateElement(element);
+    if (typeof root.querySelectorAll === 'function') {
+      for (const element of root.querySelectorAll('[placeholder],[title],[aria-label]')) translateElement(element);
+    }
     const walker = document.createTreeWalker(root, window.NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) translateText(walker.currentNode);
   }
+  let gcTimer = null;
+  let lastGcAt = 0;
+  function sweepDisconnected() {
+    gcTimer = null;
+    lastGcAt = Date.now();
+    for (const node of texts.keys()) if (!node.isConnected) texts.delete(node);
+    for (const element of attributes.keys()) if (!element.isConnected) attributes.delete(element);
+  }
   const observer = new window.MutationObserver(mutations => {
+    let sawRemoval = false;
     for (const mutation of mutations) {
-      if (mutation.type === 'childList') for (const node of mutation.addedNodes) translate(node);
+      if (mutation.type === 'childList') {
+        if (mutation.removedNodes?.length) sawRemoval = true;
+        for (const node of mutation.addedNodes) translate(node);
+      }
       if (mutation.type === 'characterData') translateText(mutation.target);
       if (mutation.type === 'attributes') translateElement(mutation.target);
     }
-    // Removed conversation nodes should not remain retained throughout long sessions.
-    for (const node of texts.keys()) if (!node.isConnected) texts.delete(node);
-    for (const element of attributes.keys()) if (!element.isConnected) attributes.delete(element);
+    // Removed conversation nodes are swept lazily only when removals happen, throttled to <=1x/10s.
+    if (sawRemoval && !gcTimer) {
+      if (typeof window.setTimeout === 'function' && Date.now() - lastGcAt < 10000) {
+        gcTimer = window.setTimeout(sweepDisconnected, 10000);
+      } else {
+        sweepDisconnected();
+      }
+    }
   });
   const runtime = {
     dispose() {
       observer.disconnect();
+      if (gcTimer && typeof window.clearTimeout === 'function') window.clearTimeout(gcTimer);
+      gcTimer = null;
       for (const [node, record] of texts) {
         if (node.nodeValue === record.translated) node.nodeValue = record.original;
       }

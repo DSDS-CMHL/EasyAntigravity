@@ -4,7 +4,7 @@ function installContextWidget(win, doc, enabled, report, readConversationId) {
   win.__easyagContext?.dispose();
   if (!enabled) return;
   const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  let node, shadow, button, card, composer, data, route = '', pending, lastFetch = 0, sequence = 0, disposed = false;
+  let node, shadow, button, card, composer, data, route = '', pending, lastFetch = 0, lastActivity = Date.now(), sequence = 0, disposed = false;
   let observer, resizeObserver, frame;
   const conversationId = () => {
     if (readConversationId) return readConversationId(win, doc);
@@ -170,26 +170,34 @@ function installContextWidget(win, doc, enabled, report, readConversationId) {
   }
   function fit() {
     if (!node?.isConnected || !composer) return;
-    node.hidden = false;
-    node.style.display = 'flex';
+    if (node.hidden) {
+      node.hidden = false;
+      node.style.display = 'flex';
+    }
     const r = node.getBoundingClientRect(), row = composer.row.getBoundingClientRect();
     let blocked = r.width + 1 < shadow.getElementById('strip').scrollWidth || r.right > row.right + 1 || r.left < row.left - 1 || !safeLayout(composer);
     const localControls = new Set(composer.row.parentElement.querySelectorAll('button,input,[role="button"],[role="combobox"]'));
-    const controls = new Set([...localControls, ...doc.querySelectorAll('button,input,[role="button"],[role="combobox"]')]);
-    if (!blocked) for (const control of controls) {
-      if (!visible(control)) continue;
+    if (!blocked) for (const control of localControls) {
+      if (control === node || node.contains(control) || !visible(control)) continue;
       const c = control.getBoundingClientRect();
       const left = Math.max(r.left, c.left), right = Math.min(r.right, c.right), top = Math.max(r.top, c.top), bottom = Math.min(r.bottom, c.bottom);
       const overlap = right - left > 1 && bottom - top > 1;
-      if (localControls.has(control)) {
-        if ((control.clientWidth > 0 && control.scrollWidth > control.clientWidth + 1) || overlap) { blocked = true; break; }
-      } else if (overlap && typeof doc.elementFromPoint === 'function') {
-        const hit = doc.elementFromPoint((left + right) / 2, (top + bottom) / 2);
-        if (hit === control || control.contains(hit)) { blocked = true; break; }
+      if ((control.clientWidth > 0 && control.scrollWidth > control.clientWidth + 1) || overlap) { blocked = true; break; }
+    }
+    // Check O(1) hit-test points for floating host controls instead of scanning every button in the document.
+    if (!blocked && typeof doc.elementFromPoint === 'function' && r.width > 2 && r.height > 2) {
+      const midY = (r.top + r.bottom) / 2;
+      for (const x of [(r.left + r.right) / 2, r.left + 2, r.right - 2]) {
+        const hit = doc.elementFromPoint(x, midY);
+        if (!hit || hit === node || node.contains(hit)) continue;
+        const control = hit.closest?.('button,input,[role="button"],[role="combobox"]');
+        if (control && !node.contains(control)) { blocked = true; break; }
       }
     }
-    node.hidden = blocked;
-    node.style.display = blocked ? 'none' : 'flex';
+    if (node.hidden !== blocked) {
+      node.hidden = blocked;
+      node.style.display = blocked ? 'none' : 'flex';
+    }
     if (blocked) hideCard();
   }
   function syncTheme() {
@@ -207,9 +215,10 @@ function installContextWidget(win, doc, enabled, report, readConversationId) {
   }
   function syncRoute() {
     const next = conversationId();
-    if (next === route) return;
-    route = next; pending = null; data = null; lastFetch = 0;
+    if (next === route) return false;
+    route = next; pending = null; data = null; lastFetch = 0; lastActivity = Date.now();
     hideCard(); render();
+    return true;
   }
   function mount() {
     syncRoute();
@@ -230,11 +239,13 @@ function installContextWidget(win, doc, enabled, report, readConversationId) {
   }
   function refresh() {
     if (!enabled || disposed || doc.hidden || !route || !node?.isConnected || node.hidden) return;
-    if (pending && Date.now() - pending.at < 25000) return;
-    if (Date.now() - lastFetch < 3000) return;
-    if (pending || (data?.sampledAt && Date.now() - data.sampledAt > 30000)) data = null;
+    const now = Date.now();
+    if (pending && now - pending.at < 25000) return;
+    const minInterval = (now - lastActivity < 15000 || data?.state !== 'live') ? 4000 : 15000;
+    if (lastFetch > 0 && now - lastFetch < minInterval) return;
+    if (pending || (data?.sampledAt && now - data.sampledAt > 120000)) data = null;
     const requestId = String(++sequence);
-    pending = { requestId, conversationId: route, at: Date.now() }; lastFetch = Date.now();
+    pending = { requestId, conversationId: route, at: now }; lastFetch = now;
     try { report({ type: 'context-metrics', requestId, conversationId: route }); }
     catch { pending = null; data = null; }
     render();
@@ -248,23 +259,38 @@ function installContextWidget(win, doc, enabled, report, readConversationId) {
     if (disposed || frame !== undefined) return;
     frame = win.requestAnimationFrame(() => { frame = undefined; if (!disposed) { mount(); refresh(); } });
   }
-  const onPointer = event => { if (!event.composedPath().includes(node)) hideCard(); };
-  const onKey = event => { if (event.key === 'Escape') { const focused = Boolean(shadow?.activeElement); hideCard(); if (focused) button?.focus({ preventScroll: true }); } };
+  const onPointer = event => { lastActivity = Date.now(); if (!event.composedPath().includes(node)) hideCard(); };
+  const onKey = event => { lastActivity = Date.now(); if (event.key === 'Escape') { const focused = Boolean(shadow?.activeElement); hideCard(); if (focused) button?.focus({ preventScroll: true }); } };
+  const onScroll = () => { if (card && !card.hidden) positionCard(); };
+  const isMessageStreamOnly = records => Boolean(node?.isConnected && composer?.row?.isConnected && composer?.editor?.isConnected)
+    && records.every(record => {
+      const target = record.target;
+      if (target === node || node.contains(target)) return true;
+      const el = target?.nodeType === 1 ? target : target?.parentElement;
+      return Boolean(el && !composer.row.parentElement?.contains(el) && el.closest?.('[data-testid*="message-content"],pre,code'));
+    });
   doc.addEventListener('pointerdown', onPointer);
   doc.addEventListener('keydown', onKey);
-  doc.addEventListener('scroll', schedule, true);
+  doc.addEventListener('scroll', onScroll, true);
   win.addEventListener('resize', schedule);
   observer = new win.MutationObserver(records => {
-    if (records.some(record => record.target !== node && !node?.contains(record.target))) schedule();
+    const external = records.filter(record => record.target !== node && !node?.contains(record.target));
+    if (!external.length) return;
+    lastActivity = Date.now();
+    if (isMessageStreamOnly(external)) return;
+    schedule();
   });
   observer.observe(doc.documentElement, { childList: true, subtree: true });
-  const timer = win.setInterval(() => { mount(); refresh(); }, 1000);
+  const timer = win.setInterval(() => {
+    if (conversationId() !== route || !node?.isConnected || !composer?.row?.isConnected || node.hidden) mount();
+    refresh();
+  }, 1000);
   win.__easyagContext = { receive, dispose() {
     disposed = true; pending = null; data = null; hideCard(); node?.remove();
     win.clearInterval(timer); if (frame !== undefined) win.cancelAnimationFrame(frame);
     observer.disconnect(); resizeObserver?.disconnect();
     doc.removeEventListener('pointerdown', onPointer); doc.removeEventListener('keydown', onKey);
-    doc.removeEventListener('scroll', schedule, true); win.removeEventListener('resize', schedule);
+    doc.removeEventListener('scroll', onScroll, true); win.removeEventListener('resize', schedule);
     delete win.__easyagContext;
   } };
   mount(); refresh();

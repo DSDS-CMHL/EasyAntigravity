@@ -76,18 +76,69 @@ test('read-only RPC uses loopback credentials in headers and bounds allowed meth
 test('metadata pagination is complete, bounded and conversation-specific; no steps are returned', async () => {
   const client = new LanguageService();
   const calls = [];
+  const all = [chat(), chat(20)];
   client.call = async (method, body) => {
     calls.push([method, body]);
-    return method === 'GetCascadeTrajectory'
-      ? { trajectory: { cascadeId: id, steps: ['private body'], generatorMetadata: [chat()] }, numTotalGeneratorMetadata: 2 }
-      : { generatorMetadata: [chat(20)] };
+    assert.equal(method, 'GetCascadeTrajectoryGeneratorMetadata', 'Must not request full trajectory steps');
+    if (body.cascadeId !== id) throw new Error('对话统计不匹配');
+    return body.generatorMetadataOffset < all.length
+      ? { generatorMetadata: [all[body.generatorMetadataOffset]], numTotalGeneratorMetadata: all.length }
+      : { generatorMetadata: [], numTotalGeneratorMetadata: all.length };
   };
   assert.equal((await client.metadata(id)).length, 2);
+  assert.deepEqual(calls[0][1], { cascadeId: id, generatorMetadataOffset: 0 });
   assert.deepEqual(calls[1][1], { cascadeId: id, generatorMetadataOffset: 1 });
+  const delta = await client.metadata(id, undefined, { offset: 2 });
+  assert.deepEqual(delta, { items: [], truncated: false, total: 2 });
+  const truncated = await client.metadata(id, undefined, { offset: 5 });
+  assert.deepEqual(truncated, { items: [], truncated: true, total: 2 });
   await assert.rejects(client.metadata(otherId), /不匹配/);
-  client.call = async method => method === 'GetCascadeTrajectory'
-    ? { trajectory: { cascadeId: id, generatorMetadata: [] }, numTotalGeneratorMetadata: 2 } : { generatorMetadata: [] };
+  client.call = async () => ({ generatorMetadata: [], numTotalGeneratorMetadata: 2 });
   await assert.rejects(client.metadata(id), /分页/);
+});
+
+test('incremental context monitor fetches only new offsets and strips private fields from cache', async () => {
+  const server = { pid: 9, port: 4001, csrf: 'secret' };
+  const all = [chat(30, 100), chat(45, 100)];
+  const offsets = [];
+  const client = new LanguageService({ profile: 'unused', processes: async () => [], readLog: async () => '' });
+  client.discover = async () => server;
+  client.call = async (method, body) => {
+    if (method === 'GetUserStatus') return { userStatus: { email: 'account@example.test' } };
+    offsets.push(body.generatorMetadataOffset);
+    return { generatorMetadata: all.slice(body.generatorMetadataOffset), numTotalGeneratorMetadata: all.length };
+  };
+  const monitor = new ContextMonitor(client);
+  const first = await monitor.sample(id);
+  assert.equal(first.context.usedTokens, 45);
+  assert.deepEqual(offsets, [0]);
+  const second = await monitor.sample(id);
+  assert.equal(second.context.usedTokens, 45);
+  assert.deepEqual(offsets, [0, 1], 'Refresh the last generator without fetching history');
+  all[1] = chat(55, 100);
+  assert.equal((await monitor.sample(id)).context.usedTokens, 55, 'Streaming tail updates are observed');
+  all.push(chat(70, 100));
+  const third = await monitor.sample(id);
+  assert.equal(third.context.usedTokens, 70);
+  assert.deepEqual(offsets, [0, 1, 1, 1]);
+  all.splice(1);
+  assert.equal((await monitor.sample(id)).context.usedTokens, 30, 'Truncation clears stale history');
+  all[0] = chat(15, 100);
+  monitor.cache.get(id).syncedAt = 0;
+  assert.equal((await monitor.sample(id)).context.usedTokens, 15, 'Periodic resync replaces same-sized history');
+  assert.doesNotMatch(JSON.stringify([...monitor.cache.values()]), /private text|tokenBreakdown/);
+});
+
+test('lightweight metadata falls back only for unsupported endpoints', async () => {
+  const client = new LanguageService();
+  let legacy = 0;
+  client.legacyMetadata = async () => { legacy++; return []; };
+  client.call = async () => { throw Object.assign(new Error('unavailable'), { statusCode: 404 }); };
+  assert.deepEqual(await client.metadata(id), []);
+  assert.equal(legacy, 1);
+  client.call = async () => { throw Object.assign(new Error('unavailable'), { statusCode: 500 }); };
+  await assert.rejects(client.metadata(id));
+  assert.equal(legacy, 1, 'Server failures must not trigger an expensive fallback');
 });
 
 function mockClient() {

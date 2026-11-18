@@ -200,6 +200,7 @@ class CdpHub {
     this.pendingConnections.add(connection);
     try {
       await connection.open();
+      connection.socket?.on('close', () => { if (this.running) void this.tick(); });
       if (!this.running) throw new Error('CDP 已停止');
       const tree = await connection.command('Page.getFrameTree');
       connection.frame = tree.frameTree?.frame?.id;
@@ -262,7 +263,11 @@ class CdpHub {
     this.running = true;
     this.status.cdpLoopRunning = true;
     void this.tick();
-    this.timer = setInterval(() => { void this.tick(); }, 2000);
+    this.timer = setInterval(() => {
+      if (this.sessions.size > 0 && !this.status.cdpError && Date.now() - (this.lastTickAt || 0) < 5000) return;
+      this.lastTickAt = Date.now();
+      void this.tick();
+    }, 2000);
     this.timer.unref();
   }
 
